@@ -66,13 +66,3 @@ export interface SheetLayout {
   readonly marginMm: Mm;
   readonly placements: readonly PartPlacement[];
 }
-
-/** The area of a Sheet that may carry content — the paper minus the printable margin. */
-export function printableArea(paper: PaperSize, marginMm: Mm): Rect {
-  return {
-    x: marginMm,
-    y: marginMm,
-    width: paper.width - 2 * marginMm,
-    height: paper.height - 2 * marginMm,
-  };
-}

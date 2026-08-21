@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { A4 } from '../domain/paper.ts';
+import { A4, LETTER } from '../domain/paper.ts';
 import { rectsOverlap } from '../domain/units.ts';
-import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
@@ -39,7 +39,7 @@ const aDesign = (release: Release = aRelease()): ReleaseDesign => ({
   dimensions: DEFAULT_PART_DIMENSIONS,
 });
 
-const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5 };
+const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
 
 const boundsOf = (sheet: SheetLayout, part: PartKind): Rect => {
   const placement = sheet.placements.find((candidate) => candidate.part === part);
@@ -228,5 +228,64 @@ describe('SheetRenderer — Release content', () => {
       const images = (placement?.ops ?? []).filter((op) => op.op === 'image');
       expect(images, `${part} artwork`).toHaveLength(1);
     }
+  });
+});
+
+describe('SheetRenderer — Sheet configuration', () => {
+  it('prints only the Parts the job asked for', () => {
+    const sheets = renderSheets([aDesign()], { ...A4_SHEET, parts: ['label'] }, testMeasurer);
+
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]?.placements.map((placement) => placement.part)).toEqual(['label']);
+  });
+
+  it('lays the Sheet out on Letter when asked', () => {
+    const [sheet] = renderSheets([aDesign()], { ...A4_SHEET, paper: LETTER }, testMeasurer);
+
+    expect(sheet?.paper.name).toBe('Letter');
+    expect(sheet?.paper.width).toBeCloseTo(215.9, 4);
+    expect(sheet?.paper.height).toBeCloseTo(279.4, 4);
+  });
+
+  it('keeps Parts out of a widened printable margin', () => {
+    const [sheet] = renderSheets([aDesign()], { ...A4_SHEET, marginMm: 15 }, testMeasurer);
+
+    for (const { part, bounds } of sheet?.placements ?? []) {
+      expect(bounds.x, `${part} left`).toBeGreaterThanOrEqual(15);
+      expect(bounds.y, `${part} top`).toBeGreaterThanOrEqual(15);
+      expect(bounds.x + bounds.width, `${part} right`).toBeLessThanOrEqual(A4.width - 15);
+      expect(bounds.y + bounds.height, `${part} bottom`).toBeLessThanOrEqual(A4.height - 15);
+    }
+  });
+
+  it('draws each Release with its own content when several share a Sheet', () => {
+    const first = aRelease({ id: 'a', artist: 'Glen Campbell', album: 'Wichita Lineman' });
+    const second = aRelease({ id: 'b', artist: 'Cornelius', album: 'Fantasma' });
+
+    const sheets = renderSheets([aDesign(first), aDesign(second)], A4_SHEET, testMeasurer);
+    const placements = sheets.flatMap((sheet) => sheet.placements);
+
+    expect(placements).toHaveLength(6);
+    for (const releaseId of ['a', 'b']) {
+      const own = placements.filter((placement) => placement.releaseId === releaseId);
+      expect(own).toHaveLength(3);
+      const printed = own.flatMap((placement) =>
+        placement.ops.flatMap((op) => (op.op === 'text' ? [op.text] : [])),
+      );
+      const expected = releaseId === 'a' ? 'Wichita Lineman' : 'Fantasma';
+      expect(printed.some((line) => line.includes(expected))).toBe(true);
+    }
+  });
+
+  it('spreads a batch across Sheets rather than dropping Parts', () => {
+    const designs = Array.from({ length: 8 }, (_, index) =>
+      aDesign(aRelease({ id: `r${index}` })),
+    );
+
+    const sheets = renderSheets(designs, A4_SHEET, testMeasurer);
+    const placements = sheets.flatMap((sheet) => sheet.placements);
+
+    expect(placements).toHaveLength(24);
+    expect(sheets.length).toBeGreaterThan(1);
   });
 });

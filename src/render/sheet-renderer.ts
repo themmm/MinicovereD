@@ -10,7 +10,8 @@ import {
 import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Mm, Rect, Size } from '../domain/units.ts';
-import { printableArea } from './layout.ts';
+import { packParts } from '../pack/sheet-packer.ts';
+import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import type { JCardContext, PartContext, Template, TemplateId } from './templates/template.ts';
@@ -25,6 +26,9 @@ export type { TemplateId } from './templates/template.ts';
  * to a layout model in millimetres. Pure — same inputs, same layout — so the
  * live preview, the 300 DPI raster and the PDF are three readers of one truth,
  * and the geometry can be asserted as data.
+ *
+ * Where each Part lands is SheetPacker's answer; what is drawn inside it is the
+ * Template's. This module is the join.
  */
 
 /** A Release together with the Template chosen for it and the Part sizes it prints at. */
@@ -37,6 +41,8 @@ export interface ReleaseDesign {
 export interface SheetConfig {
   readonly paper: PaperSize;
   readonly marginMm: Mm;
+  /** Which Parts this print job wants — "Labels only" is this list with one entry. */
+  readonly parts: readonly PartKind[];
 }
 
 /** Breathing room between Parts so two cut lines never end up on top of each other. */
@@ -52,6 +58,10 @@ export function templateFor(id: TemplateId): Template {
 
 export function defaultDesign(release: Release): ReleaseDesign {
   return { release, templateId: 'classic', dimensions: DEFAULT_PART_DIMENSIONS };
+}
+
+export function defaultSheetConfig(paper: PaperSize, marginMm: Mm): SheetConfig {
+  return { paper, marginMm, parts: PART_KINDS };
 }
 
 function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Rect>> {
@@ -116,68 +126,45 @@ function drawPart(
   }
 }
 
-/**
- * Shelf arrangement inside the printable area: Parts are laid in rows, a new
- * row starting when the current one runs out of width. Ticket 03 replaces this
- * with SheetPacker, which packs several Releases across as few Sheets as
- * possible; here it only has to put one Release's three Parts on one Sheet —
- * and say so loudly rather than place a Part where the printer will clip it.
- */
-function arrange(sizes: readonly Size[], area: Rect): Rect[] {
-  const placed: Rect[] = [];
-  let cursorX = area.x;
-  let cursorY = area.y;
-  let rowHeight = 0;
-
-  for (const size of sizes) {
-    if (size.width > area.width || size.height > area.height) {
-      throw new Error(
-        `mdcovergen: a ${size.width} × ${size.height} mm Part does not fit the ` +
-          `${area.width} × ${area.height} mm printable area`,
-      );
-    }
-    if (cursorX > area.x && cursorX + size.width > area.x + area.width) {
-      cursorX = area.x;
-      cursorY += rowHeight + PART_GAP_MM;
-      rowHeight = 0;
-    }
-    if (cursorY + size.height > area.y + area.height) {
-      throw new Error('mdcovergen: this Release does not fit on one Sheet');
-    }
-    placed.push({ x: cursorX, y: cursorY, width: size.width, height: size.height });
-    cursorX += size.width + PART_GAP_MM;
-    rowHeight = Math.max(rowHeight, size.height);
-  }
-  return placed;
-}
-
 export function renderSheets(
   designs: readonly ReleaseDesign[],
   config: SheetConfig,
   measure: TextMeasurer,
 ): readonly SheetLayout[] {
-  const area = printableArea(config.paper, config.marginMm);
+  const byRelease = new Map(designs.map((design) => [design.release.id, design]));
 
-  return designs.map((design) => {
-    const sizes = PART_KINDS.map((part) => partSize(part, design.dimensions));
-    const rects = arrange(sizes, area);
+  const items: PackItem[] = designs.flatMap((design) =>
+    config.parts.map((part) => ({
+      releaseId: design.release.id,
+      part,
+      size: partSize(part, design.dimensions),
+    })),
+  );
 
-    const placements: PartPlacement[] = PART_KINDS.map((part, index) => {
-      const bounds = rects[index] as Rect;
-      const size = sizes[index] as Size;
-      const { ops, panels } = drawPart(part, design, size, measure);
+  const packed = packParts(items, {
+    paper: config.paper,
+    marginMm: config.marginMm,
+    gapMm: PART_GAP_MM,
+  });
+
+  return packed.map((sheet) => ({
+    paper: config.paper,
+    marginMm: config.marginMm,
+    placements: sheet.placements.map(({ item, rect }): PartPlacement => {
+      const design = byRelease.get(item.releaseId);
+      if (!design) throw new Error(`mdcovergen: no design for Release "${item.releaseId}"`);
+
+      const { ops, panels } = drawPart(item.part, design, item.size, measure);
       return {
-        releaseId: design.release.id,
-        part,
-        bounds,
+        releaseId: item.releaseId,
+        part: item.part,
+        bounds: rect,
         ops,
-        guides: guidesFor(part, design.dimensions, size),
+        guides: guidesFor(item.part, design.dimensions, item.size),
         ...(panels ? { panels } : {}),
       };
-    });
-
-    return { paper: config.paper, marginMm: config.marginMm, placements };
-  });
+    }),
+  }));
 }
 
 /** Re-exported so callers of the seam do not have to reach into the domain. */
