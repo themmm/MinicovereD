@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4 } from '../domain/paper.ts';
+import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
+import { renderCalibrationSheet } from './calibration.ts';
 import type { SheetLayout } from './layout.ts';
 import { drawSheet, EXPORT_DPI } from './raster.ts';
 import type { Canvas2D } from './raster.ts';
@@ -143,5 +145,50 @@ describe('rasterising a Sheet', () => {
     const fillAt = context.calls.map((call) => call.method).lastIndexOf('fillRect');
     expect(clipAt, 'the Part is clipped').toBeGreaterThan(-1);
     expect(fillAt, 'content is drawn inside the clip').toBeGreaterThan(clipAt);
+  });
+});
+
+describe('rasterising the calibration sheet', () => {
+  it('draws the 100 mm test square as 1181.1 px at export resolution', () => {
+    // The whole page exists to be measured with a ruler, so this is the one
+    // claim worth checking in pixels rather than in millimetres.
+    const { layouts } = renderCalibrationSheet(
+      { paper: A4, marginMm: 5 },
+      DEFAULT_PART_DIMENSIONS,
+      { widthMm: (text, style) => text.length * style.sizeMm * 0.5 },
+    );
+    const context = recordingContext();
+    const [first] = layouts;
+    if (!first) throw new Error('the calibration sheet rendered no pages');
+
+    drawSheet(context, first, EXPORT_DPI);
+
+    const horizontalRuns: number[] = [];
+    for (const [index, call] of context.calls.entries()) {
+      const next = context.calls[index + 1];
+      if (call.method !== 'moveTo' || next?.method !== 'lineTo') continue;
+      const from = call.args[0];
+      const to = next.args[0];
+      if (from !== undefined && to !== undefined) horizontalRuns.push(Math.abs(to - from));
+    }
+
+    expect(horizontalRuns.some((run) => Math.abs(run - 1181.1) < 0.5)).toBe(true);
+  });
+
+  it('draws Sheet-level marks even though the calibration sheet has no Parts', () => {
+    const { layouts } = renderCalibrationSheet(
+      { paper: A4, marginMm: 5 },
+      DEFAULT_PART_DIMENSIONS,
+      { widthMm: (text, style) => text.length * style.sizeMm * 0.5 },
+    );
+    const context = recordingContext();
+    const [first] = layouts;
+    if (!first) throw new Error('the calibration sheet rendered no pages');
+
+    drawSheet(context, first, EXPORT_DPI);
+
+    expect(first.placements).toEqual([]);
+    expect(context.calls.filter((call) => call.method === 'fillText').length).toBeGreaterThan(5);
+    expect(context.calls.filter((call) => call.method === 'stroke').length).toBeGreaterThan(5);
   });
 });
