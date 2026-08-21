@@ -85,4 +85,9 @@ export interface SheetLayout {
    */
   readonly ops?: readonly DrawOp[];
   readonly guides?: readonly Guide[];
+  /**
+   * Things the collector should know before printing — type that had to shrink
+   * past what a printer holds, say. Not drawn on the Sheet: said on screen.
+   */
+  readonly warnings?: readonly string[];
 }

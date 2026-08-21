@@ -12,6 +12,8 @@ import type { Mm, Rect, Size } from '../domain/units.ts';
 import { DEFAULT_PART_GAP_MM, packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
+import { backCardTracklist } from './templates/shared.ts';
+import { PRINT_FLOOR_MM } from './tracklist-layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
@@ -176,13 +178,31 @@ export function renderSheets(
     gapMm: DEFAULT_PART_GAP_MM,
   });
 
-  return packed.sheets.map((sheet) => ({
-    paper: config.paper,
-    marginMm: config.marginMm,
-    placements: sheet.placements.map(({ item, rect }): PartPlacement => {
+  return packed.sheets.map((sheet) => {
+    const warnings: string[] = [];
+
+    const placements = sheet.placements.map(({ item, rect }): PartPlacement => {
       const { releaseId, part } = item.ref;
       const design = byRelease.get(releaseId);
       if (!design) throw new Error(`mdcovergen: no design for Release "${releaseId}"`);
+
+      if (part === 'back-card') {
+        const fit = backCardTracklist({
+          release: design.release,
+          params: design.params,
+          dimensions: design.dimensions,
+          size: item.size,
+          measure,
+        });
+        if (fit.belowPrintFloor) {
+          warnings.push(
+            `${design.release.album || design.release.id}: ${design.release.tracks.length} tracks ` +
+              `only fit at ${fit.sizeMm.toFixed(2)} mm type, below the ${PRINT_FLOOR_MM.toFixed(
+                2,
+              )} mm a printer reliably holds. Every track is there, but they may not be legible.`,
+          );
+        }
+      }
 
       const { ops, panels } = drawPart(part, design, item.size, measure);
       return {
@@ -193,8 +213,15 @@ export function renderSheets(
         guides: guidesFor(part, design.dimensions, item.size),
         ...(panels ? { panels } : {}),
       };
-    }),
-  }));
+    });
+
+    return {
+      paper: config.paper,
+      marginMm: config.marginMm,
+      placements,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
+  });
 }
 
 /** Re-exported so callers of the seam do not have to reach into the domain. */

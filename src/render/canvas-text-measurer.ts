@@ -32,9 +32,40 @@ export function createCanvasTextMeasurer(): TextMeasurer {
 }
 
 /**
- * Bundled fonts load asynchronously even though they never touch the network.
- * Measuring before they are ready would size the layout to a fallback face.
+ * The bundled faces and a character from each, chosen so the browser is forced
+ * to fetch the face rather than deciding it is not needed yet.
+ */
+const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
+  { family: 'Noto Sans Variable', sample: 'Aä' },
+  { family: 'Noto Sans JP', sample: '東' },
+];
+
+/**
+ * Bundled fonts load asynchronously even though they never touch the network,
+ * and a face with a unicode-range is not loaded at all until text in that range
+ * is rendered. `document.fonts.ready` alone therefore resolves with the CJK
+ * face still absent, and both measuring and drawing silently fall through to
+ * whatever the system happens to have — tofu, on a machine with no CJK font.
+ * Asking for each face by name is what actually fetches it.
  */
 export async function fontsReady(): Promise<void> {
+  await Promise.all(
+    BUNDLED_FACES.map(async ({ family, sample }) => {
+      try {
+        await document.fonts.load(`400 16px "${family}"`, sample);
+        await document.fonts.load(`700 16px "${family}"`, sample);
+      } catch {
+        // A face that will not load is a fallback, not a failure: the app still
+        // renders, just not in the typography it shipped with.
+      }
+    }),
+  );
   await document.fonts.ready;
+}
+
+/** Which bundled faces are actually loaded — the about dialog says so honestly. */
+export function loadedBundledFaces(): readonly string[] {
+  return BUNDLED_FACES.map(({ family }) => family).filter((family) =>
+    [...document.fonts].some((face) => face.family === family && face.status === 'loaded'),
+  );
 }

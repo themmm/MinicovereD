@@ -4,6 +4,8 @@ import type { DrawOp, TextStyle } from '../layout.ts';
 import { readableInkFor, withAlpha } from '../colors.ts';
 import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise } from '../text.ts';
+import { layOutTracklist } from '../tracklist-layout.ts';
+import type { TracklistLayout } from '../tracklist-layout.ts';
 import type { TextMeasurer } from '../text.ts';
 import type { PartContext, TemplateParams } from './template.ts';
 
@@ -154,12 +156,34 @@ export function drawInnerFlap({ release, params, measure }: PartContext, panel: 
   ];
 }
 
-/** The Back Card: album, artist, a rule, and the tracklist. */
-export function drawBackCard({ release, params, size, measure }: PartContext): DrawOp[] {
+/** Type size the tracklist starts at, before any of it has to give way. */
+const TRACK_SIZE_MM: Mm = 2.4;
+
+/**
+ * How the tracklist ends up fitting this Back Card. Exported so the renderer
+ * can warn about type that has shrunk past legibility without laying the list
+ * out a second time or duplicating where the list lives on the Part.
+ */
+export function backCardTracklist({ release, size, measure }: PartContext): TracklistLayout {
+  const listTop = PAD + 8.6 + 2;
+  return layOutTracklist(
+    release.tracks,
+    { x: PAD, y: listTop, width: size.width - 2 * PAD, height: size.height - listTop - PAD },
+    TRACK_SIZE_MM,
+    measure,
+  );
+}
+
+/**
+ * The Back Card: album, artist, a rule, and the tracklist — which is the one
+ * Part whose content has no upper bound, so the list decides its own columns
+ * and size rather than being given them.
+ */
+export function drawBackCard(context: PartContext): DrawOp[] {
+  const { release, params, size, measure } = context;
   const contentWidth = size.width - 2 * PAD;
   const albumStyle: TextStyle = { sizeMm: 3.2, weight: 700, color: params.inkColor, align: 'left', baseline: 'top' };
   const artistStyle: TextStyle = { sizeMm: 2.6, weight: 400, color: params.inkColor, align: 'left', baseline: 'top' };
-  const trackStyle: TextStyle = { sizeMm: 2.4, weight: 400, color: params.inkColor, align: 'left', baseline: 'top' };
 
   const ruleY = PAD + 8.6;
   const ops: DrawOp[] = [
@@ -175,18 +199,18 @@ export function drawBackCard({ release, params, size, measure }: PartContext): D
     },
   ];
 
-  const lineHeight = 2.9;
-  release.tracks.forEach((track, index) => {
-    ops.push(
-      text(
-        `${track.position}. ${track.title}`,
-        { x: PAD, y: ruleY + 2 + index * lineHeight },
-        trackStyle,
-        contentWidth,
-        measure,
-      ),
-    );
-  });
+  const tracklist = backCardTracklist(context);
+  const trackStyle: TextStyle = {
+    sizeMm: tracklist.sizeMm,
+    weight: 400,
+    color: params.inkColor,
+    align: 'left',
+    baseline: 'top',
+  };
+
+  for (const line of tracklist.lines) {
+    ops.push({ op: 'text', text: line.text, at: line.at, style: trackStyle });
+  }
   return ops;
 }
 
