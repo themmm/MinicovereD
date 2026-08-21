@@ -67,12 +67,14 @@ const EXAMPLE_RELEASE: Release = {
   ),
 };
 
-const exampleDesign = (): ReleaseDesign => ({
-  release: EXAMPLE_RELEASE,
+/** What a Release is designed with until the collector changes any of it. */
+const DEFAULT_DESIGN = {
   templateId: 'classic',
   params: DEFAULT_TEMPLATE_PARAMS,
   dimensions: DEFAULT_PART_DIMENSIONS,
-});
+} as const satisfies Omit<ReleaseDesign, 'release'>;
+
+const exampleDesign = (): ReleaseDesign => ({ ...DEFAULT_DESIGN, release: EXAMPLE_RELEASE });
 
 export function createWorkspace(): HTMLElement {
   let queue: QueueEntry[] = [readyEntry(exampleDesign())];
@@ -113,9 +115,13 @@ export function createWorkspace(): HTMLElement {
   const projectControls = createProjectControls(project, (imported) => {
     applyProject(imported);
     projectControls.report(
-      `Opened ${imported.entries.length} ${
-        imported.entries.length === 1 ? 'Release' : 'Releases'
-      }. Your previous work has been replaced.`,
+      imported.entries.length === 0
+        ? // A readable file can still hold no Releases. Saying "your work has
+          // been replaced" when nothing was is the one thing not to do here.
+          'That project had no Releases in it, so your queue is untouched. Its Sheet settings were applied.'
+        : `Opened ${imported.entries.length} ${
+            imported.entries.length === 1 ? 'Release' : 'Releases'
+          }. Your previous work has been replaced.`,
     );
   });
 
@@ -128,7 +134,7 @@ export function createWorkspace(): HTMLElement {
   const queuePanel = createQueuePanel({
     select: (releaseId) => {
       selectedId = releaseId;
-      renderControls();
+      showSelectedRelease();
       refresh();
     },
     move: (releaseId, offset) => {
@@ -149,6 +155,8 @@ export function createWorkspace(): HTMLElement {
   });
 
   const controlsColumn = el('div', { class: 'workspace__column' });
+  /** Holds only the panels that show the selected Release, and is the only part rebuilt. */
+  const releasePanels = el('div', { class: 'workspace__panels' });
 
   /** Set the moment the collector touches anything, so a late restore cannot undo it. */
   let edited = false;
@@ -173,10 +181,23 @@ export function createWorkspace(): HTMLElement {
     saveSoon(project());
   }
 
-  /** A change to *which* Release is being edited, which the controls must follow. */
+  /** A change to *which* Release is being edited, which the form must follow. */
   function selectionChanged(): void {
-    renderControls();
+    showSelectedRelease();
     changed();
+  }
+
+  /**
+   * Drops the example Release the moment the collector has one of their own.
+   *
+   * It is there so a first visit has something on the Sheet, not because
+   * anybody asked for Glen Campbell — and a batch of five that produces a
+   * queue of six is the tool arguing with the person using it. `edited` is the
+   * test: untouched means nobody has adopted it.
+   */
+  function makeRoomForRealWork(): void {
+    if (edited) return;
+    if (queue.length === 1 && queue[0]?.design.release.id === EXAMPLE_RELEASE.id) queue = [];
   }
 
   /** Replaces the selected entry, leaving the rest of the queue alone. */
@@ -200,25 +221,57 @@ export function createWorkspace(): HTMLElement {
     metadata,
     (found) => {
       // A looked-up Release joins the queue and becomes the one being edited,
-      // keeping the design settings of whichever Release was on screen.
-      const from = selected()?.design ?? exampleDesign();
-      queue = addToQueue(queue, readyEntry({ ...from, release: found }));
+      // keeping the design settings of whichever Release was on screen — the
+      // defaults only if there was none, never the example's own metadata.
+      const settings = selected()?.design ?? DEFAULT_DESIGN;
+      makeRoomForRealWork();
+      queue = addToQueue(queue, readyEntry({ ...settings, release: found }));
       selectedId = found.id;
       selectionChanged();
     },
     (entries) => {
-      const before = queue.length;
-      for (const resolvedEntry of entries) queue = addToQueue(queue, resolvedEntry);
-      const added = queue.length - before;
-      if (added > 0) selectedId = entries[0]?.design.release.id ?? selectedId;
+      makeRoomForRealWork();
+      const added = entries.filter((entry) => {
+        const grown = addToQueue(queue, entry);
+        const isNew = grown.length > queue.length;
+        queue = grown;
+        return isNew;
+      });
+      if (added.length > 0) selectedId = added[0]?.design.release.id ?? selectedId;
       selectionChanged();
-      // The search panel says how it went, in the panel the collector pressed.
+      // The search panel says how it went, in the panel the collector pressed —
+      // and it needs what actually joined the queue, not what was looked up.
       return added;
     },
   );
 
-  /** Rebuilds the controls that *are* a view of the selected Release. */
-  function renderControls(): void {
+  /**
+   * The Sheet is a property of the print job, not of the Release being edited,
+   * so these controls are built once alongside the search panel — and are told
+   * when a configuration arrives from somewhere else.
+   */
+  const sheetControls = createSheetControls(sheetConfig, (changes) => {
+    sheetConfig = { ...sheetConfig, ...changes };
+    changed();
+  });
+
+  controlsColumn.append(
+    search,
+    queuePanel.element,
+    releasePanels,
+    sheetControls.element,
+    projectControls.element,
+  );
+
+  /**
+   * Rebuilds the panels that *are* a view of the selected Release.
+   *
+   * Only those: detaching a node takes the focus inside it with it, so
+   * rebuilding the whole column would blow away the caret and the queue's
+   * scroll position on every selection change — which is most of what the
+   * collector does.
+   */
+  function showSelectedRelease(): void {
     const entry = selected();
     if (!entry) return;
     selectedId = entry.design.release.id;
@@ -246,22 +299,10 @@ export function createWorkspace(): HTMLElement {
       }));
     });
 
-    const sheetControls = createSheetControls(sheetConfig, (changes) => {
-      sheetConfig = { ...sheetConfig, ...changes };
-      changed();
-    });
-
-    clear(controlsColumn);
-    controlsColumn.append(
-      search,
-      queuePanel.element,
-      form.element,
-      designControls,
-      labelControls,
-      sheetControls,
-      projectControls.element,
-    );
-    queuePanel.show(queue, selectedId);
+    clear(releasePanels);
+    releasePanels.append(form.element, designControls, labelControls);
+    // No `queuePanel.show` here: every caller refreshes straight afterwards,
+    // and rendering the list twice destroys the focus in it twice.
   }
 
   function applyProject(next: Project): void {
@@ -273,6 +314,7 @@ export function createWorkspace(): HTMLElement {
       selectedId = queue[0]?.design.release.id ?? '';
     }
     sheetConfig = next.sheet;
+    sheetControls.show(sheetConfig);
     selectionChanged();
   }
 
@@ -280,7 +322,7 @@ export function createWorkspace(): HTMLElement {
   // it on the way out closes that.
   window.addEventListener('pagehide', () => saveSoon.flush());
 
-  renderControls();
+  showSelectedRelease();
   refresh();
 
   // Fonts are bundled but still load asynchronously, and a unicode-range subset

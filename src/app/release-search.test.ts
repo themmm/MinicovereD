@@ -36,10 +36,25 @@ describe('reading a pasted batch', () => {
     expect(parseBatchLines('\n  \nA — B\n\n')).toHaveLength(1);
   });
 
-  it('gives every line an id of its own, even two identical ones', () => {
-    const ids = parseBatchLines('A — B\nA — B').map(({ id }) => id);
+  it('gives two different lines two ids, so the queue can tell them apart', () => {
+    const ids = parseBatchLines('A — B\nC — D').map(({ id }) => id);
 
     expect(new Set(ids).size).toBe(2);
+  });
+
+  it('gives the same line the same id, so pasting it twice queues one Release', () => {
+    // The id becomes the Release id of a lookup that finds nothing. Keyed by
+    // position, the same unfindable line twice would put two identical rows in
+    // the queue for the collector to complete by hand.
+    const ids = parseBatchLines('A — B\nA — B').map(({ id }) => id);
+
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it('separates on a figure dash and a minus sign too, because people paste them', () => {
+    const wanted = parseBatchLines('A ‒ One\nB − Two');
+
+    expect(wanted.map(({ album }) => album)).toEqual(['One', 'Two']);
   });
 });
 
@@ -67,6 +82,12 @@ describe('saying how a batch went', () => {
 
   it('admits when a whole batch was already queued', () => {
     expect(describeBatch(0, 2, 0)).toBe('Nothing new to add; 2 were already in the queue.');
+  });
+
+  it('counts the three clauses as a partition, never overlapping', () => {
+    // `failed` is counted over what was added, so a re-run of a batch that had
+    // one failure says nothing new needs a hand — because nothing new arrived.
+    expect(describeBatch(0, 5, 0)).toBe('Nothing new to add; 5 were already in the queue.');
   });
 
   it('says all three things at once when all three happened', () => {
