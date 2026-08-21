@@ -12,9 +12,23 @@ Design and print MiniDisc J-Cards, back cards, and cartridge labels — print-ac
 - **Local-first**: installable PWA that works offline; designs autosave in the browser and travel as a single project file.
 - **FOSS-only** dependencies and assets, licenses honored.
 
+## Development
+
+```sh
+npm install
+npm run dev              # local dev server
+npm test                 # seam tests (SheetRenderer, SheetPacker, MetadataAdapter)
+npm run typecheck
+npm run build:all        # dist/pwa (hosted, installable) + dist/singlefile (one .html)
+```
+
+`npm run build:pwa` produces the hosted, installable, offline-capable build; `npm run build:singlefile`
+produces the self-contained `index.html` that opens by double-click (ADR-0002). Both bundle the same
+OFL fonts, so neither needs the network.
+
 ## Status
 
-Planning is complete; implementation runs ticket by ticket.
+Implementation runs ticket by ticket.
 
 - Spec: [.scratch/mdcovergen-v1/spec.md](.scratch/mdcovergen-v1/spec.md)
 - Tickets: [.scratch/mdcovergen-v1/issues/](.scratch/mdcovergen-v1/issues/)

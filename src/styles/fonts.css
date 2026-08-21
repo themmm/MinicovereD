@@ -1,0 +1,30 @@
+/*
+ * Bundled OFL fonts (ADR-0003). Nothing here touches the network at runtime:
+ * every face is part of the build and is precached by the service worker.
+ */
+
+/* Latin, Latin-ext, Greek, Cyrillic, Vietnamese and Devanagari, split into
+   unicode-range subsets by Fontsource; weight is a variable axis. */
+@import '@fontsource-variable/noto-sans/wght.css';
+
+/* CJK. Fontsource ships the Japanese subset as one face without a
+   unicode-range, so the range is declared here — otherwise the ~1 MB face
+   would be a candidate for Latin-only text as well. One weight covers the
+   whole axis; bold CJK is synthesised rather than shipping a second megabyte. */
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource/noto-sans-jp/files/noto-sans-jp-japanese-400-normal.woff2') format('woff2');
+  unicode-range: U+2E80-2FDF, U+3000-30FF, U+3190-319F, U+31F0-31FF, U+3220-325F, U+3280-32FF,
+    U+3300-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE10-FE19, U+FE30-FE6F, U+FF00-FFEF,
+    U+1B000-1B001, U+1F200-1F251, U+20000-2FA1F;
+}
+
+:root {
+  /* The stack every Part and every piece of UI renders with. Noto Sans first,
+     Noto Sans JP for CJK, then the system for whatever neither covers. */
+  --font-sans: 'Noto Sans Variable', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
