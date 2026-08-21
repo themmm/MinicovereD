@@ -11,6 +11,8 @@ export interface QueueActions {
   select(releaseId: string): void;
   move(releaseId: string, offset: number): void;
   remove(releaseId: string): void;
+  /** Start a Release nobody can look up — a mixtape, a promo, a home recording. */
+  addByHand(): void;
 }
 
 export interface QueuePanel {
@@ -22,12 +24,23 @@ export function createQueuePanel(actions: QueueActions): QueuePanel {
   const list = el('ol', { class: 'queue' });
   const summary = el('p', { class: 'panel__hint' });
 
+  // The only route to a Release the database has never heard of, once the
+  // empty state has been left behind — and the only one at all without a
+  // network, which is the state this app promises to keep working in.
+  const addByHand = el('button', {
+    class: 'button',
+    text: 'Add a Release by hand',
+    attrs: { type: 'button', id: 'add-by-hand' },
+    on: { click: () => actions.addByHand() },
+  });
+
   const element = el(
     'section',
     { class: 'panel' },
     el('h2', { class: 'panel__title', text: 'Queue' }),
     summary,
     list,
+    addByHand,
   );
 
   function row(entry: QueueEntry, index: number, count: number, selected: boolean): HTMLElement {
@@ -126,12 +139,11 @@ export function createQueuePanel(actions: QueueActions): QueuePanel {
       const scrolled = list.scrollTop;
       clear(list);
       const failed = queue.filter((entry) => entry.status === 'failed').length;
-      summary.textContent =
-        queue.length === 0
-          ? 'Nothing queued yet. Search for a Release, or fill the form in by hand.'
-          : `${queue.length} ${queue.length === 1 ? 'Release' : 'Releases'} queued${
-              failed > 0 ? `, ${failed} still needing a hand` : ''
-            }. Select one to edit it.`;
+      // The empty case is not written here: this whole panel gives way to the
+      // empty state when there is nothing queued.
+      summary.textContent = `${queue.length} ${
+        queue.length === 1 ? 'Release' : 'Releases'
+      } queued${failed > 0 ? `, ${failed} still needing a hand` : ''}. Select one to edit it.`;
 
       for (const [index, entry] of queue.entries()) {
         list.appendChild(row(entry, index, queue.length, entry.design.release.id === selectedId));

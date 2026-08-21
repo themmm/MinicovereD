@@ -91,7 +91,12 @@ export function createAboutDialog(): HTMLDialogElement {
   body.appendChild(fontSpecimen());
 
   for (const group of GROUPS) {
-    const entries = ATTRIBUTIONS.filter((entry) => entry.kind === group.kind);
+    // The single-file build registers no service worker (ADR-0002), so it does
+    // not contain workbox. Crediting it there would credit code that is not in
+    // the file the reader is holding.
+    const entries = ATTRIBUTIONS.filter(
+      (entry) => entry.kind === group.kind && !(entry.pwaOnly && __SELF_CONTAINED_BUILD__),
+    );
     if (entries.length === 0) continue;
     body.appendChild(el('h3', { class: 'about__group-title', text: group.title }));
     for (const entry of entries) body.appendChild(creditEntry(entry));

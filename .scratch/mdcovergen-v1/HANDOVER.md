@@ -14,10 +14,11 @@ Written mid-run so a fresh session can pick this up without re-deriving anything
 | 06 Label presets, notch, calibration sheet | **merged** — [PR #6](https://github.com/themmm/mdcovergen/pull/6) |
 | 07 tracklist overflow, Unicode hardening | **merged** — [PR #7](https://github.com/themmm/mdcovergen/pull/7) |
 | 08 autosave + project files | **merged** — [PR #8](https://github.com/themmm/mdcovergen/pull/8) |
-| 09 batch queue | **reviewed, fixed, ready to merge** — branch `ticket-09-batch-queue` |
-| 10 release polish | **in progress** — two of its four criteria already hold; see below |
+| 09 batch queue | **merged** — [PR #9](https://github.com/themmm/mdcovergen/pull/9) |
+| 10 release polish | **reviewed, fixed, ready to merge** — branch `ticket-10-release-polish` |
+| 11 register, rename, Part preview | **not started** — written by another session; read ADR-0008/0009/0010 first |
 
-231 tests, `tsc --noEmit` clean, both builds green.
+239 tests, `tsc --noEmit` clean, both builds green.
 
 ## What ticket 09 turned into
 
@@ -67,41 +68,65 @@ that was pressed; `pick()` can no longer strand the search panel disabled.
   a panel heading, a persisted flag — and the glossary has neither. Not done because another
   session has uncommitted edits to that file (see below).
 
-## Ticket 10 — what it asks for
+## What ticket 10 turned into
 
-`.scratch/mdcovergen-v1/issues/10-release-polish.md`: offline caching of fetched artwork; an
-empty/onboarding state leading to the first Release; a final ADR-0003 attribution completeness
-check; the single-file HTML artifact as a release deliverable.
+Two of its four criteria **already held**, and were verified rather than assumed.
 
-Two of its four criteria **already hold**, verified rather than assumed:
+- *Offline, including artwork.* Artwork is a `data:` URL inside the Release and the shell is
+  precached, so nothing has to be re-fetched. `verify-t10-offline.mjs` takes away all four sources
+  — HTTP cache disabled, network emulated offline, origin server killed, metadata stub failing
+  every request — and finds the queue restored, the cover art with it, the Sheet rendering
+  pixel-identically to the online render, and a 210×297 mm PDF exported with no network at all.
+- *The single-file artifact.* `verify-t10-singlefile.mjs` loads it over `file://`: nothing left to
+  fetch, no service worker, all nine unicode-range font subsets inlined, and a Release typed by
+  hand exporting a PDF.
 
-- *"renders and exports previously fetched designs including artwork while fully offline"* —
-  `verify-t10-offline.mjs` takes away all four sources (HTTP cache disabled, network emulated
-  offline, origin server killed, metadata stub failing every request), reloads, and finds the queue
-  restored, the fetched cover art with it, the Sheet rendering **pixel-identically** to the online
-  render, and a 210×297 mm PDF exported with no network at all. The negative control — a Release
-  fetched with no cover on file — still has none, so nothing is inventing artwork.
-- *"the single-file HTML artifact builds and boots by double-click"* — `verify-t10-singlefile.mjs`
-  loads `dist/singlefile/index.html` over `file://`, confirms nothing is left to fetch, no service
-  worker is registered, both bundled faces load from the inlined data, and a Release typed by hand
-  exports a 210×297 mm PDF. No request fails.
+The other two needed work.
 
-The two that need work:
+**The empty state.** The example Release is gone. A first visit opens on a panel naming both routes
+to a first Release, placed *first* in the column — onboarding below the fold is not onboarding —
+and swapping with the Queue panel rather than sitting beside it. Removing the last Release leaves
+the empty state instead of resurrecting a placeholder, and takes the Sheet off the canvas with it.
+The Queue panel carries the same "add by hand" route, because a mixtape is not something a database
+can be asked for and a collector has more than one.
 
-- **The empty state.** `EXAMPLE_RELEASE` in `src/app/workspace.ts` is the placeholder it replaces.
-  Ticket 09 already made the example give way to the collector's first real Release; ticket 10
-  should remove it. Watch two things: `showSelectedRelease()` returns early when there is no
-  selected entry, and `sheet-preview.ts` leaves the last raster on the canvas when it is handed no
-  Sheets, saying "Nothing to print — choose at least one Part" — which is the wrong sentence for an
-  empty queue and the wrong picture for any of it.
-- **Attribution completeness — there is a real gap.** `workbox-window` 7.4.1 (MIT) ships in
-  `dist/pwa/assets/`, and the generated `sw.js` pulls workbox runtime chunks. It is not in
-  `ATTRIBUTIONS`, and the existing test *cannot* see it: `shippedPackages()` walks the root
-  `dependencies`, and workbox arrives through `vite-plugin-pwa`, a devDependency. The other shipped
-  non-code assets are `assets/logo.svg` (the project's own Mark), `assets/minidisc-logo.svg`
-  (attributed, ADR-0004) and `public/icons/*.png` (three renders of the Mark). A completeness check
-  that walks what the build actually emits, rather than what `package.json` declares, is the
-  test this criterion is asking for.
+One trap worth knowing: **starting a Release counts as an edit, and an edit beats a late restore.**
+A returning collector who pressed the button before IndexedDB answered would have lost their whole
+queue, silently. The button waits for the store and says so. The broader version of that race —
+a batch or an import landing while the restore is in flight — is still open; see below.
+
+**Attribution completeness, which found a real gap.** `workbox-window`, `workbox-core`,
+`workbox-precaching`, `workbox-routing` and `workbox-strategies` all ship in the hosted build —
+vite-plugin-pwa compiles two into the page and workbox-build generates the service worker out of
+the rest — and none were credited. The old check could not see them: it walked the runtime
+`dependencies`, and workbox arrives through a devDependency.
+
+The check now covers three things it did not:
+- **packages that ship without being dependencies**, listed explicitly and then *verified against a
+  real build* — workbox stamps its own module names into its own code, so when `dist/pwa` is
+  present the suite reads them back and fails if the list has drifted;
+- **assets**, under `assets/`, `public/` and `src/` alike: every file that is not code must be
+  attributed or claimed as this project's own work. A font dropped under `src/` used to ship
+  unexamined;
+- **the single-file build's dialog**, which was crediting workbox it does not contain.
+
+Both new checks were confirmed by making them fail on purpose, not by trusting a green run.
+
+### Deliberately not done in tickets 09 and 10
+
+- **An import or a late restore can land while a batch is running.** The batch's entries are then
+  appended to the newly-imported queue, seconds after the app said "your previous work has been
+  replaced". Needs a `busy()` predicate on the search panel. Ticket 10 closed the version of this
+  that the empty-state button opened; this one is older and wider.
+- **A pasted line with no separator is searched as an artist.** Sending it as an unfielded
+  free-text query — what MusicBrainz's own search box does — would find artists and albums alike,
+  but it changes `searchTerm` in the adapter, which is a shared seam and a product decision.
+- **A single lookup inherits the selected Release's design; a batch entry gets the defaults.**
+  Same user intent, two outcomes. Worth deciding deliberately rather than by accident.
+- **`CONTEXT.md` needs `Queue` and `Queue Entry`,** and a correction to `Label`. Blocked on another
+  session's uncommitted edits to that file — see below.
+- **The version is still `0.1.0`,** which is what the app tells MusicBrainz it is (ADR-0006). That
+  is accurate today: ticket 11 exists, so v1 is not finished. Bump it when it is.
 
 ## The workflow being followed
 
@@ -158,7 +183,8 @@ two parallel agents were killed mid-run once when the machine was loaded. Give i
 - `verify-t09-stub.mjs` — the whole of ticket 09 deterministically: nineteen checks from the batch
   of five through reorder, remove, Part toggles and the packed PDF to a reload. **Use this one**;
   the live driver depends on two third parties having a good day.
-- `verify-t10-offline.mjs`, `verify-t10-singlefile.mjs` — ticket 10's first and last criteria
+- `verify-t10-empty.mjs`, `verify-t10-offline.mjs`, `verify-t10-singlefile.mjs`,
+  `verify-t10-about.mjs` — ticket 10's four criteria, one driver each
 - `probe-t09-live.mjs` — drives a live batch and prints every request with how long it took and how
   it ended. This is what found the Cover Art Archive latency; reach for it when live and stubbed
   runs disagree.
@@ -177,6 +203,7 @@ printing inside the margin in 02, and the unloaded CJK font in 07.
   in the working tree**. Leave them alone; stage only your own files. Note that 0008 governs the
   visual register, so anything that changes how the app *looks* — the ticket 10 empty state
   included — should stay functional and neutral rather than making brand decisions in their lane.
+  They have since added ADR-0010 and ticket 11, which is where that work lands.
 - **MusicBrainz rate-limits by IP.** Probing earns 503s that persist for minutes. Space live checks
   out, and remember the adapter retries 503 twice with backoff. The Cover Art Archive is a separate
   problem: it redirects to `*.archive.org` storage nodes whose latency swings between two seconds

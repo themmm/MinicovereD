@@ -40,9 +40,36 @@ export interface Attribution {
   readonly url: string;
   /** The npm package this entry covers, when it covers one. */
   readonly packageName?: string;
+  /**
+   * Repo-relative files this entry covers, for anything that is not an npm
+   * package. The completeness check reads these, so an asset added to the
+   * build without a line here fails the suite rather than shipping unexamined.
+   */
+  readonly files?: readonly string[];
+  /**
+   * Set when the entry ships in the hosted PWA only. The single-file build
+   * registers no service worker (ADR-0002), so crediting workbox there would
+   * credit code that is not in the file the reader is holding.
+   */
+  readonly pwaOnly?: true;
   /** Anything a reader needs to know beyond the license — a trademark, say. */
   readonly note?: string;
 }
+
+/**
+ * Files that ship and that this project drew itself.
+ *
+ * Nobody has to be credited for them, but they still have to be *accounted
+ * for*: ADR-0003 is a promise about everything that reaches a user, and the
+ * only way to keep it is for every shipped file to be either attributed or
+ * claimed. Adding an icon without adding it here fails the compliance test.
+ */
+export const OWN_ARTWORK: readonly string[] = [
+  'assets/logo.svg',
+  'public/icons/icon-192.png',
+  'public/icons/icon-512.png',
+  'public/icons/icon-maskable-512.png',
+];
 
 const LICENSE_TEXTS: Readonly<Record<string, string>> = {
   MIT: mit,
@@ -96,6 +123,21 @@ export const DATA_SOURCES: readonly DataSource[] = [
   },
 ];
 
+/**
+ * The workbox modules that reach the browser in the hosted build: two in the
+ * page (`workbox-window`, which pulls `workbox-core` in with it) and four in
+ * the generated service worker.
+ */
+export const WORKBOX_MODULES = [
+  'workbox-window',
+  'workbox-core',
+  'workbox-precaching',
+  'workbox-routing',
+  'workbox-strategies',
+] as const;
+
+const WORKBOX_VERSION = '7.4.1';
+
 export const ATTRIBUTIONS: readonly Attribution[] = [
   {
     name: 'Noto Sans',
@@ -122,6 +164,7 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     license: 'LicenseRef-PD-textlogo',
     copyright: 'Sony Corporation',
     url: 'https://commons.wikimedia.org/wiki/File:MiniDisc-Logo.svg',
+    files: ['assets/minidisc-logo.svg'],
     note:
       'MiniDisc is a trademark of Sony. The mark is below the threshold of originality for ' +
       'copyright and is bundled as an optional asset that any design can switch off (ADR-0004).',
@@ -162,6 +205,25 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     url: 'https://github.com/nodeca/pako',
     packageName: 'pako',
   },
+  // Not dependencies of this project — vite-plugin-pwa compiles workbox into
+  // the page to register the service worker, and workbox-build generates the
+  // service worker itself out of the other four. All of it ships, so all of it
+  // is attributed; ADR-0003 is about what reaches the user, not about which
+  // section of package.json a name sits in. The set is not guesswork: each of
+  // these stamps its own name into the built files, and the compliance test
+  // reads those stamps back.
+  ...WORKBOX_MODULES.map(
+    (packageName): Attribution => ({
+      name: packageName,
+      kind: 'library',
+      version: WORKBOX_VERSION,
+      license: 'MIT',
+      copyright: 'Copyright 2018 Google LLC',
+      url: 'https://github.com/GoogleChrome/workbox',
+      packageName,
+      pwaOnly: true,
+    }),
+  ),
   {
     name: 'tslib',
     kind: 'library',

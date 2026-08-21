@@ -1,8 +1,7 @@
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
 import type { LabelDimensions } from '../domain/parts.ts';
-import type { Release } from '../domain/release.ts';
-import { parseTracklist } from '../domain/tracklist.ts';
+import { blankRelease } from '../domain/release.ts';
 import { errorMessage } from '../errors.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
@@ -23,6 +22,7 @@ import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
 import { createDesignControls } from './design-controls.ts';
 import { clear, el } from './dom.ts';
+import { createEmptyState } from './empty-state.ts';
 import { createLabelControls } from './label-controls.ts';
 import { createProjectControls } from './project-controls.ts';
 import { createQueuePanel } from './queue-panel.ts';
@@ -40,33 +40,6 @@ import { createSheetPreview } from './sheet-preview.ts';
 /** Long enough that typing does not write on every keystroke, short enough to survive a reload. */
 const AUTOSAVE_DELAY_MS = 600;
 
-/**
- * What a first-time visitor opens on, so the live preview shows something
- * immediately. Ticket 10 replaces it with the empty state that walks them to
- * their own first Release. A returning visitor gets their own work instead.
- */
-const EXAMPLE_RELEASE: Release = {
-  id: 'release-1',
-  artist: 'Glen Campbell',
-  album: 'Wichita Lineman',
-  year: '1968',
-  notes: 'Capitol · ST-103',
-  tracks: parseTracklist(
-    [
-      'Wichita Lineman',
-      'Dreams of the Everyday Housewife',
-      'Ann',
-      'Reason to Believe',
-      'You Better Sit Down Kids',
-      'If You Go Away',
-      'Fate of Man',
-      'Words',
-      'Baby Please Don’t Go',
-      'That Keeps It Hangin’ On',
-    ].join('\n'),
-  ),
-};
-
 /** What a Release is designed with until the collector changes any of it. */
 const DEFAULT_DESIGN = {
   templateId: 'classic',
@@ -74,11 +47,11 @@ const DEFAULT_DESIGN = {
   dimensions: DEFAULT_PART_DIMENSIONS,
 } as const satisfies Omit<ReleaseDesign, 'release'>;
 
-const exampleDesign = (): ReleaseDesign => ({ ...DEFAULT_DESIGN, release: EXAMPLE_RELEASE });
-
 export function createWorkspace(): HTMLElement {
-  let queue: QueueEntry[] = [readyEntry(exampleDesign())];
-  let selectedId: string = EXAMPLE_RELEASE.id;
+  // Nothing until the collector has something. A first visit is the empty
+  // state; a returning one is whatever this browser saved.
+  let queue: QueueEntry[] = [];
+  let selectedId = '';
   let sheetConfig: SheetConfig = {
     paper: A4,
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
@@ -132,6 +105,7 @@ export function createWorkspace(): HTMLElement {
   });
 
   const queuePanel = createQueuePanel({
+    addByHand: () => startReleaseByHand(),
     select: (releaseId) => {
       selectedId = releaseId;
       showSelectedRelease();
@@ -143,8 +117,9 @@ export function createWorkspace(): HTMLElement {
     },
     remove: (releaseId) => {
       queue = removeFromQueue(queue, releaseId);
-      if (queue.length === 0) queue = [readyEntry(exampleDesign())];
-      // Removing what was selected moves the form to whatever is left.
+      // Removing what was selected moves the form to whatever is left — and
+      // removing the last one is allowed to leave nothing, which is the empty
+      // state again rather than an error.
       if (!queue.some((entry) => entry.design.release.id === selectedId)) {
         selectedId = queue[0]?.design.release.id ?? '';
         selectionChanged();
@@ -164,7 +139,11 @@ export function createWorkspace(): HTMLElement {
   function refresh(): void {
     queuePanel.show(queue, selectedId);
     try {
-      preview.show(renderSheets(queueDesigns(queue), sheetConfig, measure), fileNameFor(queue));
+      preview.show(
+        renderSheets(queueDesigns(queue), sheetConfig, measure),
+        fileNameFor(queue),
+        queue.length === 0 ? 'No Sheets yet — start with a Release.' : undefined,
+      );
     } catch (error) {
       preview.showProblem(errorMessage(error));
     }
@@ -188,16 +167,18 @@ export function createWorkspace(): HTMLElement {
   }
 
   /**
-   * Drops the example Release the moment the collector has one of their own.
-   *
-   * It is there so a first visit has something on the Sheet, not because
-   * anybody asked for Glen Campbell — and a batch of five that produces a
-   * queue of six is the tool arguing with the person using it. `edited` is the
-   * test: untouched means nobody has adopted it.
+   * A Release of the collector's own, ready to type into. Reachable from the
+   * empty state and from the Queue, because a mixtape is not something a
+   * database can be asked for — and neither is a second one.
    */
-  function makeRoomForRealWork(): void {
-    if (edited) return;
-    if (queue.length === 1 && queue[0]?.design.release.id === EXAMPLE_RELEASE.id) queue = [];
+  function startReleaseByHand(): void {
+    const release = blankRelease();
+    queue = addToQueue(queue, readyEntry({ ...DEFAULT_DESIGN, release }));
+    selectedId = release.id;
+    selectionChanged();
+    // The form is the whole point of pressing the button; land the caret in it
+    // rather than making them go and find it.
+    controlsColumn.querySelector<HTMLInputElement>('#field-artist')?.focus();
   }
 
   /** Replaces the selected entry, leaving the rest of the queue alone. */
@@ -221,16 +202,14 @@ export function createWorkspace(): HTMLElement {
     metadata,
     (found) => {
       // A looked-up Release joins the queue and becomes the one being edited,
-      // keeping the design settings of whichever Release was on screen — the
-      // defaults only if there was none, never the example's own metadata.
+      // keeping the design settings of whichever Release was on screen, so a
+      // second lookup matches the first rather than reverting to plain.
       const settings = selected()?.design ?? DEFAULT_DESIGN;
-      makeRoomForRealWork();
       queue = addToQueue(queue, readyEntry({ ...settings, release: found }));
       selectedId = found.id;
       selectionChanged();
     },
     (entries) => {
-      makeRoomForRealWork();
       const added: QueueEntry[] = [];
       for (const entry of entries) {
         // addToQueue refuses a Release already queued, so the queue growing is
@@ -257,7 +236,15 @@ export function createWorkspace(): HTMLElement {
     changed();
   });
 
+  /**
+   * First in the column, because onboarding below the fold is not onboarding.
+   * It swaps with the Queue panel rather than sitting alongside it: an empty
+   * list saying "nothing queued yet" is the same sentence twice.
+   */
+  const emptyState = createEmptyState(startReleaseByHand);
+
   controlsColumn.append(
+    emptyState.element,
     search,
     queuePanel.element,
     releasePanels,
@@ -275,7 +262,13 @@ export function createWorkspace(): HTMLElement {
    */
   function showSelectedRelease(): void {
     const entry = selected();
-    if (!entry) return;
+    emptyState.element.hidden = !!entry;
+    queuePanel.element.hidden = !entry;
+    clear(releasePanels);
+    if (!entry) {
+      selectedId = '';
+      return;
+    }
     selectedId = entry.design.release.id;
     const { design } = entry;
 
@@ -301,7 +294,6 @@ export function createWorkspace(): HTMLElement {
       }));
     });
 
-    clear(releasePanels);
     releasePanels.append(form.element, designControls, labelControls);
     // No `queuePanel.show` here: every caller refreshes straight afterwards,
     // and rendering the list twice destroys the focus in it twice.
@@ -333,15 +325,23 @@ export function createWorkspace(): HTMLElement {
   void fontsReady().then(refresh);
   onFontsLoaded(refresh);
 
-  // Whatever this browser last held, if anything.
+  // Whatever this browser last held, if anything. Until this settles, the
+  // empty state does not offer to start anything: an edit beats a late
+  // restore, so a click made before the answer arrives would discard a queue
+  // the collector was never shown.
+  emptyState.setRestoring(true);
   void store
     .load()
     .then((saved) => {
-      if (!saved || saved.entries.length === 0) return;
+      if (!saved) return;
       // Reading the store is asynchronous, and a fast typist can be mid-word
       // before it answers. Their edit wins; the saved copy is already theirs.
       if (edited) return;
       applyProject(saved);
+      // An empty queue is a real thing to have saved — the collector printed
+      // their sheets and cleared it. Their paper and margin still come back;
+      // there is just nothing to announce.
+      if (saved.entries.length === 0) return;
       const needing = saved.entries.filter((entry) => entry.status === 'failed').length;
       projectControls.report(
         `Restored ${saved.entries.length} ${
@@ -353,7 +353,8 @@ export function createWorkspace(): HTMLElement {
       projectControls.report(
         `Could not read this browser's saved work: ${errorMessage(error)}. Starting fresh.`,
       );
-    });
+    })
+    .finally(() => emptyState.setRestoring(false));
 
   return el('div', { class: 'workspace' }, controlsColumn, preview.element);
 }

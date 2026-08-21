@@ -18,8 +18,14 @@ const DOWNLOAD_URL_LIFETIME_MS = 30_000;
 
 export interface SheetPreview {
   readonly element: HTMLElement;
-  /** Show `sheets`, keeping the current Sheet where it still exists. */
-  show(sheets: readonly SheetLayout[], fileName: string): void;
+  /**
+   * Show `sheets`, keeping the current Sheet where it still exists.
+   *
+   * `whenEmpty` says why there is nothing, when there is nothing. There is
+   * more than one reason — no Releases queued, or no Parts chosen — and only
+   * the caller knows which.
+   */
+  show(sheets: readonly SheetLayout[], fileName: string, whenEmpty?: string): void;
   /** Report a problem instead of a stale Sheet. */
   showProblem(message: string): void;
 }
@@ -132,29 +138,35 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   );
   pager.hidden = true;
 
+  /** Nothing to show: say so, and take the last Sheet off the screen with it. */
+  function showNothing(message: string): void {
+    redrawToken++;
+    sheets = [];
+    exportButton.setAttribute('disabled', '');
+    pager.hidden = true;
+    warnings.hidden = true;
+    status.textContent = message;
+    // Leaving the previous raster up would show a Sheet that is no longer
+    // being described by anything on the page.
+    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
   return {
     element,
-    show(nextSheets, nextFileName) {
+    show(nextSheets, nextFileName, whenEmpty) {
       sheets = nextSheets;
       fileName = nextFileName;
       sheetIndex = Math.min(sheetIndex, Math.max(sheets.length - 1, 0));
-      exportButton.toggleAttribute('disabled', sheets.length === 0);
       if (sheets.length === 0) {
-        status.textContent = 'Nothing to print — choose at least one Part.';
-        pager.hidden = true;
-        warnings.hidden = true;
+        showNothing(whenEmpty ?? 'Nothing to print — choose at least one Part.');
         return;
       }
+      exportButton.removeAttribute('disabled');
       void redraw();
     },
-    showProblem(message) {
-      redrawToken++;
-      sheets = [];
-      exportButton.setAttribute('disabled', '');
-      pager.hidden = true;
-      warnings.hidden = true;
-      status.textContent = message;
-    },
+    showProblem: showNothing,
   };
 }
 
