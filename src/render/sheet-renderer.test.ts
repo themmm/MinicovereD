@@ -493,3 +493,51 @@ describe('SheetRenderer — Template parameters', () => {
     expect(spineText?.op === 'text' && spineText.text).toBe('Glen Campbell — Wichita Lineman');
   });
 });
+
+describe('SheetRenderer — Label dimensions', () => {
+  const labelPlacement = (label: {
+    width: number;
+    height: number;
+    notch: boolean;
+    notchSize: number;
+  }) => {
+    const design: ReleaseDesign = {
+      ...aDesign(),
+      dimensions: { ...DEFAULT_PART_DIMENSIONS, label },
+    };
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const placement = sheet?.placements.find((candidate) => candidate.part === 'label');
+    if (!placement) throw new Error('no Label placed');
+    return placement;
+  };
+
+  it('cuts the Label to whatever size the Release is set to', () => {
+    const classic = labelPlacement({ width: 35, height: 52.5, notch: true, notchSize: 6 });
+    const full = labelPlacement({ width: 38, height: 54, notch: false, notchSize: 6 });
+
+    expectMm(classic.bounds.width, 35, 'Classic width');
+    expectMm(classic.bounds.height, 52.5, 'Classic height');
+    expectMm(full.bounds.width, 38, 'Full width');
+    expectMm(full.bounds.height, 54, 'Full height');
+  });
+
+  it('follows a size nudged in tenths of a millimetre', () => {
+    const nudged = labelPlacement({ width: 36.4, height: 53.1, notch: true, notchSize: 6 });
+
+    expectMm(nudged.bounds.width, 36.4, 'nudged width');
+    expectMm(nudged.bounds.height, 53.1, 'nudged height');
+  });
+
+  it('puts the diagonal corner into the cutting guide, or squares it off', () => {
+    const notched = labelPlacement({ width: 35, height: 52.5, notch: true, notchSize: 6 });
+    const square = labelPlacement({ width: 35, height: 52.5, notch: false, notchSize: 6 });
+
+    const cutOf = (placement: { guides: readonly { kind: string; points: readonly { x: number; y: number }[] }[] }) =>
+      placement.guides.find((guide) => guide.kind === 'cut')?.points ?? [];
+
+    expect(cutOf(notched)).toHaveLength(5);
+    expect(cutOf(notched).some((point) => point.x === 35 && point.y === 0)).toBe(false);
+    expect(cutOf(square)).toHaveLength(4);
+    expect(cutOf(square)).toContainEqual({ x: 35, y: 0 });
+  });
+});
