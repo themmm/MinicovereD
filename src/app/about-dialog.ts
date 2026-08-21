@@ -13,6 +13,29 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
   { kind: 'library', title: 'Bundled libraries' },
 ];
 
+/** Lines that only render completely from the bundled fonts — the offline typography proof. */
+const FONT_SPECIMEN: ReadonlyArray<{ script: string; sample: string; weight?: 'bold' }> = [
+  { script: 'Latin', sample: 'Wichita Lineman — Glen Campbell' },
+  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak' },
+  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel' },
+  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ' },
+  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold' },
+];
+
+function fontSpecimen(): HTMLElement {
+  const list = el('dl', { class: 'specimen' });
+  for (const row of FONT_SPECIMEN) {
+    list.appendChild(el('dt', { text: row.script }));
+    list.appendChild(
+      el('dd', {
+        text: row.sample,
+        ...(row.weight ? { attrs: { 'data-weight': row.weight } } : {}),
+      }),
+    );
+  }
+  return list;
+}
+
 function creditEntry(attribution: Attribution): HTMLElement {
   return el(
     'div',
@@ -61,6 +84,9 @@ export function createAboutDialog(): HTMLDialogElement {
         'no data leaves this device. Everything it ships is free and open source:',
     }),
   );
+
+  body.appendChild(el('h3', { class: 'about__group-title', text: 'Typography, offline' }));
+  body.appendChild(fontSpecimen());
 
   for (const group of GROUPS) {
     const entries = ATTRIBUTIONS.filter((entry) => entry.kind === group.kind);
