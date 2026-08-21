@@ -16,6 +16,11 @@ export function createCanvasTextMeasurer(): TextMeasurer {
 
   const cache = new Map<string, number>();
 
+  // A width measured before its face arrived is a width against the fallback,
+  // and caching it would outlive the font load. Every face that finishes
+  // loading invalidates what was measured without it.
+  document.fonts.addEventListener('loadingdone', () => cache.clear());
+
   return {
     widthMm(text: string, style: TextStyle): number {
       const font = fontFor(style, MEASURE_PX_PER_MM);
