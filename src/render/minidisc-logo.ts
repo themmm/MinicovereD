@@ -18,9 +18,25 @@ const LOGO_HEIGHT_PX = 504;
 /** Width over height, so a caller can reserve the right box for it. */
 export const MINIDISC_LOGO_ASPECT = LOGO_WIDTH_PX / LOGO_HEIGHT_PX;
 
+/**
+ * The recolour substitutes into SVG markup, so the value has to be a colour and
+ * nothing else. Colours reach here from a `<input type="color">` today and from
+ * an imported project file tomorrow, and an imported file is not trustworthy.
+ * An SVG in an `<img>` cannot run script, but a broken one does not draw at all
+ * — and neither outcome is worth allowing.
+ */
+const SAFE_COLOR = /^#[0-9a-f]{3,8}$|^[a-z]{3,20}$/i;
+
+const FALLBACK_COLOR = 'black';
+
+export function safeLogoColor(color: string): string {
+  return SAFE_COLOR.test(color.trim()) ? color.trim() : FALLBACK_COLOR;
+}
+
 const cache = new Map<string, ImageSource>();
 
-export function miniDiscLogo(color: string): ImageSource {
+export function miniDiscLogo(requestedColor: string): ImageSource {
+  const color = safeLogoColor(requestedColor);
   const cached = cache.get(color);
   if (cached) return cached;
 
