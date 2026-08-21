@@ -128,8 +128,13 @@ export function partShape(part: PartKind, dimensions: PartDimensions): PartShape
     case 'back-card':
       return rectangle({ width: dimensions.backCard.width, height: dimensions.backCard.height });
     case 'label': {
-      const { width, height, notch, notchSize } = dimensions.label;
+      const { width, height, notch } = dimensions.label;
+      // Clamped to half the shorter edge: a notch bigger than the Label would
+      // fold the outline through itself into negative coordinates, and a Label
+      // is not a triangle. Project files are not trusted to be sane.
+      const notchSize = Math.min(dimensions.label.notchSize, width / 2, height / 2);
       if (!notch || notchSize <= 0) return rectangle({ width, height });
+
       // The cartridge's diagonally cut corner (CONTEXT.md: Label).
       return {
         size: { width, height },

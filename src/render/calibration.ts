@@ -280,9 +280,9 @@ export function renderCalibrationSheet(
       });
     }
 
-    // A caption may spill into the gap beside its figure but never as far as
-    // the next one's, or two captions run into each other on the paper.
-    const captionWidth = figure.bounds.width + GAP;
+    // A caption may spill into the gap beside its figure but has to stop short
+    // of the next one, or two captions touch on the paper.
+    const captionWidth = figure.bounds.width + GAP / 2;
     const captionTop = figure.bounds.y + figure.bounds.height + CAPTION_GAP;
     const sheetOps = ops[figure.sheet] as DrawOp[];
     sheetOps.push(
