@@ -1,20 +1,71 @@
 @import './fonts.css';
 
+/*
+ * The token contract (ADR-0008).
+ *
+ * Everforest Light, `sainnhe/everforest`, MIT. Twelve names, and the palette
+ * imposes three rules that are not stylistic — measured across the whole
+ * palette against its own backgrounds, `#5c6a72` is the only colour that
+ * reaches 4.5:1. Everything else tops out at 3.13 (blue) or 3.08 (grey2):
+ *
+ *   1. All text is one colour. Hierarchy is size, weight, tracking and space,
+ *      never a lighter grey — and never a lower opacity either, which is the
+ *      same thing by another route. Four shades of grey text was the previous
+ *      design's whole hierarchy and is why it read as unfinished.
+ *   2. Accents are never text. They are bars, dots, rules and fills, where 3:1
+ *      suffices. A warning is ink on a tinted field with an accent bar, not
+ *      accent-coloured text.
+ *   3. Exactly one filled control — `.button--primary`, ink-filled with paper
+ *      text at 5.18:1. No accent can carry a label: the best is blue at 3.13,
+ *      and yellow at 2.12.
+ *
+ * Four of the sixteen colours are used — blue interactive, aqua ready, yellow
+ * warning, red error. The rest are unused, and that is the point of adopting a
+ * named palette rather than inventing one.
+ *
+ * Zero hardcoded hexes live in the chrome, so the contract is switch-ready
+ * even though v1 ships no switcher. The four literals in this file are all in
+ * the print-surface block near the bottom, where being literal is the whole
+ * point.
+ */
+
 :root {
-  --ink: #0f172a;
-  --ink-soft: #475569;
-  --ink-faint: #94a3b8;
-  --surface: #ffffff;
-  --surface-sunken: #f1f5f9;
-  --page: #f8fafc;
-  --line: #e2e8f0;
-  --accent: #b45309;
-  --accent-soft: #fef3c7;
-  --shell: #15202b;
-  --shell-ink: #e2e8f0;
+  --page: #efebd4;
+  --surface: #fdf6e3;
+  --sunken: #f4f0d9;
+
+  /* The one text colour. 5.18:1 on --surface, 4.87 on --sunken, 4.66 on --page. */
+  --ink: #5c6a72;
+
+  /* Hairlines that separate, and boundaries that identify a control. Only
+     --line-strong clears 3:1 (3.08 on --surface), so it is what every control
+     gets; --line is decorative separation and makes no such claim. */
+  --line: #e0dcc7;
+  --line-strong: #829181;
+
+  /* Accents. Graphics only, per rule 2 — every one of them fails 4.5:1 as
+     text, and three of the four fail 3:1 against their own tinted field. */
+  --blue: #3a94c5;
+  --aqua: #35a77c;
+  --yellow: #dfa000;
+  --red: #f85552;
+  --fill-warn: #faedcd;
+  --fill-ok: #e9f0e9;
+
+  /* The shell band is ink, so its text is paper: the same 5.18:1 pair as the
+     filled control, inverted. --shell-line is the one border that sits on ink,
+     and 70 % paper is where it clears 3:1 (3.46) — 55 % does not (2.76). */
+  --shell: var(--ink);
+  --shell-ink: var(--surface);
+  --shell-line: color-mix(in srgb, var(--surface) 70%, transparent);
 
   --radius: 8px;
   --gap: 16px;
+
+  /* Light-only in v1 (ADR-0008): form controls and scrollbars follow, and the
+     interactive accent reaches checkboxes without a selector for each. */
+  color-scheme: light;
+  accent-color: var(--blue);
 }
 
 * {
@@ -30,9 +81,11 @@ body {
 body {
   background: var(--page);
   color: var(--ink);
-  font-family: var(--font-sans);
+  font-family: var(--font-chrome);
   font-size: 15px;
   line-height: 1.5;
+  /* A tool whose every field is a millimetre wants its digits to line up. */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -71,10 +124,11 @@ body {
   letter-spacing: 0.01em;
 }
 
+/* Rule 1: the tagline is the same paper as the title, and the 4.5 px of size
+   between them is the hierarchy. The grey it used to be was 2.56:1. */
 .shell-header__tagline {
   margin: 0;
   font-size: 12.5px;
-  color: #94a3b8;
 }
 
 .shell-main {
@@ -84,13 +138,36 @@ body {
 
 .shell-footer {
   padding: 14px 20px 22px;
-  color: var(--ink-faint);
   font-size: 12.5px;
   border-top: 1px solid var(--line);
 }
 
-.shell-footer a {
-  color: var(--ink-soft);
+/* ---------------------------------------------------------------- links -- */
+
+/*
+ * A link is never marked by its colour: blue as text is 3.13:1, so under rule 1
+ * a link is ink like everything else and the rule underneath does the marking,
+ * where 3:1 is the bar. Declared for every `a` rather than per surface, because
+ * an unstyled link falls back to the browser's own blue — which is the one
+ * colour in the chrome that no palette chose, and it was sitting in the
+ * licences dialog on every package name.
+ */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--blue);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: var(--ink);
+}
+
+a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+  text-decoration: none;
 }
 
 /* ---------------------------------------------------------------- parts -- */
@@ -118,7 +195,6 @@ body {
 
 .panel__hint {
   margin: 0 0 14px;
-  color: var(--ink-soft);
   font-size: 13px;
 }
 
@@ -128,39 +204,54 @@ body {
   font-weight: 500;
   color: var(--ink);
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   padding: 7px 13px;
   cursor: pointer;
 }
 
+/* Colour and shadow on hover, never geometry: a transform re-rasterises the
+   element and shifts the antialiasing of every 1 px border under it, which
+   reads as flickering edges. */
 .button:hover {
-  border-color: var(--ink-faint);
+  border-color: var(--ink);
+  background: var(--sunken);
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .button--onshell {
   background: transparent;
-  border-color: #33415580;
+  border-color: var(--shell-line);
   color: var(--shell-ink);
 }
 
 .button--onshell:hover {
   border-color: var(--shell-ink);
+  background: color-mix(in srgb, var(--surface) 12%, transparent);
 }
 
 .status-pill {
   font-size: 12px;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid #33415580;
-  color: #94a3b8;
+  border: 1px solid var(--shell-line);
   white-space: nowrap;
 }
 
+/*
+ * Ready is a light chip on the ink band — 4.82:1 for its edge and the same
+ * for its ink text — with the accent doing what rule 2 allows: an aqua dot,
+ * which is redundant reinforcement rather than the message. The pill's own
+ * label names the state, so nothing here is carried by colour alone.
+ */
 .status-pill[data-state='ready'] {
-  border-color: #14532d;
-  background: #052e16;
-  color: #86efac;
+  border-color: var(--aqua);
+  background: var(--fill-ok);
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------------ workspace -- */
@@ -222,7 +313,7 @@ body {
   width: 30px;
   height: 24px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 4px;
   background: none;
   cursor: pointer;
@@ -253,7 +344,6 @@ body {
 
 .pager__label {
   font-size: 12.5px;
-  color: var(--ink-faint);
   white-space: nowrap;
 }
 
@@ -268,28 +358,37 @@ body {
   margin-bottom: 12px;
 }
 
+/* The 12 px uppercase label was --ink-faint at 2.56:1 on white, which failed
+   AA outright. It is ink now, and the weight and tracking are what set it
+   apart from the value below it. */
 .field__label {
   display: block;
   font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--ink-faint);
   margin-bottom: 4px;
 }
 
+/* Sunken against a surface panel is only 1.16:1, so the field is identified by
+   its boundary, not its fill: --line-strong is 3.08:1 against the panel. */
 .field__input {
   font: inherit;
   font-size: 14px;
   width: 100%;
   padding: 7px 10px;
   color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--sunken);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
 }
 
+.field__input:hover {
+  border-color: var(--ink);
+}
+
 .field__input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--blue);
   outline-offset: 1px;
 }
 
@@ -320,19 +419,28 @@ label.button {
 .field__note {
   display: block;
   font-size: 12px;
-  color: var(--ink-faint);
   margin-top: 4px;
 }
 
+/*
+ * Rule 3: the one filled control. Ink-filled with paper text, 5.18:1.
+ *
+ * It cannot darken on hover, because within Everforest Light there is nothing
+ * darker than the ink to darken into — mixing it back towards paper is the
+ * only direction available and drops the label to 4.21:1 at 90 %. So hover
+ * moves the shadow and the ring instead, and the fill holds its contrast.
+ */
 .button--primary {
-  background: var(--shell);
-  border-color: var(--shell);
-  color: #ffffff;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
 }
 
 .button--primary:hover {
-  background: #24374a;
-  border-color: #24374a;
+  box-shadow:
+    0 2px 10px color-mix(in srgb, var(--ink) 34%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--surface) 45%, transparent);
 }
 
 .button[disabled] {
@@ -352,7 +460,6 @@ label.button {
 }
 
 .preview__frame {
-  background: var(--surface-sunken);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 12px;
@@ -364,10 +471,41 @@ label.button {
   width: 100%;
   max-width: 520px;
   height: auto;
-  background: #ffffff;
-  box-shadow: 0 1px 6px #0f172a1f;
 }
 
+/* ===================================================== the print surface ==
+ * Outside the theme contract, in every theme, forever (ADR-0008 rule 9).
+ *
+ * Paper is paper, and the mount it is pinned to is a fixed neutral, so that no
+ * palette can tint the collector's judgement of a print colour. These are the
+ * only literal colours in this stylesheet, and being literal is the
+ * enforcement: a token can be re-skinned and a literal cannot. Nothing in this
+ * block may use var(), and a test asserts that.
+ *
+ * The fixed mount is also a fix, not only a rule. Paper on the old
+ * --surface-sunken was 1.10:1 — the edge of the Sheet was invisible against
+ * the surface it sat on. On #3c3c3c it is 11.03:1.
+ */
+.preview__frame {
+  background: #3c3c3c;
+}
+
+.preview__canvas {
+  background: #ffffff;
+  box-shadow: 0 2px 8px #00000038;
+}
+/* ================================================= end the print surface == */
+
+/*
+ * Rule 2 at work. The warning is ink on a tinted field with a yellow bar, and
+ * the field is bounded by --line-strong because --fill-warn is only 1.08:1
+ * against the panel and could not be seen otherwise. The bar is 1.97:1 on its
+ * own tint and 2.12 on the panel — Everforest Light's yellow is too light to
+ * be a 3:1 graphic anywhere. It stays as reinforcement rather than as the
+ * message: the warning's text says what is wrong, so nothing is carried by
+ * colour alone. The bar is an inset shadow rather than a border so that
+ * turning it on does not move the text.
+ */
 .warnings {
   list-style: none;
   margin: 8px 0 0;
@@ -384,16 +522,17 @@ label.button {
 .warnings__item {
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--ink);
+  background: var(--fill-warn);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 7px 10px 7px 13px;
+  box-shadow: inset 3px 0 0 var(--yellow);
 }
 
 .preview__status {
   margin: 10px 0 0;
   font-size: 12.5px;
-  color: var(--ink-faint);
   min-height: 1.2em;
 }
 
@@ -416,9 +555,11 @@ label.button {
   gap: 6px;
 }
 
+/* Red is the one accent strong enough to be the boundary itself: 3.04:1 on the
+   panel, where aqua and yellow are 2.60 and 2.12. */
 .queue__row--failed .queue__pick {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
 }
 
 .queue__pick {
@@ -433,9 +574,19 @@ label.button {
   cursor: pointer;
 }
 
+.queue__pick:hover {
+  border-color: var(--ink);
+  background: var(--sunken);
+}
+
+.queue__pick:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 .queue__pick[aria-current='true'] {
-  border-color: var(--shell);
-  box-shadow: inset 2px 0 0 var(--shell);
+  border-color: var(--blue);
+  box-shadow: inset 3px 0 0 var(--blue);
 }
 
 .queue__title {
@@ -450,11 +601,6 @@ label.button {
 .queue__facts {
   display: block;
   font-size: 12px;
-  color: var(--ink-faint);
-}
-
-.queue__row--failed .queue__facts {
-  color: var(--accent);
 }
 
 .queue__controls {
@@ -474,7 +620,6 @@ label.button {
 .search__status {
   margin: 10px 0 0;
   font-size: 12.5px;
-  color: var(--ink-soft);
   min-height: 1.2em;
 }
 
@@ -502,8 +647,13 @@ label.button {
 }
 
 .result__pick:hover {
-  border-color: var(--ink-faint);
-  background: var(--surface-sunken);
+  border-color: var(--ink);
+  background: var(--sunken);
+}
+
+.result__pick:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 .result__title {
@@ -515,7 +665,6 @@ label.button {
 .result__facts {
   display: block;
   font-size: 12px;
-  color: var(--ink-faint);
 }
 
 /* -------------------------------------------------------- font specimen -- */
@@ -529,8 +678,8 @@ label.button {
 }
 
 .specimen dt {
-  color: var(--ink-faint);
   font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -556,8 +705,11 @@ label.button {
   background: var(--surface);
 }
 
+/* The fourth literal, and the last one. A dialog backdrop is not a print
+   colour, but it is the same kind of thing: neutral by intent, so that no
+   palette decides how dark the room behind a modal is. */
 .about::backdrop {
-  background: #0f172acc;
+  background: #000000b3;
 }
 
 .about__body {
@@ -579,7 +731,6 @@ label.button {
 }
 
 .about__lede {
-  color: var(--ink-soft);
   font-size: 13px;
   margin: 6px 0 18px;
 }
@@ -587,9 +738,9 @@ label.button {
 .about__group-title {
   margin: 20px 0 8px;
   font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--ink-faint);
 }
 
 .credit {
@@ -597,7 +748,7 @@ label.button {
   border-radius: 6px;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: var(--surface-sunken);
+  background: var(--sunken);
 }
 
 .credit__head {
@@ -612,40 +763,49 @@ label.button {
   font-size: 13.5px;
 }
 
+/* The whole chrome is monospace now, so nothing here has to ask for it. */
 .credit__version {
-  color: var(--ink-faint);
   font-size: 12px;
-  font-family: var(--font-mono);
 }
 
+/* A licence id is neutral information, not a warning, so it gets no accent —
+   a bounded chip and the ink everything else is set in. */
 .credit__license {
   font-size: 11.5px;
   padding: 1px 7px;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   white-space: nowrap;
 }
 
 .credit__copyright {
   font-size: 12.5px;
-  color: var(--ink-soft);
   margin: 4px 0 0;
 }
 
+/* A trademark note is the one thing in this dialog a reader has to notice, so
+   it gets the warning treatment rather than accent-coloured text. */
 .credit__note {
   font-size: 12.5px;
-  color: var(--accent);
-  margin: 4px 0 0;
+  margin: 6px 0 0;
+  padding: 6px 9px 6px 12px;
+  background: var(--fill-warn);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: inset 3px 0 0 var(--yellow);
 }
 
+/* A <pre> carries the browser's own `font-family: monospace`, which outranks
+   anything inherited — so the one place in the chrome that is already
+   monospace by nature is the one place that has to ask for the chrome face by
+   name, or it renders in whatever mono the platform happens to have. */
 .credit__text {
   margin-top: 8px;
-  font-family: var(--font-mono);
+  font-family: var(--font-chrome);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
-  color: var(--ink-soft);
   max-height: 220px;
   overflow: auto;
 }
@@ -653,6 +813,4 @@ label.button {
 .credit summary {
   cursor: pointer;
   font-size: 12.5px;
-  color: var(--ink-soft);
-  margin-top: 6px;
 }
