@@ -1,4 +1,6 @@
 import type { Artwork, Release, Track } from '../domain/release.ts';
+import { errorMessage } from '../errors.ts';
+import { APP_VERSION } from '../version.ts';
 import { imageSize } from './image-size.ts';
 import { systemClock } from './http.ts';
 import type { Clock, HttpClient, HttpResponse } from './http.ts';
@@ -15,13 +17,18 @@ const MUSICBRAINZ = 'https://musicbrainz.org/ws/2';
 const COVER_ART_ARCHIVE = 'https://coverartarchive.org';
 
 /**
- * MusicBrainz asks clients to identify themselves. A browser will not let
- * `fetch` set User-Agent, so the header is sent for the environments that
- * allow it and the documented `client` query parameter carries the same
- * identity everywhere else.
+ * MusicBrainz requires an identifying User-Agent on every request, which a
+ * browser will not let script set and ADR-0001 rules out adding a backend for.
+ * ADR-0006 records what is done instead: send the header anyway for hosts that
+ * allow it, carry `client=` as a best-effort identifier — MusicBrainz documents
+ * that parameter for submissions, not lookups — and honour the rate limit
+ * strictly, which is what the policy is actually protecting.
  */
-const CLIENT_ID = 'mdcovergen-0.1.0';
-const USER_AGENT = 'mdcovergen/0.1.0 ( https://github.com/themmm/mdcovergen )';
+const CLIENT_ID = `mdcovergen-${APP_VERSION}`;
+const USER_AGENT = `mdcovergen/${APP_VERSION} ( https://github.com/themmm/mdcovergen )`;
+
+/** How many search results to show at once. MusicBrainz reports the full count separately. */
+const SEARCH_PAGE_SIZE = 25;
 
 /** MusicBrainz's published rate limit for anonymous clients. */
 const MIN_REQUEST_INTERVAL_MS = 1000;
@@ -50,6 +57,13 @@ const COVER_ART_SIZES = ['front-1200', 'front-500'] as const;
 export interface SearchQuery {
   readonly artist?: string;
   readonly album?: string;
+}
+
+/** What a search found: the page of results, and how many matched in total. */
+export interface SearchResults {
+  readonly releases: readonly ReleaseSummary[];
+  /** Total matches on MusicBrainz, which may be more than were returned. */
+  readonly total: number;
 }
 
 /** One row of search results: enough to tell two pressings apart before fetching either. */
@@ -87,7 +101,7 @@ export interface BatchOutcome {
 }
 
 export interface MetadataAdapter {
-  search(query: SearchQuery): Promise<ReleaseSummary[]>;
+  search(query: SearchQuery): Promise<SearchResults>;
   fetchRelease(mbid: string): Promise<Release>;
   fetchArtwork(mbid: string): Promise<Artwork | undefined>;
   /** Release plus artwork, with missing artwork treated as absent rather than fatal. */
@@ -137,8 +151,10 @@ function labelNote(labelInfo: readonly MbLabelInfo[] | undefined): string | unde
 const yearOf = (date: string | undefined): string | undefined => date?.slice(0, 4) || undefined;
 
 function tracksOf(release: MbRelease): Track[] {
+  // A track with no title anywhere still occupies its position, so it gets a
+  // visible placeholder rather than a numbered blank line on the Back Card.
   const titles = (release.media ?? []).flatMap((medium) =>
-    (medium.tracks ?? []).map((track) => track.title ?? track.recording?.title ?? ''),
+    (medium.tracks ?? []).map((track) => track.title || track.recording?.title || '[untitled]'),
   );
   // Numbered by position in the printed list, so a two-disc Release still
   // reads 1..n down the Back Card.
@@ -147,11 +163,12 @@ function tracksOf(release: MbRelease): Track[] {
 
 function toRelease(mbid: string, payload: MbRelease): Release {
   const notes = labelNote(payload['label-info']);
+  const year = yearOf(payload.date);
   return {
     id: mbid,
     artist: joinArtistCredit(payload['artist-credit']),
     album: payload.title ?? '',
-    ...(yearOf(payload.date) ? { year: yearOf(payload.date) as string } : {}),
+    ...(year ? { year } : {}),
     ...(notes ? { notes } : {}),
     tracks: tracksOf(payload),
   };
@@ -182,9 +199,15 @@ function searchTerm(query: SearchQuery): string {
   return clauses.join(' AND ');
 }
 
+/** 32 KB at a time: enough to keep the work off the character-by-character path
+ *  without overflowing the argument list of String.fromCharCode. */
+const BASE64_CHUNK = 0x8000;
+
 function toDataUrl(bytes: Uint8Array, mime: string): string {
   let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
+  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK));
+  }
   return `data:${mime};base64,${btoa(binary)}`;
 }
 
@@ -196,9 +219,14 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
   const send = (url: string): Promise<HttpResponse> =>
     throttle(() => http.get(url, { 'User-Agent': USER_AGENT, Accept: 'application/json' }));
 
-  async function request(url: string): Promise<HttpResponse> {
+  /**
+   * `retries` is spent only on requests worth waiting for. Cover art is
+   * optional, and retrying two sizes twice each turns a Release with no cover
+   * into six requests and thirteen seconds of apparently frozen progress.
+   */
+  async function request(url: string, retries = RETRY_ATTEMPTS): Promise<HttpResponse> {
     let response = await send(url);
-    for (let attempt = 0; attempt < RETRY_ATTEMPTS && RETRY_STATUSES.has(response.status); attempt++) {
+    for (let attempt = 0; attempt < retries && RETRY_STATUSES.has(response.status); attempt++) {
       await clock.sleep(RETRY_BACKOFF_MS * (attempt + 1));
       response = await send(url);
     }
@@ -236,6 +264,7 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
       try {
         const response = await request(
           `${COVER_ART_ARCHIVE}/release/${encodeURIComponent(mbid)}/${size}`,
+          0,
         );
         if (!response.ok) continue;
 
@@ -266,14 +295,16 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
   return {
     async search(query) {
       const term = searchTerm(query);
-      if (!term) return [];
+      if (!term) return { releases: [], total: 0 };
+
       const url = withClient(
-        `${MUSICBRAINZ}/release?query=${encodeURIComponent(term)}&fmt=json&limit=25`,
+        `${MUSICBRAINZ}/release?query=${encodeURIComponent(term)}&fmt=json&limit=${SEARCH_PAGE_SIZE}`,
       );
       const payload = await getJson<MbSearchResponse>(url, 'search');
-      return (payload.releases ?? [])
+      const releases = (payload.releases ?? [])
         .map(toSummary)
         .filter((summary): summary is ReleaseSummary => !!summary);
+      return { releases, total: payload.count ?? releases.length };
     },
 
     fetchRelease,
@@ -290,10 +321,7 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
           outcomes.push({ id: entry.id, release: await resolve(entry.mbid) });
         } catch (error) {
           // Reported, not thrown: one missing album must not block the rest.
-          outcomes.push({
-            id: entry.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          outcomes.push({ id: entry.id, error: errorMessage(error) });
         }
         onProgress({ done: outcomes.length, total: requests.length });
       }

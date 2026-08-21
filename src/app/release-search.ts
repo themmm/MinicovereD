@@ -1,5 +1,6 @@
 import type { Release } from '../domain/release.ts';
-import type { MetadataAdapter, ReleaseSummary } from '../metadata/metadata-adapter.ts';
+import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata/metadata-adapter.ts';
+import { errorMessage } from '../errors.ts';
 import { clear, el } from './dom.ts';
 
 /**
@@ -44,15 +45,10 @@ export function createReleaseSearch(
     setBusy(true, 'Searching MusicBrainz…');
     try {
       const found = await adapter.search(query);
-      setBusy(
-        false,
-        found.length === 0
-          ? 'No releases matched. Try fewer words, or enter the Release by hand below.'
-          : `${found.length} ${found.length === 1 ? 'release' : 'releases'} found.`,
-      );
-      for (const summary of found) results.appendChild(resultRow(summary));
+      setBusy(false, describe(found));
+      for (const summary of found.releases) results.appendChild(resultRow(summary));
     } catch (error) {
-      setBusy(false, `Search failed: ${message(error)}`);
+      setBusy(false, `Search failed: ${errorMessage(error)}`);
     }
   }
 
@@ -83,27 +79,25 @@ export function createReleaseSearch(
   async function pick(summary: ReleaseSummary): Promise<void> {
     if (busy) return;
     setBusy(true, `Fetching “${summary.album}”…`);
-    try {
-      const [outcome] = await adapter.resolveBatch([{ id: summary.mbid, mbid: summary.mbid }], (progress) => {
-        status.textContent = progress.current
-          ? `Fetching “${summary.album}” — ${progress.done} of ${progress.total} done…`
-          : `Fetched ${progress.done} of ${progress.total}.`;
-      });
+    // A queue of one: resolveBatch reports a failure as an outcome rather than
+    // throwing, which is the same path ticket 09's batch will take.
+    const [outcome] = await adapter.resolveBatch([{ id: summary.mbid, mbid: summary.mbid }], (progress) => {
+      status.textContent = progress.current
+        ? `Fetching “${summary.album}” — ${progress.done} of ${progress.total} done…`
+        : `Fetched ${progress.done} of ${progress.total}.`;
+    });
 
-      if (!outcome?.release) {
-        setBusy(false, `Could not fetch that release: ${outcome?.error ?? 'unknown error'}`);
-        return;
-      }
-      onResolved(outcome.release);
-      setBusy(
-        false,
-        `Filled in “${outcome.release.album}”${
-          outcome.release.artwork ? ' with cover art' : ' — no cover art on file'
-        }. Every field stays editable.`,
-      );
-    } catch (error) {
-      setBusy(false, `Could not fetch that release: ${message(error)}`);
+    if (!outcome?.release) {
+      setBusy(false, `Could not fetch that release: ${outcome?.error ?? 'unknown error'}`);
+      return;
     }
+    onResolved(outcome.release);
+    setBusy(
+      false,
+      `Filled in “${outcome.release.album}”${
+        outcome.release.artwork ? ' with cover art' : ' — no cover art on file'
+      }. Every field stays editable.`,
+    );
   }
 
   const form = el(
@@ -146,4 +140,13 @@ export function createReleaseSearch(
   return form;
 }
 
-const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+/** Says how many matched, and admits when the list is only the closest few. */
+function describe({ releases, total }: SearchResults): string {
+  if (releases.length === 0) {
+    return 'No releases matched. Try fewer words, or enter the Release by hand below.';
+  }
+  const noun = total === 1 ? 'release' : 'releases';
+  return total > releases.length
+    ? `${total} ${noun} matched — showing the closest ${releases.length}.`
+    : `${total} ${noun} found.`;
+}

@@ -1,6 +1,7 @@
 import { buildPdf } from '../render/pdf.ts';
 import { EXPORT_DPI, rasterizeSheet, sheetToPng } from '../render/raster.ts';
 import type { SheetLayout } from '../render/sheet-renderer.ts';
+import { errorMessage } from '../errors.ts';
 import { el } from './dom.ts';
 
 /**
@@ -93,7 +94,7 @@ export function createSheetPreview(): SheetPreview {
         pdfPages.length === 1 ? 'Sheet' : 'Sheets'
       } at ${EXPORT_DPI} DPI`;
     } catch (error) {
-      status.textContent = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
+      status.textContent = `Export failed: ${errorMessage(error)}`;
     } finally {
       exportButton.removeAttribute('disabled');
     }

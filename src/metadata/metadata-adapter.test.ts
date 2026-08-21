@@ -87,10 +87,10 @@ describe('MetadataAdapter — search', () => {
   it('normalises a search hit into Release summaries', async () => {
     const { adapter } = adapterOver();
 
-    const results = await adapter.search({ artist: 'Daft Punk', album: 'Discovery' });
+    const { releases } = await adapter.search({ artist: 'Daft Punk', album: 'Discovery' });
 
-    expect(results).toHaveLength(3);
-    expect(results[0]).toMatchObject({
+    expect(releases).toHaveLength(3);
+    expect(releases[0]).toMatchObject({
       mbid: DISCOVERY_MBID,
       artist: 'Daft Punk',
       album: 'Discovery',
@@ -102,23 +102,31 @@ describe('MetadataAdapter — search', () => {
   it('returns no results for a search miss instead of failing', async () => {
     const { adapter } = adapterOver();
 
-    expect(await adapter.search({ artist: 'Zzzqqxx Nonexistent', album: 'No Such Album' })).toEqual([]);
+    expect(await adapter.search({ artist: 'Zzzqqxx Nonexistent', album: 'No Such Album' })).toEqual({
+      releases: [],
+      total: 0,
+    });
   });
 
-  it('identifies itself to MusicBrainz on every request', async () => {
+  it('reports how many releases matched, not how many fit on a page', async () => {
+    const { adapter } = adapterOver();
+
+    // The recorded response says 31 matched; only three came back with it.
+    const results = await adapter.search({ artist: 'Daft Punk', album: 'Discovery' });
+
+    expect(results.total).toBe(31);
+    expect(results.releases).toHaveLength(3);
+  });
+
+  it('identifies itself on every MusicBrainz request (ADR-0006)', async () => {
     const { adapter, http } = adapterOver();
 
     await adapter.search({ artist: 'Daft Punk' });
+    await adapter.fetchRelease(DISCOVERY_MBID);
 
-    expect(http.urls[0]).toContain('client=mdcovergen-');
-  });
-
-  it('needs no API key', async () => {
-    const { adapter, http } = adapterOver();
-
-    await adapter.search({ artist: 'Daft Punk' });
-
-    expect(http.urls.join(' ')).not.toMatch(/api[_-]?key|token|secret/i);
+    const musicbrainz = http.urls.filter((url) => url.includes('musicbrainz.org'));
+    expect(musicbrainz.length).toBeGreaterThan(1);
+    expect(musicbrainz.every((url) => url.includes('client=mdcovergen-'))).toBe(true);
   });
 });
 

@@ -7,6 +7,7 @@ import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
 import { createCanvasTextMeasurer, fontsReady } from '../render/canvas-text-measurer.ts';
 import { renderSheets } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
+import { errorMessage } from '../errors.ts';
 import { el } from './dom.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
@@ -68,18 +69,19 @@ export function createWorkspace(): HTMLElement {
     try {
       preview.show(renderSheets([design()], sheetConfig, measure), fileNameFor(release));
     } catch (error) {
-      preview.showProblem(error instanceof Error ? error.message : String(error));
+      preview.showProblem(errorMessage(error));
     }
   }
 
-  const form = createReleaseForm(release, (changes) => {
-    release = { ...release, ...changes };
+  const form = createReleaseForm(release, (edit) => {
+    release = edit(release);
     refresh();
   });
 
-  // A looked-up Release replaces what the fields show, and stays editable.
+  // A looked-up Release replaces what the fields show, and stays editable. It
+  // keeps its MusicBrainz id, which is what later tickets identify it by.
   const search = createReleaseSearch(metadata, (found) => {
-    release = { ...found, id: release.id };
+    release = found;
     form.setRelease(release);
     refresh();
   });

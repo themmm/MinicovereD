@@ -1,5 +1,6 @@
 import type { Artwork, Release } from '../domain/release.ts';
 import { formatTracklist, parseTracklist } from '../domain/tracklist.ts';
+import { errorMessage } from '../errors.ts';
 import { readArtwork } from './artwork.ts';
 import { el } from './dom.ts';
 
@@ -18,16 +19,20 @@ const FIELDS: readonly Field[] = [
   { label: 'Notes', key: 'notes', placeholder: 'Capitol · ST-103' },
 ];
 
+/**
+ * An edit to the Release being designed. It is a function rather than a patch
+ * because removing artwork means the field going away, which a patch of
+ * `{ artwork: undefined }` cannot express.
+ */
+export type ReleaseEdit = (current: Release) => Release;
+
 export interface ReleaseForm {
   readonly element: HTMLElement;
   /** Replace what the fields show — used when a metadata lookup fills them in. */
   setRelease(release: Release): void;
 }
 
-export function createReleaseForm(
-  release: Release,
-  onChange: (changes: Partial<Release>) => void,
-): ReleaseForm {
+export function createReleaseForm(release: Release, onChange: (edit: ReleaseEdit) => void): ReleaseForm {
   const inputs = new Map<Field['key'], HTMLInputElement>();
   const form = el(
     'section',
@@ -48,7 +53,12 @@ export function createReleaseForm(
         id: `field-${field.key}`,
         value: release[field.key] ?? '',
       },
-      on: { input: (event) => onChange({ [field.key]: (event.target as HTMLInputElement).value }) },
+      on: {
+        input: (event) => {
+          const value = (event.target as HTMLInputElement).value;
+          onChange((current) => ({ ...current, [field.key]: value }));
+        },
+      },
     });
     inputs.set(field.key, input);
     form.appendChild(
@@ -69,8 +79,10 @@ export function createReleaseForm(
       placeholder: 'One track per line.\nLeading numbers are dropped.',
     },
     on: {
-      input: (event) =>
-        onChange({ tracks: parseTracklist((event.target as HTMLTextAreaElement).value) }),
+      input: (event) => {
+        const tracks = parseTracklist((event.target as HTMLTextAreaElement).value);
+        onChange((current) => ({ ...current, tracks }));
+      },
     },
   });
   tracklist.value = formatTracklist(release.tracks);
@@ -99,6 +111,7 @@ export function createReleaseForm(
           ? `From the Cover Art Archive · ${next.artwork.widthPx}×${next.artwork.heightPx}`
           : 'No artwork chosen',
       );
+      artwork.setPresent(!!next.artwork);
     },
   };
 }
@@ -106,10 +119,15 @@ export function createReleaseForm(
 interface ArtworkField {
   readonly element: HTMLElement;
   describe(text: string): void;
+  /** Show or hide the remove button, according to whether there is artwork. */
+  setPresent(present: boolean): void;
 }
 
-function artworkField(onChange: (changes: Partial<Release>) => void): ArtworkField {
+function artworkField(onChange: (edit: ReleaseEdit) => void): ArtworkField {
   const note = el('span', { class: 'field__note', text: 'No artwork chosen' });
+  const artworkPresent = (present: boolean): void => {
+    remove.hidden = !present;
+  };
   const input = el('input', {
     class: 'field__file',
     attrs: { type: 'file', accept: 'image/*', id: 'field-artwork' },
@@ -120,30 +138,52 @@ function artworkField(onChange: (changes: Partial<Release>) => void): ArtworkFie
         void readArtwork(file).then(
           (artwork: Artwork) => {
             note.textContent = `${file.name} · ${artwork.widthPx}×${artwork.heightPx}`;
-            onChange({ artwork });
+            artworkPresent(true);
+            onChange((current) => ({ ...current, artwork }));
           },
           (error: unknown) => {
-            note.textContent = `Could not read image: ${
-              error instanceof Error ? error.message : String(error)
-            }`;
+            note.textContent = `Could not read image: ${errorMessage(error)}`;
           },
         );
       },
     },
   });
 
+  const remove = el('button', {
+    class: 'button',
+    text: 'Remove',
+    attrs: { type: 'button' },
+    on: {
+      click: () => {
+        input.value = '';
+        note.textContent = 'No artwork chosen';
+        remove.hidden = true;
+        onChange(({ artwork: _removed, ...rest }) => rest);
+      },
+    },
+  });
+  remove.hidden = true;
+
   return {
     element: el(
       'div',
       { class: 'field' },
       el('span', { class: 'field__label', text: 'Artwork' }),
-      // The native control renders its own text in the browser's locale, so it
-      // is hidden behind a label that says what this app wants it to say.
-      el('label', { class: 'button', attrs: { for: 'field-artwork' } }, 'Choose image…', input),
+      el(
+        'div',
+        { class: 'field-buttons' },
+        // The native control renders its own text in the browser's locale, so
+        // it is hidden behind a label that says what this app wants it to say.
+        el('label', { class: 'button', attrs: { for: 'field-artwork' } }, 'Choose image…', input),
+        remove,
+      ),
       note,
     ),
     describe(text) {
       note.textContent = text;
+    },
+    setPresent(present) {
+      remove.hidden = !present;
     },
   };
 }

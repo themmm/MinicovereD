@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { ATTRIBUTIONS, licenseTextFor, PERMISSIVE_LICENSES } from './attributions.ts';
+import { ATTRIBUTIONS, DATA_SOURCES, licenseTextFor, PERMISSIVE_LICENSES } from './attributions.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -108,6 +108,17 @@ describe('attribution manifest (ADR-0003)', () => {
     const fonts = ATTRIBUTIONS.filter((entry) => entry.kind === 'font');
     expect(fonts.map((entry) => entry.name).sort()).toEqual(['Noto Sans', 'Noto Sans JP']);
     expect(fonts.every((entry) => entry.license === 'OFL-1.1')).toBe(true);
+  });
+
+  it('credits the services it fetches from at runtime', () => {
+    expect(DATA_SOURCES.map((source) => source.name).sort()).toEqual([
+      'Cover Art Archive',
+      'MusicBrainz',
+    ]);
+    for (const source of DATA_SOURCES) {
+      expect(source.url, source.name).toMatch(/^https:\/\//);
+      expect(source.terms.length, source.name).toBeGreaterThan(40);
+    }
   });
 
   it('lists no entry twice', () => {

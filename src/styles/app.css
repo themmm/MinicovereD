@@ -271,6 +271,12 @@ label.button {
   display: inline-block;
 }
 
+.field-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .field__note {
   display: block;
   font-size: 12px;

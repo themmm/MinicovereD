@@ -61,6 +61,25 @@ describe('reading image dimensions from bytes', () => {
     expect(imageSize(padded)).toEqual({ widthPx: 600, heightPx: 300, mime: 'image/jpeg' });
   });
 
+  it('stops at the end of the image instead of reading an appended thumbnail', () => {
+    // A JPEG that ends, then carries a second image's frame header after it.
+    // Reporting 9999 × 8888 here would size a Part from the wrong picture.
+    const withTrailingThumbnail = Uint8Array.from([
+      0xff, 0xd8, 0xff, 0xe0, 0, 4, 1, 2, 0xff, 0xd9,
+      0xff, 0xc0, 0, 17, 8, 0x22, 0xb8, 0x27, 0x0f, 3, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1,
+    ]);
+
+    expect(imageSize(withTrailingThumbnail)).toBeUndefined();
+  });
+
+  it('reads past a standalone TEM marker', () => {
+    const withTem = Uint8Array.from([
+      0xff, 0xd8, 0xff, 0x01, 0xff, 0xc0, 0, 17, 8, 0, 55, 0, 77, 3, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1,
+    ]);
+
+    expect(imageSize(withTem)).toEqual({ widthPx: 77, heightPx: 55, mime: 'image/jpeg' });
+  });
+
   it('gives up rather than looping on a malformed segment chain', () => {
     const overrun = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xff, 1, 2, 3, 4, 5, 6, 7, 8]);
     const zeroLength = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0xff, 0xc0, 0, 17, 8, 1, 44, 2, 88]);

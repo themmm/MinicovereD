@@ -1,4 +1,4 @@
-import { ATTRIBUTIONS, licenseTextFor } from '../attribution/attributions.ts';
+import { ATTRIBUTIONS, DATA_SOURCES, licenseTextFor } from '../attribution/attributions.ts';
 import type { Attribution, AttributionKind } from '../attribution/attributions.ts';
 import { el } from './dom.ts';
 
@@ -93,6 +93,26 @@ export function createAboutDialog(): HTMLDialogElement {
     if (entries.length === 0) continue;
     body.appendChild(el('h3', { class: 'about__group-title', text: group.title }));
     for (const entry of entries) body.appendChild(creditEntry(entry));
+  }
+
+  body.appendChild(el('h3', { class: 'about__group-title', text: 'Data sources' }));
+  for (const source of DATA_SOURCES) {
+    body.appendChild(
+      el(
+        'div',
+        { class: 'credit' },
+        el(
+          'div',
+          { class: 'credit__head' },
+          el('a', {
+            class: 'credit__name',
+            text: source.name,
+            attrs: { href: source.url, target: '_blank', rel: 'noreferrer noopener' },
+          }),
+        ),
+        el('p', { class: 'credit__copyright', text: source.terms }),
+      ),
+    );
   }
 
   dialog.appendChild(body);

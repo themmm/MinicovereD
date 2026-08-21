@@ -21,6 +21,16 @@ const JPEG_FRAME_MARKERS = new Set([
   0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
 ]);
 
+/** Markers that stand alone: no length field follows them. */
+const JPEG_STANDALONE_MARKERS = new Set([
+  0x01, // TEM
+  0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, // RST0-7
+  0xd8, // SOI
+]);
+
+/** End of image. Anything after it — an appended thumbnail, say — is not this image. */
+const JPEG_END_OF_IMAGE = 0xd9;
+
 export function imageSize(bytes: Uint8Array): ImageSize | undefined {
   const size = pngSize(bytes) ?? jpegSize(bytes);
   // A zero-sized image is not artwork; letting one through would divide by
@@ -57,12 +67,16 @@ function jpegSize(bytes: Uint8Array): ImageSize | undefined {
 
     const marker = bytes[offset + 1];
     if (marker === undefined) return undefined;
-    // Padding between segments, and standalone markers that carry no length.
+    // Fill bytes are allowed between segments.
     if (marker === 0xff) {
       offset += 1;
       continue;
     }
-    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd9)) {
+    // Past the end of the image there is no frame header left to find, and
+    // whatever follows (a JPEG often carries an appended thumbnail) belongs to
+    // a different picture.
+    if (marker === JPEG_END_OF_IMAGE) return undefined;
+    if (JPEG_STANDALONE_MARKERS.has(marker)) {
       offset += 2;
       continue;
     }
