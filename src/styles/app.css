@@ -163,6 +163,124 @@ body {
   color: #86efac;
 }
 
+/* ------------------------------------------------------------ workspace -- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.field__label {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+
+.field__input {
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.field__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field__input--area {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.field__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+label.button {
+  display: inline-block;
+}
+
+.field__note {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 4px;
+}
+
+.button--primary {
+  background: var(--shell);
+  border-color: var(--shell);
+  color: #ffffff;
+}
+
+.button--primary:hover {
+  background: #24374a;
+  border-color: #24374a;
+}
+
+.button[disabled] {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.preview__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap);
+}
+
+.preview__frame {
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+}
+
+.preview__canvas {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  background: #ffffff;
+  box-shadow: 0 1px 6px #0f172a1f;
+}
+
+.preview__status {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  min-height: 1.2em;
+}
+
 /* -------------------------------------------------------- font specimen -- */
 
 .specimen {
@@ -170,7 +288,7 @@ body {
   grid-template-columns: max-content 1fr;
   gap: 6px 18px;
   align-items: baseline;
-  margin: 0;
+  margin: 0 0 4px;
 }
 
 .specimen dt {
@@ -182,7 +300,7 @@ body {
 
 .specimen dd {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .specimen dd[data-weight='bold'] {
