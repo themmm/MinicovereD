@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { A4, LETTER } from '../domain/paper.ts';
+import { A4, LETTER, printableArea } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, partSize } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import { rectsOverlap } from '../domain/units.ts';
@@ -160,5 +160,75 @@ describe('SheetPacker — paper and margin', () => {
     const huge: PackItem = { releaseId: 'r1', part: 'jcard', size: { width: 250, height: 79 } };
 
     expect(() => packParts([huge], A4_CONFIG)).toThrow(/does not fit/);
+  });
+});
+
+describe('SheetPacker — invariants over arbitrary rectangle sets', () => {
+  /** A seeded generator, so a failure here is reproducible rather than a rumour. */
+  const randomiser = (seed: number) => {
+    let state = seed;
+    return (): number => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff;
+      return state / 0x7fffffff;
+    };
+  };
+
+  it('never overlaps, never leaves the printable area, never drops a Part', () => {
+    const random = randomiser(20250821);
+    const pick = <T,>(options: readonly T[]): T =>
+      options[Math.floor(random() * options.length)] as T;
+    const tolerance = 1e-9;
+
+    for (let run = 0; run < 400; run++) {
+      const paper = pick([A4, LETTER]);
+      const marginMm = pick([0, 2, 5, 10, 20]);
+      const gapMm = pick([0, 1, 4, 8]);
+      const area = printableArea(paper, marginMm);
+
+      const items: PackItem[] = Array.from({ length: 1 + Math.floor(random() * 20) }, (_, index) => ({
+        releaseId: `r${index}`,
+        part: pick(['jcard', 'back-card', 'label'] as const),
+        size: {
+          width: Math.round((5 + random() * (area.width - 5)) * 10) / 10,
+          height: Math.round((5 + random() * (area.height - 5)) * 10) / 10,
+        },
+      }));
+
+      const sheets = packParts(items, { paper, marginMm, gapMm });
+      const context = `run ${run}: ${paper.name}, ${marginMm} mm margin, ${gapMm} mm gap`;
+
+      expect(allPlacements(sheets), `${context}: every Part placed`).toHaveLength(items.length);
+
+      for (const sheet of sheets) {
+        for (const { item, rect } of sheet.placements) {
+          expect({ width: rect.width, height: rect.height }, `${context}: Part keeps its size`).toEqual(
+            item.size,
+          );
+          expect(rect.x, `${context}: left`).toBeGreaterThanOrEqual(area.x - tolerance);
+          expect(rect.y, `${context}: top`).toBeGreaterThanOrEqual(area.y - tolerance);
+          expect(rect.x + rect.width, `${context}: right`).toBeLessThanOrEqual(
+            area.x + area.width + tolerance,
+          );
+          expect(rect.y + rect.height, `${context}: bottom`).toBeLessThanOrEqual(
+            area.y + area.height + tolerance,
+          );
+        }
+
+        for (const [index, a] of sheet.placements.entries()) {
+          for (const b of sheet.placements.slice(index + 1)) {
+            expect(rectsOverlap(a.rect, b.rect), `${context}: no overlap`).toBe(false);
+
+            // Neighbours are separated by at least the gap on one axis, so two
+            // cut lines never end up on top of each other.
+            const gapX = Math.max(a.rect.x - (b.rect.x + b.rect.width), b.rect.x - (a.rect.x + a.rect.width));
+            const gapY = Math.max(a.rect.y - (b.rect.y + b.rect.height), b.rect.y - (a.rect.y + a.rect.height));
+            expect(
+              Math.max(gapX, gapY),
+              `${context}: gap between Parts`,
+            ).toBeGreaterThanOrEqual(gapMm - tolerance);
+          }
+        }
+      }
+    }
   });
 });
