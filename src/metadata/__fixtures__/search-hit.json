@@ -1,0 +1,236 @@
+{
+  "created": "2026-08-21T17:06:51.729Z",
+  "count": 31,
+  "offset": 0,
+  "releases": [
+    {
+      "id": "5ad66522-edce-3a77-b5fa-7956ee879239",
+      "score": 100,
+      "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+      "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+      "artist-credit-id": "2ad79928-9236-33a3-830c-cc909d38f0c7",
+      "count": 1,
+      "title": "Discovery",
+      "status": "Official",
+      "packaging": "Jewel Case",
+      "text-representation": {
+        "language": "eng",
+        "script": "Latn"
+      },
+      "artist-credit": [
+        {
+          "name": "Daft Punk",
+          "artist": {
+            "id": "056e4f3e-d505-4dad-8ec1-d04f521cbb56",
+            "name": "Daft Punk",
+            "sort-name": "Daft Punk",
+            "disambiguation": "French electronic duo"
+          }
+        }
+      ],
+      "release-group": {
+        "id": "48117b90-a16e-34ca-a514-19c702df1158",
+        "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "title": "Discovery",
+        "primary-type": "Album"
+      },
+      "date": "2001-03-13",
+      "country": "US",
+      "release-events": [
+        {
+          "date": "2001-03-13",
+          "area": {
+            "id": "489ce91b-6658-3307-9877-795b68554c98",
+            "name": "United States",
+            "sort-name": "United States",
+            "iso-3166-1-codes": [
+              "US"
+            ]
+          }
+        }
+      ],
+      "barcode": "724384960629",
+      "asin": "B000059MEK",
+      "label-info": [
+        {
+          "catalog-number": "7243 8 49606 2 9",
+          "label": {
+            "id": "49b58bdb-3d74-40c6-956a-4c4b46115c9c",
+            "name": "Virgin"
+          }
+        }
+      ],
+      "track-count": 14,
+      "media": [
+        {
+          "id": "0832e922-5d9f-3f79-b8e3-defe4c6b671d",
+          "format": "CD",
+          "disc-count": 11,
+          "track-count": 14
+        }
+      ]
+    },
+    {
+      "id": "fcbe492b-c203-48c6-b15e-ae60122404bd",
+      "score": 100,
+      "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+      "artist-credit-id": "2ad79928-9236-33a3-830c-cc909d38f0c7",
+      "count": 2,
+      "title": "Discovery",
+      "status": "Official",
+      "disambiguation": "Made in Poland",
+      "text-representation": {
+        "language": "eng",
+        "script": "Latn"
+      },
+      "artist-credit": [
+        {
+          "name": "Daft Punk",
+          "artist": {
+            "id": "056e4f3e-d505-4dad-8ec1-d04f521cbb56",
+            "name": "Daft Punk",
+            "sort-name": "Daft Punk",
+            "disambiguation": "French electronic duo"
+          }
+        }
+      ],
+      "release-group": {
+        "id": "48117b90-a16e-34ca-a514-19c702df1158",
+        "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "title": "Discovery",
+        "primary-type": "Album"
+      },
+      "date": "2022",
+      "country": "XE",
+      "release-events": [
+        {
+          "date": "2022",
+          "area": {
+            "id": "89a675c2-3e37-3518-b83c-418bad59a85a",
+            "name": "Europe",
+            "sort-name": "Europe",
+            "iso-3166-1-codes": [
+              "XE"
+            ]
+          }
+        }
+      ],
+      "barcode": "0190296617164",
+      "label-info": [
+        {
+          "catalog-number": "0190296617164",
+          "label": {
+            "id": "43defeac-9c81-4efa-b1db-a99e6fe40c9b",
+            "name": "Alternative Distribution Alliance"
+          }
+        }
+      ],
+      "track-count": 14,
+      "media": [
+        {
+          "id": "11379281-7603-4a9d-b011-e3c3e34e6220",
+          "format": "12\" Vinyl",
+          "disc-count": 0,
+          "track-count": 7
+        },
+        {
+          "id": "89a9c7dc-cc71-45b7-a7a6-8ff95ede089a",
+          "format": "12\" Vinyl",
+          "disc-count": 0,
+          "track-count": 7
+        }
+      ]
+    },
+    {
+      "id": "c80cdcf0-0b8d-4c40-bbbb-54b286fd9a21",
+      "score": 100,
+      "status-id": "4e304316-386d-3409-af2e-78857eec5cfe",
+      "packaging-id": "ec27701a-4a22-37f4-bfac-6616e0f9750a",
+      "artist-credit-id": "2ad79928-9236-33a3-830c-cc909d38f0c7",
+      "count": 1,
+      "title": "Discovery",
+      "status": "Official",
+      "packaging": "Jewel Case",
+      "text-representation": {
+        "language": "eng",
+        "script": "Latn"
+      },
+      "artist-credit": [
+        {
+          "name": "Daft Punk",
+          "artist": {
+            "id": "056e4f3e-d505-4dad-8ec1-d04f521cbb56",
+            "name": "Daft Punk",
+            "sort-name": "Daft Punk",
+            "disambiguation": "French electronic duo"
+          }
+        }
+      ],
+      "release-group": {
+        "id": "48117b90-a16e-34ca-a514-19c702df1158",
+        "type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "primary-type-id": "f529b476-6e62-324f-b0aa-1f3e33d313fc",
+        "title": "Discovery",
+        "primary-type": "Album"
+      },
+      "date": "2014",
+      "country": "US",
+      "release-events": [
+        {
+          "date": "2014",
+          "area": {
+            "id": "489ce91b-6658-3307-9877-795b68554c98",
+            "name": "United States",
+            "sort-name": "United States",
+            "iso-3166-1-codes": [
+              "US"
+            ]
+          }
+        }
+      ],
+      "barcode": "724384960629",
+      "asin": "B000059MEK",
+      "label-info": [
+        {
+          "catalog-number": "496066-PRL2",
+          "label": {
+            "id": "c595c289-47ce-4fba-b999-b87503e8cb71",
+            "name": "Warner Bros. Records"
+          }
+        },
+        {
+          "catalog-number": "496066-PRL2",
+          "label": {
+            "id": "df7d1c7f-ef95-425f-8eef-445b3d7bcbd9",
+            "name": "Parlophone"
+          }
+        }
+      ],
+      "track-count": 14,
+      "media": [
+        {
+          "id": "78142649-0dca-33ad-803c-97bd4f5606c0",
+          "format": "CD",
+          "disc-count": 1,
+          "track-count": 14
+        }
+      ],
+      "tags": [
+        {
+          "count": 1,
+          "name": "house"
+        },
+        {
+          "count": 1,
+          "name": "disco"
+        },
+        {
+          "count": 1,
+          "name": "french house"
+        }
+      ]
+    }
+  ]
+}

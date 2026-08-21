@@ -33,3 +33,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   }
   return node;
 }
+
+export function clear(node: Node): void {
+  while (node.firstChild) node.removeChild(node.firstChild);
+}

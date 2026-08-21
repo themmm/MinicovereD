@@ -55,6 +55,34 @@ export function licenseTextFor(license: LicenseId): string {
     .join('\n\n');
 }
 
+/**
+ * Services the app fetches from at runtime. Not bundled, so not covered by the
+ * package attribution above — but both ask to be credited, and a collector
+ * deserves to know where the metadata on their Sheet came from.
+ */
+export interface DataSource {
+  readonly name: string;
+  readonly url: string;
+  readonly terms: string;
+}
+
+export const DATA_SOURCES: readonly DataSource[] = [
+  {
+    name: 'MusicBrainz',
+    url: 'https://musicbrainz.org',
+    terms:
+      'Release metadata and tracklists. MusicBrainz core data is in the public domain (CC0); ' +
+      'mdcovergen keeps to the one-request-per-second rate limit (ADR-0006).',
+  },
+  {
+    name: 'Cover Art Archive',
+    url: 'https://coverartarchive.org',
+    terms:
+      'Cover art, fetched only for Releases you look up. The images belong to their respective ' +
+      'copyright holders — mdcovergen neither redistributes nor bundles any of them.',
+  },
+];
+
 export const ATTRIBUTIONS: readonly Attribution[] = [
   {
     name: 'Noto Sans',
