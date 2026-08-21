@@ -1,0 +1,3 @@
+# Distribution as hosted, installable PWA
+
+mdcovergen is delivered as a statically hosted Progressive Web App that can be installed as a local app on Windows, macOS, and Linux, and works offline after the first visit. Because the app is fully client-side (ADR-0001), hosting is nothing but static file serving, and a PWA gives non-technical users the closest thing to a local app without per-OS installers. Rejected: desktop wrappers (Tauri/Electron) because of packaging, signing, and update effort across three operating systems. Consequence: the same build can additionally be offered as a single-file HTML download (e.g. via GitHub Releases) as a zero-effort offline fallback.

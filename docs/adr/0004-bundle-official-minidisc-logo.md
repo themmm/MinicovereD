@@ -1,0 +1,3 @@
+# Official MiniDisc logo bundled as asset
+
+mdcovergen ships the official MiniDisc logo as a bundled default asset, matching community tools and the look of original inserts. This was a deliberate user decision against the cleaner alternative (a self-drawn free mark plus a user-supplied custom-logo slot): the authentic look matters more than the last bit of legal tidiness. The logo is a Sony trademark; bundling it is common community practice for fan/personal-use tooling, but redistribution is legally grey — the risk is consciously accepted. Keep the logo a plain optional asset (toggle per design) so it can be removed without breaking templates, and honor ADR-0003 for everything else.
