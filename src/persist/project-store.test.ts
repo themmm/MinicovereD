@@ -2,19 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { A4 } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { readyEntry } from '../queue/release-queue.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
 import type { Project } from './project-file.ts';
 import { debounceSave } from './project-store.ts';
 import type { ProjectStore } from './project-store.ts';
 
 const projectFor = (album: string): Project => ({
-  designs: [
-    {
+  entries: [
+    readyEntry({
       release: { id: 'r1', artist: 'Glen Campbell', album, tracks: [] },
       templateId: 'classic',
       params: DEFAULT_TEMPLATE_PARAMS,
       dimensions: DEFAULT_PART_DIMENSIONS,
-    },
+    }),
   ],
   sheet: { paper: A4, marginMm: 5, parts: PART_KINDS },
 });
@@ -47,7 +48,7 @@ describe('autosaving after a lull', () => {
 
     await vi.advanceTimersByTimeAsync(600);
     expect(store.saved).toHaveLength(1);
-    expect(store.saved[0]?.designs[0]?.release.album).toBe('Wichita');
+    expect(store.saved[0]?.entries[0]?.design.release.album).toBe('Wichita');
     vi.useRealTimers();
   });
 
@@ -61,7 +62,7 @@ describe('autosaving after a lull', () => {
     save.flush();
 
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.saved[0]?.designs[0]?.release.album).toBe('Wichita Lineman');
+    expect(store.saved[0]?.entries[0]?.design.release.album).toBe('Wichita Lineman');
     vi.useRealTimers();
   });
 
@@ -114,7 +115,7 @@ describe('autosaving after a lull', () => {
     save(projectFor('Second'));
     await vi.advanceTimersByTimeAsync(600);
 
-    expect(saved.map((project) => project.designs[0]?.release.album)).toEqual(['Second']);
+    expect(saved.map((project) => project.entries[0]?.design.release.album)).toEqual(['Second']);
     vi.useRealTimers();
   });
 });

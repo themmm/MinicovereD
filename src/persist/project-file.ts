@@ -7,6 +7,8 @@ import {
 } from '../domain/parts.ts';
 import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import type { Artwork, Release, Track } from '../domain/release.ts';
+import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
+import type { QueueEntry } from '../queue/release-queue.ts';
 import { safeLogoColor } from '../render/minidisc-logo.ts';
 import { DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig, TemplateId, TemplateParams } from '../render/sheet-renderer.ts';
@@ -25,7 +27,8 @@ export const PROJECT_FORMAT = 'mdcovergen-project';
 export const PROJECT_VERSION = 1;
 
 export interface Project {
-  readonly designs: readonly ReleaseDesign[];
+  /** The queue as it stood, in order, entries still needing a hand included. */
+  readonly entries: readonly QueueEntry[];
   readonly sheet: SheetConfig;
 }
 
@@ -41,7 +44,7 @@ const MIN_PART_MM = 1;
 const MAX_PART_MM = 300;
 
 export function writeProjectFile(
-  designs: readonly ReleaseDesign[],
+  entries: readonly QueueEntry[],
   sheet: SheetConfig,
 ): string {
   return `${JSON.stringify(
@@ -49,11 +52,15 @@ export function writeProjectFile(
       format: PROJECT_FORMAT,
       version: PROJECT_VERSION,
       savedAt: new Date().toISOString(),
-      designs: designs.map((design) => ({
+      designs: entries.map(({ design, status }) => ({
         release: design.release,
         templateId: design.templateId,
         params: design.params,
         dimensions: design.dimensions,
+        // Written only when true, so a project of ordinary Releases reads the
+        // same as one written before this flag existed. The reason the lookup
+        // failed is deliberately not written; see QueueEntry.error.
+        ...(status === 'failed' ? { needsCompleting: true } : {}),
       })),
       sheet: { paperId: sheet.paper.id, marginMm: sheet.marginMm, parts: sheet.parts },
     },
@@ -233,7 +240,7 @@ export function readProjectFile(text: string): ProjectReadResult {
   if (typeof sheet === 'string') return { ok: false, error: sheet };
 
   const rawDesigns = Array.isArray(parsed['designs']) ? parsed['designs'] : [];
-  const designs: ReleaseDesign[] = [];
+  const entries: QueueEntry[] = [];
   const seenIds = new Set<string>();
 
   for (const [index, raw] of rawDesigns.entries()) {
@@ -248,13 +255,18 @@ export function readProjectFile(text: string): ProjectReadResult {
     }
     seenIds.add(release.id);
 
-    designs.push({
+    const design: ReleaseDesign = {
       release,
       templateId: readTemplateId(source['templateId']),
       params: readParams(source['params']),
       dimensions: readDimensions(source['dimensions']),
-    });
+    };
+    // A file written before this flag existed has no such key, and every
+    // Release in it was one the collector had finished with.
+    entries.push(
+      asBoolean(source['needsCompleting'], false) ? unfinishedEntry(design) : readyEntry(design),
+    );
   }
 
-  return { ok: true, project: { designs, sheet } };
+  return { ok: true, project: { entries, sheet } };
 }

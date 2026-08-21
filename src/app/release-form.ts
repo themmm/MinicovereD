@@ -28,19 +28,16 @@ export type ReleaseEdit = (current: Release) => Release;
 
 export interface ReleaseForm {
   readonly element: HTMLElement;
-  /** Replace what the fields show — used when a metadata lookup fills them in. */
-  setRelease(release: Release): void;
 }
 
 export function createReleaseForm(release: Release, onChange: (edit: ReleaseEdit) => void): ReleaseForm {
-  const inputs = new Map<Field['key'], HTMLInputElement>();
   const form = el(
     'section',
     { class: 'panel' },
     el('h2', { class: 'panel__title', text: 'Release' }),
     el('p', {
       class: 'panel__hint',
-      text: 'Everything on the Sheet comes from here. Metadata lookup arrives in a later ticket.',
+      text: 'Everything on the Sheet comes from here — including anything a lookup filled in, which stays editable.',
     }),
   );
 
@@ -60,7 +57,6 @@ export function createReleaseForm(release: Release, onChange: (edit: ReleaseEdit
         },
       },
     });
-    inputs.set(field.key, input);
     form.appendChild(
       el(
         'label',
@@ -98,22 +94,15 @@ export function createReleaseForm(release: Release, onChange: (edit: ReleaseEdit
   const artwork = artworkField(onChange);
   form.appendChild(artwork.element);
 
-  return {
-    element: form,
-    setRelease(next) {
-      for (const field of FIELDS) {
-        const input = inputs.get(field.key);
-        if (input) input.value = next[field.key] ?? '';
-      }
-      tracklist.value = formatTracklist(next.tracks);
-      artwork.describe(
-        next.artwork
-          ? `From the Cover Art Archive · ${next.artwork.widthPx}×${next.artwork.heightPx}`
-          : 'No artwork chosen',
-      );
-      artwork.setPresent(!!next.artwork);
-    },
-  };
+  // What the fields already show, for a Release that arrived with a cover.
+  if (release.artwork) {
+    artwork.describe(
+      `From the Cover Art Archive · ${release.artwork.widthPx}×${release.artwork.heightPx}`,
+    );
+    artwork.setPresent(true);
+  }
+
+  return { element: form };
 }
 
 interface ArtworkField {

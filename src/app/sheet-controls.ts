@@ -16,10 +16,20 @@ const PART_LABELS: Readonly<Record<PartKind, string>> = {
 /** Wide enough that no home printer clips, narrow enough to stay useful. */
 const MARGIN_RANGE = { min: 0, max: 25, step: 0.5 } as const;
 
+export interface SheetControls {
+  readonly element: HTMLElement;
+  /**
+   * Show a configuration that changed somewhere else — an opened project, or
+   * this browser's restored work. Setting a field's value fires no event, so
+   * this cannot loop back through `onChange`.
+   */
+  show(config: SheetConfig): void;
+}
+
 export function createSheetControls(
   config: SheetConfig,
   onChange: (changes: Partial<SheetConfig>) => void,
-): HTMLElement {
+): SheetControls {
   const paper = el('select', {
     class: 'field__input',
     attrs: { id: 'sheet-paper' },
@@ -72,7 +82,7 @@ export function createSheetControls(
     );
   }
 
-  return el(
+  const element = el(
     'section',
     { class: 'panel' },
     el('h2', { class: 'panel__title', text: 'Sheet' }),
@@ -103,4 +113,13 @@ export function createSheetControls(
       toggles,
     ),
   );
+
+  return {
+    element,
+    show(next) {
+      paper.value = next.paper.id;
+      margin.value = String(next.marginMm);
+      for (const [part, box] of boxes) box.checked = next.parts.includes(part);
+    },
+  };
 }

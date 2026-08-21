@@ -207,6 +207,31 @@ describe('MetadataAdapter — cover art', () => {
     expect(http.urls.some((url) => url.endsWith('/front-500'))).toBe(true);
   });
 
+  it('stops asking the Archive when it cannot be reached at all', async () => {
+    const http: HttpClient & { urls: string[] } = {
+      urls: [],
+      async get(url: string): Promise<HttpResponse> {
+        http.urls.push(url);
+        if (url.includes('coverartarchive.org')) throw new TypeError('Failed to fetch');
+        return {
+          ok: true,
+          status: 200,
+          text: async () => fixtureText('release-with-tracklist.json'),
+          bytes: async () => new Uint8Array(),
+        };
+      },
+    };
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    const release = await adapter.resolve(DISCOVERY_MBID);
+
+    // Both sizes come off the same storage node, so the second request would
+    // spend another deadline to learn what the first one already said.
+    expect(http.urls.filter((url) => url.includes('coverartarchive.org'))).toHaveLength(1);
+    expect(release.artwork).toBeUndefined();
+    expect(release.album).toBe('Discovery');
+  });
+
   it('never asks for the Archive JSON index, which browsers cannot read', async () => {
     const { adapter, http } = adapterOver();
 

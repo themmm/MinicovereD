@@ -43,6 +43,19 @@ const RETRY_ATTEMPTS = 2;
 const RETRY_BACKOFF_MS = 2000;
 
 /**
+ * Nothing else bounds a request, so both services get a deadline.
+ *
+ * The numbers come from watching a live batch rather than from taste. The
+ * Archive redirects to storage nodes that were observed failing after 10.8 s
+ * and 20.3 s — and succeeding after 21.8 s, which is why the cover-art
+ * deadline is generous rather than tight: a short one would throw away covers
+ * that do arrive. What actually saves the batch is not retrying the second
+ * size after the first could not be reached at all.
+ */
+const METADATA_TIMEOUT_MS = 15_000;
+const COVER_ART_TIMEOUT_MS = 25_000;
+
+/**
  * The Cover Art Archive's front-cover shortcuts, largest first. 1200 px covers
  * a 68 mm Front Panel at 300 DPI (803 px) without pulling a multi-megabyte scan
  * into a design that has to travel inside a project file.
@@ -77,13 +90,18 @@ export interface ReleaseSummary {
   readonly label?: string;
 }
 
-export interface BatchRequest {
+/**
+ * Named for resolving, not batching: `src/queue/batch.ts` has its own
+ * `BatchRequest`, which is what the collector typed. This one is what the
+ * adapter needs once a pressing has been chosen.
+ */
+export interface ResolveRequest {
   /** The caller's own id for this queue entry, echoed back in the outcome. */
   readonly id: string;
   readonly mbid: string;
 }
 
-export interface BatchProgress {
+export interface ResolveProgress {
   readonly done: number;
   readonly total: number;
   /** The entry being resolved right now, if any. */
@@ -94,7 +112,7 @@ export interface BatchProgress {
  * One entry's result. A failure is reported here rather than thrown, so one
  * missing album never blocks the other nine.
  */
-export interface BatchOutcome {
+export interface ResolveOutcome {
   readonly id: string;
   readonly release?: Release;
   readonly error?: string;
@@ -107,9 +125,9 @@ export interface MetadataAdapter {
   /** Release plus artwork, with missing artwork treated as absent rather than fatal. */
   resolve(mbid: string): Promise<Release>;
   resolveBatch(
-    requests: readonly BatchRequest[],
-    onProgress: (progress: BatchProgress) => void,
-  ): Promise<BatchOutcome[]>;
+    requests: readonly ResolveRequest[],
+    onProgress: (progress: ResolveProgress) => void,
+  ): Promise<ResolveOutcome[]>;
 }
 
 export interface MetadataAdapterOptions {
@@ -216,19 +234,28 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
   const clock = options.clock ?? systemClock;
   const throttle = createThrottle(options.minRequestIntervalMs ?? MIN_REQUEST_INTERVAL_MS, clock);
 
-  const send = (url: string): Promise<HttpResponse> =>
-    throttle(() => http.get(url, { 'User-Agent': USER_AGENT, Accept: 'application/json' }));
+  const send = (url: string, timeoutMs: number): Promise<HttpResponse> =>
+    throttle(() =>
+      http.get(url, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        timeoutMs,
+      }),
+    );
 
   /**
    * `retries` is spent only on requests worth waiting for. Cover art is
    * optional, and retrying two sizes twice each turns a Release with no cover
    * into six requests and thirteen seconds of apparently frozen progress.
    */
-  async function request(url: string, retries = RETRY_ATTEMPTS): Promise<HttpResponse> {
-    let response = await send(url);
+  async function request(
+    url: string,
+    retries = RETRY_ATTEMPTS,
+    timeoutMs = METADATA_TIMEOUT_MS,
+  ): Promise<HttpResponse> {
+    let response = await send(url, timeoutMs);
     for (let attempt = 0; attempt < retries && RETRY_STATUSES.has(response.status); attempt++) {
       await clock.sleep(RETRY_BACKOFF_MS * (attempt + 1));
-      response = await send(url);
+      response = await send(url, timeoutMs);
     }
     return response;
   }
@@ -261,13 +288,24 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
    */
   async function fetchArtwork(mbid: string): Promise<Artwork | undefined> {
     for (const size of COVER_ART_SIZES) {
+      let response: HttpResponse;
       try {
-        const response = await request(
+        response = await request(
           `${COVER_ART_ARCHIVE}/release/${encodeURIComponent(mbid)}/${size}`,
           0,
+          COVER_ART_TIMEOUT_MS,
         );
-        if (!response.ok) continue;
+      } catch {
+        // Not "this size is missing" but "the Archive is not answering", and
+        // the other size comes off the same storage node — asking for it would
+        // spend another deadline to learn the same thing. The Release itself
+        // already came back, so the design is printable without a picture.
+        return undefined;
+      }
+      // A non-2xx *is* an answer: this size is not on file, but another may be.
+      if (!response.ok) continue;
 
+      try {
         const bytes = await response.bytes();
         const dimensions = imageSize(bytes);
         if (!dimensions) continue;
@@ -278,8 +316,7 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
           heightPx: dimensions.heightPx,
         };
       } catch {
-        // A transport failure reaching the Archive is still just "no artwork":
-        // the release itself already came back, so the design is printable.
+        // A body that will not finish arriving is a cover that cannot be printed.
         continue;
       }
     }
@@ -312,7 +349,7 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
     resolve,
 
     async resolveBatch(requests, onProgress) {
-      const outcomes: BatchOutcome[] = [];
+      const outcomes: ResolveOutcome[] = [];
       onProgress({ done: 0, total: requests.length });
 
       for (const entry of requests) {
