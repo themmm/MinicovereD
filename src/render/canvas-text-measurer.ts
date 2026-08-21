@@ -37,11 +37,17 @@ export function createCanvasTextMeasurer(): TextMeasurer {
 }
 
 /**
- * The bundled faces and a character from each, chosen so the browser is forced
- * to fetch the face rather than deciding it is not needed yet.
+ * The bundled faces and, for each, a character from every unicode-range subset
+ * it ships as. One character per subset is what forces the browser to fetch
+ * that subset; anything it is not asked for stays unloaded and silently falls
+ * back to whatever the system has.
  */
 const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
-  { family: 'Noto Sans Variable', sample: 'Aä' },
+  {
+    family: 'Noto Sans Variable',
+    // latin · latin-ext · greek · greek-ext · cyrillic · cyrillic-ext · vietnamese · devanagari
+    sample: 'Aä Łź α ᾰ Б Ԑ ế अ',
+  },
   { family: 'Noto Sans JP', sample: '東' },
 ];
 
@@ -68,9 +74,12 @@ export async function fontsReady(): Promise<void> {
   await document.fonts.ready;
 }
 
-/** Which bundled faces are actually loaded — the about dialog says so honestly. */
-export function loadedBundledFaces(): readonly string[] {
-  return BUNDLED_FACES.map(({ family }) => family).filter((family) =>
-    [...document.fonts].some((face) => face.family === family && face.status === 'loaded'),
-  );
+/**
+ * Runs `listener` whenever a font finishes loading. A subset that arrives after
+ * the first render leaves the layout sized against a fallback face, so the
+ * caller has to draw again — clearing the measurement cache alone only fixes
+ * the *next* render.
+ */
+export function onFontsLoaded(listener: () => void): void {
+  document.fonts.addEventListener('loadingdone', listener);
 }

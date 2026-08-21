@@ -622,9 +622,71 @@ describe('SheetRenderer — tracklist overflow', () => {
       .flatMap((placement) => placement.ops)
       .flatMap((op) => (op.op === 'text' ? [op.text] : []));
 
-    expect(printed.join(' ')).not.toContain('\uFFFD');
+    // A trim by code unit, not code point, is what puts a lone surrogate on
+    // paper; a replacement character never appears in the string itself.
+    expect(printed.some((line) => /[\uD800-\uDFFF]/.test(line))).toBe(false);
     expect(printed).toContain('1. 夢の中で');
     expect(printed).toContain('2. Grüße aus Köln');
     expect(printed.some((line) => line.includes('ファンタズマ'))).toBe(true);
+  });
+});
+
+describe('SheetRenderer — warnings about what was drawn', () => {
+  const sheetFor = (trackCount: number) =>
+    renderSheets(
+      [
+        aDesign(
+          aRelease({
+            album: 'Everything At Once',
+            tracks: Array.from({ length: trackCount }, (_, index) => ({
+              position: index + 1,
+              title: `Track ${index + 1}`,
+            })),
+          }),
+        ),
+      ],
+      A4_SHEET,
+      testMeasurer,
+    )[0];
+
+  it('says nothing when the tracklist fits at a printable size', () => {
+    expect(sheetFor(25)?.warnings).toBeUndefined();
+  });
+
+  it('reports type that had to shrink past what a printer holds', () => {
+    const [warning, ...rest] = sheetFor(200)?.warnings ?? [];
+
+    expect(rest).toEqual([]);
+    expect(warning?.kind).toBe('type-below-print-floor');
+    expect(warning?.releaseTitle).toBe('Everything At Once');
+    expect(warning?.trackCount).toBe(200);
+    expect(warning?.sizeMm).toBeLessThan(warning?.floorMm ?? 0);
+  });
+
+  it('warns once per Release, from the Back Card that carries the list', () => {
+    // Three Parts are drawn; only one of them has a tracklist on it.
+    const sheet = sheetFor(200);
+
+    expect(sheet?.placements).toHaveLength(3);
+    expect(sheet?.warnings).toHaveLength(1);
+  });
+
+  it('reports nothing when the job does not print the Back Card at all', () => {
+    const sheets = renderSheets(
+      [
+        aDesign(
+          aRelease({
+            tracks: Array.from({ length: 200 }, (_, index) => ({
+              position: index + 1,
+              title: `Track ${index + 1}`,
+            })),
+          }),
+        ),
+      ],
+      { ...A4_SHEET, parts: ['label'] },
+      testMeasurer,
+    );
+
+    expect(sheets[0]?.warnings).toBeUndefined();
   });
 });

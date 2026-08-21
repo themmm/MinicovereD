@@ -14,8 +14,11 @@ const measurer: TextMeasurer = {
     style.sizeMm,
 };
 
-/** The Back Card's tracklist area at the defaults: 63 mm wide, 62.4 mm tall. */
-const BOX = { x: 3, y: 16.6, width: 63, height: 62.4 };
+/**
+ * The Back Card's tracklist area at the defaults: 3 mm in from the left, below
+ * the rule at 13.6 mm, 63 × 62.4 mm.
+ */
+const BOX = { x: 3, y: 13.6, width: 63, height: 62.4 };
 const BASE_SIZE = 2.4;
 
 const tracks = (count: number, title = 'Track'): Track[] =>
@@ -121,7 +124,7 @@ describe('laying out a tracklist in other scripts', () => {
       '2. こんにちは',
       '3. カタカナ',
     ]);
-    expect(lines.some((line) => line.text.includes('�'))).toBe(false);
+    expect(lines.some((line) => /[\uD800-\uDFFF]/.test(line.text))).toBe(false);
   });
 
   it('measures CJK as the wider script it is, so it trims where Latin would not', () => {
@@ -150,9 +153,12 @@ describe('laying out a tracklist in other scripts', () => {
     const emoji: Track[] = [{ position: 1, title: '🎵'.repeat(60) }];
 
     const [line] = layOutTracklist(emoji, BOX, BASE_SIZE, measurer).lines;
+    const text = line?.text ?? '';
 
-    expect(line?.text.includes('�')).toBe(false);
-    // Every code unit still pairs up: no lone surrogate survived the trim.
-    expect([...(line?.text ?? '')].join('')).toBe(line?.text);
+    // A trim by code unit would leave a high surrogate with nothing after it,
+    // which is what renders as a replacement glyph on paper.
+    expect(text.endsWith('…'), 'the line was actually trimmed').toBe(true);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(text), 'lone high surrogate').toBe(false);
+    expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text), 'lone low surrogate').toBe(false);
   });
 });

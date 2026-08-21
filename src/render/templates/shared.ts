@@ -5,9 +5,10 @@ import { readableInkFor, withAlpha } from '../colors.ts';
 import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise } from '../text.ts';
 import { layOutTracklist } from '../tracklist-layout.ts';
+import { PRINT_FLOOR_MM } from '../tracklist-layout.ts';
 import type { TracklistLayout } from '../tracklist-layout.ts';
 import type { TextMeasurer } from '../text.ts';
-import type { PartContext, TemplateParams } from './template.ts';
+import type { PartContext, PartDrawing, TemplateParams } from './template.ts';
 
 /**
  * The pieces every Template shares. Classic and Full-bleed differ in how the
@@ -159,12 +160,8 @@ export function drawInnerFlap({ release, params, measure }: PartContext, panel: 
 /** Type size the tracklist starts at, before any of it has to give way. */
 const TRACK_SIZE_MM: Mm = 2.4;
 
-/**
- * How the tracklist ends up fitting this Back Card. Exported so the renderer
- * can warn about type that has shrunk past legibility without laying the list
- * out a second time or duplicating where the list lives on the Part.
- */
-export function backCardTracklist({ release, size, measure }: PartContext): TracklistLayout {
+/** Where the tracklist sits on the Back Card, and how it had to fit. */
+function backCardTracklist({ release, size, measure }: PartContext): TracklistLayout {
   const listTop = PAD + 8.6 + 2;
   return layOutTracklist(
     release.tracks,
@@ -179,7 +176,7 @@ export function backCardTracklist({ release, size, measure }: PartContext): Trac
  * Part whose content has no upper bound, so the list decides its own columns
  * and size rather than being given them.
  */
-export function drawBackCard(context: PartContext): DrawOp[] {
+export function drawBackCard(context: PartContext): PartDrawing {
   const { release, params, size, measure } = context;
   const contentWidth = size.width - 2 * PAD;
   const albumStyle: TextStyle = { sizeMm: 3.2, weight: 700, color: params.inkColor, align: 'left', baseline: 'top' };
@@ -211,7 +208,24 @@ export function drawBackCard(context: PartContext): DrawOp[] {
   for (const line of tracklist.lines) {
     ops.push({ op: 'text', text: line.text, at: line.at, style: trackStyle });
   }
-  return ops;
+
+  // Reported from where it was measured, so the warning always describes the
+  // list that was actually drawn.
+  return tracklist.belowPrintFloor
+    ? {
+        ops,
+        warnings: [
+          {
+            kind: 'type-below-print-floor',
+            releaseId: release.id,
+            releaseTitle: release.album || release.artist || release.id,
+            trackCount: release.tracks.length,
+            sizeMm: tracklist.sizeMm,
+            floorMm: PRINT_FLOOR_MM,
+          },
+        ],
+      }
+    : { ops };
 }
 
 export { FRONT_LOGO_WIDTH };

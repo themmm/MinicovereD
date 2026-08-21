@@ -86,8 +86,24 @@ export interface SheetLayout {
   readonly ops?: readonly DrawOp[];
   readonly guides?: readonly Guide[];
   /**
-   * Things the collector should know before printing — type that had to shrink
-   * past what a printer holds, say. Not drawn on the Sheet: said on screen.
+   * Things the collector should know before printing. Structured rather than
+   * prose, so the UI decides the wording and the geometry stays geometry.
    */
-  readonly warnings?: readonly string[];
+  readonly warnings?: readonly SheetWarning[];
 }
+
+/**
+ * The tracklist had to shrink past the size a printer reliably holds. Every
+ * track is still on the Part — this says they may not be readable.
+ */
+export interface TypeBelowPrintFloor {
+  readonly kind: 'type-below-print-floor';
+  readonly releaseId: string;
+  /** What to call the Release on screen. */
+  readonly releaseTitle: string;
+  readonly trackCount: number;
+  readonly sizeMm: Mm;
+  readonly floorMm: Mm;
+}
+
+export type SheetWarning = TypeBelowPrintFloor;
