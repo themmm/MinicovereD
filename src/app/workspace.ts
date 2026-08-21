@@ -105,6 +105,7 @@ export function createWorkspace(): HTMLElement {
   });
 
   const queuePanel = createQueuePanel({
+    addByHand: () => startReleaseByHand(),
     select: (releaseId) => {
       selectedId = releaseId;
       showSelectedRelease();
@@ -165,12 +166,19 @@ export function createWorkspace(): HTMLElement {
     changed();
   }
 
-  /** The empty state's one job: a Release of the collector's own, ready to type into. */
+  /**
+   * A Release of the collector's own, ready to type into. Reachable from the
+   * empty state and from the Queue, because a mixtape is not something a
+   * database can be asked for — and neither is a second one.
+   */
   function startReleaseByHand(): void {
     const release = blankRelease();
     queue = addToQueue(queue, readyEntry({ ...DEFAULT_DESIGN, release }));
     selectedId = release.id;
     selectionChanged();
+    // The form is the whole point of pressing the button; land the caret in it
+    // rather than making them go and find it.
+    controlsColumn.querySelector<HTMLInputElement>('#field-artist')?.focus();
   }
 
   /** Replaces the selected entry, leaving the rest of the queue alone. */
@@ -194,8 +202,8 @@ export function createWorkspace(): HTMLElement {
     metadata,
     (found) => {
       // A looked-up Release joins the queue and becomes the one being edited,
-      // keeping the design settings of whichever Release was on screen — the
-      // defaults only if there was none, never the example's own metadata.
+      // keeping the design settings of whichever Release was on screen, so a
+      // second lookup matches the first rather than reverting to plain.
       const settings = selected()?.design ?? DEFAULT_DESIGN;
       queue = addToQueue(queue, readyEntry({ ...settings, release: found }));
       selectedId = found.id;
@@ -236,7 +244,7 @@ export function createWorkspace(): HTMLElement {
   const emptyState = createEmptyState(startReleaseByHand);
 
   controlsColumn.append(
-    emptyState,
+    emptyState.element,
     search,
     queuePanel.element,
     releasePanels,
@@ -254,7 +262,7 @@ export function createWorkspace(): HTMLElement {
    */
   function showSelectedRelease(): void {
     const entry = selected();
-    emptyState.hidden = !!entry;
+    emptyState.element.hidden = !!entry;
     queuePanel.element.hidden = !entry;
     clear(releasePanels);
     if (!entry) {
@@ -317,7 +325,11 @@ export function createWorkspace(): HTMLElement {
   void fontsReady().then(refresh);
   onFontsLoaded(refresh);
 
-  // Whatever this browser last held, if anything.
+  // Whatever this browser last held, if anything. Until this settles, the
+  // empty state does not offer to start anything: an edit beats a late
+  // restore, so a click made before the answer arrives would discard a queue
+  // the collector was never shown.
+  emptyState.setRestoring(true);
   void store
     .load()
     .then((saved) => {
@@ -341,7 +353,8 @@ export function createWorkspace(): HTMLElement {
       projectControls.report(
         `Could not read this browser's saved work: ${errorMessage(error)}. Starting fresh.`,
       );
-    });
+    })
+    .finally(() => emptyState.setRestoring(false));
 
   return el('div', { class: 'workspace' }, controlsColumn, preview.element);
 }

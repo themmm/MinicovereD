@@ -15,10 +15,11 @@ describe('a Release started by hand', () => {
 
   it('gets an id of its own each time, so two of them are two Releases', () => {
     // The queue tells Parts apart by Release id; two blanks sharing one would
-    // print the same card twice.
-    const ids = Array.from({ length: 50 }, () => newReleaseId());
+    // print the same card twice. Random rather than counted, so this holds
+    // across two tabs and across a reload, not only within one run.
+    const ids = Array.from({ length: 1000 }, () => newReleaseId());
 
-    expect(new Set(ids).size).toBe(50);
+    expect(new Set(ids).size).toBe(1000);
   });
 
   it('is never mistakeable for a looked-up Release, which is named by its MBID', () => {

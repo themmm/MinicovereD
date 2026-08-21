@@ -6,9 +6,9 @@ import { el } from './dom.ts';
 import { createWorkspace } from './workspace.ts';
 
 /**
- * The app chrome: header, workspace, footer. Later tickets fill the workspace;
- * the shell itself only owns branding, the about/licenses dialog and the
- * offline-readiness indicator.
+ * The app chrome: header, workspace, footer. The workspace owns everything
+ * about designing and printing; the shell itself only owns branding, the
+ * about/licenses dialog and the offline-readiness indicator.
  */
 
 const OFFLINE_LABELS: Readonly<Record<OfflineState, string>> = {

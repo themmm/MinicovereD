@@ -46,6 +46,12 @@ export interface Attribution {
    * build without a line here fails the suite rather than shipping unexamined.
    */
   readonly files?: readonly string[];
+  /**
+   * Set when the entry ships in the hosted PWA only. The single-file build
+   * registers no service worker (ADR-0002), so crediting workbox there would
+   * credit code that is not in the file the reader is holding.
+   */
+  readonly pwaOnly?: true;
   /** Anything a reader needs to know beyond the license — a trademark, say. */
   readonly note?: string;
 }
@@ -117,6 +123,21 @@ export const DATA_SOURCES: readonly DataSource[] = [
   },
 ];
 
+/**
+ * The workbox modules that reach the browser in the hosted build: two in the
+ * page (`workbox-window`, which pulls `workbox-core` in with it) and four in
+ * the generated service worker.
+ */
+export const WORKBOX_MODULES = [
+  'workbox-window',
+  'workbox-core',
+  'workbox-precaching',
+  'workbox-routing',
+  'workbox-strategies',
+] as const;
+
+const WORKBOX_VERSION = '7.4.1';
+
 export const ATTRIBUTIONS: readonly Attribution[] = [
   {
     name: 'Noto Sans',
@@ -184,28 +205,25 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     url: 'https://github.com/nodeca/pako',
     packageName: 'pako',
   },
-  {
-    // Not a dependency of this project — vite-plugin-pwa compiles it into the
-    // client bundle to register the service worker. It still ships, so it is
-    // still attributed; ADR-0003 is about what reaches the user, not about
-    // which section of package.json a name sits in.
-    name: 'workbox-window',
-    kind: 'library',
-    version: '7.4.1',
-    license: 'MIT',
-    copyright: 'Copyright 2018 Google LLC',
-    url: 'https://github.com/GoogleChrome/workbox',
-    packageName: 'workbox-window',
-  },
-  {
-    name: 'workbox-core',
-    kind: 'library',
-    version: '7.4.1',
-    license: 'MIT',
-    copyright: 'Copyright 2018 Google LLC',
-    url: 'https://github.com/GoogleChrome/workbox',
-    packageName: 'workbox-core',
-  },
+  // Not dependencies of this project — vite-plugin-pwa compiles workbox into
+  // the page to register the service worker, and workbox-build generates the
+  // service worker itself out of the other four. All of it ships, so all of it
+  // is attributed; ADR-0003 is about what reaches the user, not about which
+  // section of package.json a name sits in. The set is not guesswork: each of
+  // these stamps its own name into the built files, and the compliance test
+  // reads those stamps back.
+  ...WORKBOX_MODULES.map(
+    (packageName): Attribution => ({
+      name: packageName,
+      kind: 'library',
+      version: WORKBOX_VERSION,
+      license: 'MIT',
+      copyright: 'Copyright 2018 Google LLC',
+      url: 'https://github.com/GoogleChrome/workbox',
+      packageName,
+      pwaOnly: true,
+    }),
+  ),
   {
     name: 'tslib',
     kind: 'library',

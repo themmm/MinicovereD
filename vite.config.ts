@@ -1,6 +1,9 @@
+import { readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vite';
+import type { Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
@@ -17,10 +20,14 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
  * scope and start_url follow it, otherwise the installed app would leave its
  * own scope on the first navigation.
  */
+
+const resolveFromRoot = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
+
 export default defineConfig(({ mode }) => {
   const singleFile = mode === 'singlefile';
   const base = singleFile ? './' : (process.env['MDCOVERGEN_BASE'] ?? '/');
-  const resolveLocal = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
+
+  const outDir = singleFile ? 'dist/singlefile' : 'dist/pwa';
 
   return {
     base,
@@ -30,7 +37,7 @@ export default defineConfig(({ mode }) => {
       alias: singleFile
         ? {
             // vite-plugin-pwa is not in play here, so its virtual module needs a stand-in.
-            'virtual:pwa-register': resolveLocal('./src/pwa/no-service-worker.ts'),
+            'virtual:pwa-register': resolveFromRoot('./src/pwa/no-service-worker.ts'),
           }
         : {},
     },
@@ -38,7 +45,7 @@ export default defineConfig(({ mode }) => {
       __SELF_CONTAINED_BUILD__: JSON.stringify(singleFile),
     },
     build: {
-      outDir: singleFile ? 'dist/singlefile' : 'dist/pwa',
+      outDir,
       emptyOutDir: true,
       target: 'es2022',
       // The single-file build has to swallow ~1.5 MB of font subsets as data URIs.
@@ -46,8 +53,9 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 12_000,
     },
     plugins: singleFile
-      ? [viteSingleFile({ removeViteModuleLoader: true })]
+      ? [viteSingleFile({ removeViteModuleLoader: true }), dropOperatingSystemJunk(outDir)]
       : [
+          dropOperatingSystemJunk(outDir),
           VitePWA({
             registerType: 'autoUpdate',
             includeAssets: ['icons/*.png'],
@@ -83,3 +91,31 @@ export default defineConfig(({ mode }) => {
         ],
   };
 });
+
+/**
+ * Keeps the build free of files the operating system left lying around.
+ *
+ * macOS writes `.DS_Store` into any folder Finder has opened — `public/`
+ * included — and Vite copies `public/` wholesale, so a release built on a Mac
+ * ships one developer's window positions. It is gitignored, so a clean
+ * checkout never has one; this is for every build that is not a clean
+ * checkout, which is most of them.
+ */
+function dropOperatingSystemJunk(outDir: string): Plugin {
+  return {
+    name: 'mdcovergen:drop-os-junk',
+    apply: 'build',
+    // After the write, because public/ is copied outside the bundle and so is
+    // invisible to generateBundle.
+    closeBundle() {
+      const sweep = (directory: string): void => {
+        for (const entry of readdirSync(directory, { withFileTypes: true })) {
+          const path = join(directory, entry.name);
+          if (entry.isDirectory()) sweep(path);
+          else if (entry.name.startsWith('.')) rmSync(path);
+        }
+      };
+      sweep(resolveFromRoot(outDir));
+    },
+  };
+}

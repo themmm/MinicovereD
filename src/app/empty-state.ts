@@ -6,11 +6,31 @@ import { el } from './dom.ts';
  *
  * Its only job is to stop existing. Both routes to a first Release are named
  * because they are genuinely different jobs: a pressing the database knows,
- * and a compilation only the collector knows. Nothing else is on screen
- * competing with them.
+ * and a compilation only the collector knows.
  */
-export function createEmptyState(onStartByHand: () => void): HTMLElement {
-  return el(
+
+export interface EmptyState {
+  readonly element: HTMLElement;
+  /**
+   * Whether this browser's saved work is still being read.
+   *
+   * Until it has been, "start a Release" is a dangerous offer: starting one
+   * counts as an edit, an edit beats a late restore, and the collector would
+   * have thrown away a queue they were never shown. So it waits, and says so.
+   */
+  setRestoring(restoring: boolean): void;
+}
+
+export function createEmptyState(onStartByHand: () => void): EmptyState {
+  const start = el('button', {
+    class: 'button button--primary',
+    text: 'Start a Release by hand',
+    attrs: { type: 'button', id: 'start-by-hand' },
+    on: { click: onStartByHand },
+  });
+  const note = el('p', { class: 'field__note', attrs: { role: 'status' }, text: '' });
+
+  const element = el(
     'section',
     { class: 'panel panel--empty' },
     el('h2', { class: 'panel__title', text: 'Start with a Release' }),
@@ -26,11 +46,15 @@ export function createEmptyState(onStartByHand: () => void): HTMLElement {
         'Or fill one in yourself, which is how a mixtape gets a cover: type the tracks, add a ' +
         'picture if you have one, and print it.',
     }),
-    el('button', {
-      class: 'button button--primary',
-      text: 'Start a Release by hand',
-      attrs: { type: 'button', id: 'start-by-hand' },
-      on: { click: onStartByHand },
-    }),
+    start,
+    note,
   );
+
+  return {
+    element,
+    setRestoring(restoring) {
+      start.toggleAttribute('disabled', restoring);
+      note.textContent = restoring ? 'Looking for work saved in this browser…' : '';
+    },
+  };
 }
