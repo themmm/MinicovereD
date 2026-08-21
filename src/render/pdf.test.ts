@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
-import { ptToMm, rasterSizePx } from '../domain/units.ts';
+import { ptToMm, pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { buildPdf } from './pdf.ts';
 
 /** A real 2×2 PNG, so pdf-lib embeds an image rather than a placeholder. */
@@ -60,5 +60,12 @@ describe('300 DPI raster geometry', () => {
 
   it('rasterises a 100 mm span to 1181 px at 300 DPI', () => {
     expect(rasterSizePx({ width: 100, height: 100 }, 300).width).toBe(1181);
+  });
+
+  it('draws at an unrounded scale, so content cannot creep off the rasterised page', () => {
+    // 300 DPI is 11.811… px/mm; rounding that would shift the far edge of an
+    // A4 Sheet by most of a pixel.
+    expect(pxPerMm(300)).toBeCloseTo(11.8110236, 6);
+    expect(pxPerMm(300) * 25.4).toBeCloseTo(300, 9);
   });
 });

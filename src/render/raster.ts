@@ -1,6 +1,6 @@
 import type { Artwork } from '../domain/release.ts';
 import type { Mm, Point } from '../domain/units.ts';
-import { mmToPx, rasterSizePx } from '../domain/units.ts';
+import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
 import type { DrawOp, Guide, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
 
@@ -160,7 +160,7 @@ export async function rasterizeSheet(layout: SheetLayout, dpi: number): Promise<
   context.fillRect(0, 0, width, height);
 
   const images = await decodeAll(layout);
-  const scale = mmToPx(1000, dpi) / 1000;
+  const scale = pxPerMm(dpi);
   for (const placement of layout.placements) drawPlacement(context, placement, scale, images);
 
   return canvas;

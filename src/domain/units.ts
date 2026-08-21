@@ -21,9 +21,14 @@ export interface Rect extends Point, Size {}
 const MM_PER_INCH = 25.4;
 const PT_PER_INCH = 72;
 
+/** Raster pixels per millimetre at `dpi`. Exact — this is the drawing scale. */
+export function pxPerMm(dpi: number): number {
+  return dpi / MM_PER_INCH;
+}
+
 /** Raster pixels covering `mm` at `dpi`, rounded to a whole pixel. */
 export function mmToPx(mm: Mm, dpi: number): number {
-  return Math.round((mm * dpi) / MM_PER_INCH);
+  return Math.round(mm * pxPerMm(dpi));
 }
 
 /** PDF user-space points covering `mm`. Not rounded: the PDF page must be exact. */
