@@ -33,7 +33,7 @@ function creditEntry(attribution: Attribution): HTMLElement {
       'details',
       {},
       el('summary', { text: `${attribution.license} license text` }),
-      el('pre', { class: 'credit__text', text: licenseTextFor(attribution) }),
+      el('pre', { class: 'credit__text', text: licenseTextFor(attribution.license) }),
     ),
   );
 }

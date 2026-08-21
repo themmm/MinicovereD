@@ -7,19 +7,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && npm run build:pwa && npm run build:singlefile",
     "build:pwa": "vite build",
     "build:singlefile": "vite build --mode singlefile",
-    "build:all": "npm run build:pwa && npm run build:singlefile",
-    "preview": "vite preview",
+    "preview": "vite preview --outDir dist/pwa",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans": "5.3.0",
-    "@fontsource/noto-sans-jp": "5.3.0",
-    "pdf-lib": "1.17.1"
+    "@fontsource/noto-sans-jp": "5.3.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

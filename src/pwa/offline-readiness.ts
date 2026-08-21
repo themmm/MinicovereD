@@ -1,15 +1,21 @@
 import { registerSW } from 'virtual:pwa-register';
 
+/** How much of the app is available with the network switched off. */
 export type OfflineState = 'unsupported' | 'preparing' | 'ready';
 
 /**
- * Registers the service worker that makes the hosted app installable and
- * offline-capable (ADR-0002), and reports when the offline copy is complete.
+ * Reports when the app is usable offline (ADR-0002).
  *
- * The single-file build aliases `virtual:pwa-register` to a stub: that artifact
- * is already one self-contained file, so it has nothing to cache.
+ * The single-file artifact is one .html opened from disk with everything
+ * inlined, so it is offline the moment it loads — no service worker involved,
+ * and nothing about the browser to check. The hosted PWA gets there by
+ * registering the service worker that precaches the build.
  */
 export function watchOfflineReadiness(onChange: (state: OfflineState) => void): void {
+  if (__SELF_CONTAINED_BUILD__) {
+    onChange('ready');
+    return;
+  }
   if (!('serviceWorker' in navigator)) {
     onChange('unsupported');
     return;

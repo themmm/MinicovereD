@@ -1,8 +1,9 @@
 import logoUrl from '../../assets/logo.svg';
-import { watchOfflineReadiness } from '../pwa/offline-status.ts';
-import type { OfflineState } from '../pwa/offline-status.ts';
+import { watchOfflineReadiness } from '../pwa/offline-readiness.ts';
+import type { OfflineState } from '../pwa/offline-readiness.ts';
 import { createAboutDialog } from './about-dialog.ts';
 import { el } from './dom.ts';
+import type { Child } from './dom.ts';
 
 /**
  * The app chrome: header, workspace, footer. Later tickets fill the workspace;
@@ -16,48 +17,41 @@ const OFFLINE_LABELS: Readonly<Record<OfflineState, string>> = {
   ready: 'Ready offline',
 };
 
-/** A test string that only renders correctly from the bundled fonts. */
-const SPECIMEN: ReadonlyArray<{ label: string; text: string; weight?: 'bold' }> = [
-  { label: 'Latin', text: 'Wichita Lineman — Glen Campbell' },
-  { label: 'Umlauts', text: 'Grüße aus Köln · Ærø · Łódź · Čačak' },
-  { label: 'Accents', text: 'Rêveries · Canción · Sinnöver · Ángel' },
-  { label: 'Japanese', text: '東京は夜の七時 · こんにちは · カタカナ' },
-  { label: 'Bold', text: 'Grüße · 東京 · Ángel', weight: 'bold' },
+/** Sample lines that only render completely from the bundled fonts. */
+const FONT_SPECIMEN: ReadonlyArray<{ script: string; sample: string; weight?: 'bold' }> = [
+  { script: 'Latin', sample: 'Wichita Lineman — Glen Campbell' },
+  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak' },
+  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel' },
+  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ' },
+  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold' },
 ];
 
-function fontSpecimen(): HTMLElement {
-  const list = el('dl', { class: 'specimen' });
-  for (const row of SPECIMEN) {
-    list.appendChild(el('dt', { text: row.label }));
-    list.appendChild(
-      el('dd', { text: row.text, ...(row.weight ? { attrs: { 'data-weight': row.weight } } : {}) }),
-    );
-  }
+function panel(title: string, hint: string, ...body: Child[]): HTMLElement {
   return el(
     'section',
     { class: 'panel' },
-    el('h2', { class: 'panel__title', text: 'Bundled typography' }),
-    el('p', {
-      class: 'panel__hint',
-      text:
-        'Noto Sans and Noto Sans JP ship with the app, so these lines render identically ' +
-        'with the network switched off — on screen and on paper.',
-    }),
-    list,
+    el('h2', { class: 'panel__title', text: title }),
+    el('p', { class: 'panel__hint', text: hint }),
+    ...body,
   );
 }
 
-function workspacePlaceholder(): HTMLElement {
-  return el(
-    'section',
-    { class: 'panel' },
-    el('h2', { class: 'panel__title', text: 'Workspace' }),
-    el('p', {
-      class: 'panel__hint',
-      text:
-        'Releases, Parts and Sheets arrive here. This build carries the app shell: ' +
-        'bundled fonts, offline install and the license record.',
-    }),
+function fontSpecimen(): HTMLElement {
+  const list = el('dl', { class: 'specimen' });
+  for (const row of FONT_SPECIMEN) {
+    list.appendChild(el('dt', { text: row.script }));
+    list.appendChild(
+      el('dd', {
+        text: row.sample,
+        ...(row.weight ? { attrs: { 'data-weight': row.weight } } : {}),
+      }),
+    );
+  }
+  return panel(
+    'Bundled typography',
+    'Noto Sans and Noto Sans JP ship with the app, so these lines render identically ' +
+      'with the network switched off — on screen and on paper.',
+    list,
   );
 }
 
@@ -70,7 +64,13 @@ function installFavicon(): void {
 
 export function mountShell(root: HTMLElement): void {
   installFavicon();
+
   const about = createAboutDialog();
+  const openAbout = (event?: Event): void => {
+    event?.preventDefault();
+    about.showModal();
+  };
+
   const offlinePill = el('span', {
     class: 'status-pill',
     text: OFFLINE_LABELS.preparing,
@@ -94,33 +94,22 @@ export function mountShell(root: HTMLElement): void {
       }),
     ),
     offlinePill,
-    el('button', {
-      class: 'button button--onshell',
-      text: 'About & licenses',
-      on: { click: () => about.showModal() },
-    }),
+    el('button', { class: 'button button--onshell', text: 'About & licenses', on: { click: openAbout } }),
   );
 
-  const main = el(
-    'main',
-    { class: 'shell-main' },
-    el('div', { class: 'stack' }, workspacePlaceholder(), fontSpecimen()),
+  const workspace = panel(
+    'Workspace',
+    'Releases, Parts and Sheets arrive here. This build carries the app shell: ' +
+      'bundled fonts, offline install and the license record.',
   );
+
+  const main = el('main', { class: 'shell-main' }, el('div', { class: 'stack' }, workspace, fontSpecimen()));
 
   const footer = el(
     'footer',
     { class: 'shell-footer' },
     'mdcovergen · MIT licensed · works offline, stores nothing outside this device. ',
-    el('a', {
-      text: 'Bundled fonts and libraries',
-      attrs: { href: '#' },
-      on: {
-        click: (event: Event) => {
-          event.preventDefault();
-          about.showModal();
-        },
-      },
-    }),
+    el('a', { text: 'Bundled fonts and libraries', attrs: { href: '#' }, on: { click: openAbout } }),
   );
 
   root.append(header, main, footer, about);

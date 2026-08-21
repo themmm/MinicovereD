@@ -10,30 +10,38 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
  *  - default mode   -> hosted, installable, offline-capable PWA (`dist/pwa`)
  *  - `singlefile`   -> one self-contained .html that boots by double-click (`dist/singlefile`)
  *
- * Both bundle the same OFL fonts, so neither needs the network to render.
+ * Both bundle the same OFL fonts, so neither needs the network.
+ *
+ * Hosting under a sub-path (GitHub Pages project sites, for instance) is a
+ * matter of `MDCOVERGEN_BASE=/mdcovergen/ npm run build:pwa` — the manifest's
+ * scope and start_url follow it, otherwise the installed app would leave its
+ * own scope on the first navigation.
  */
 export default defineConfig(({ mode }) => {
   const singleFile = mode === 'singlefile';
+  const base = singleFile ? './' : (process.env['MDCOVERGEN_BASE'] ?? '/');
+  const resolveLocal = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
 
   return {
-    base: singleFile ? './' : '/',
+    base,
     // The single-file artifact must be exactly one file: nothing gets copied beside it.
     publicDir: singleFile ? false : 'public',
     resolve: {
       alias: singleFile
         ? {
-            // Nothing to register when the whole app is one inlined .html file.
-            'virtual:pwa-register': fileURLToPath(
-              new URL('./src/pwa/no-service-worker.ts', import.meta.url),
-            ),
+            // vite-plugin-pwa is not in play here, so its virtual module needs a stand-in.
+            'virtual:pwa-register': resolveLocal('./src/pwa/no-service-worker.ts'),
           }
         : {},
+    },
+    define: {
+      __SELF_CONTAINED_BUILD__: JSON.stringify(singleFile),
     },
     build: {
       outDir: singleFile ? 'dist/singlefile' : 'dist/pwa',
       emptyOutDir: true,
       target: 'es2022',
-      // The single-file build has to swallow ~4 MB of CJK font subsets as data URIs.
+      // The single-file build has to swallow ~1.5 MB of font subsets as data URIs.
       assetsInlineLimit: singleFile ? Number.MAX_SAFE_INTEGER : 4096,
       chunkSizeWarningLimit: 12_000,
     },
@@ -49,8 +57,8 @@ export default defineConfig(({ mode }) => {
               description:
                 'Design and print MiniDisc J-Cards, Back Cards and cartridge Labels as print-accurate PDFs.',
               lang: 'en',
-              start_url: '/',
-              scope: '/',
+              start_url: base,
+              scope: base,
               display: 'standalone',
               background_color: '#15202b',
               theme_color: '#15202b',

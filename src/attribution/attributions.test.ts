@@ -7,7 +7,13 @@ import { ATTRIBUTIONS, licenseTextFor, PERMISSIVE_LICENSES } from './attribution
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-const readManifest = (packageName: string): { version: string; dependencies?: Record<string, string> } =>
+interface PackageManifest {
+  readonly version: string;
+  readonly license?: string;
+  readonly dependencies?: Record<string, string>;
+}
+
+const readManifest = (packageName: string): PackageManifest =>
   JSON.parse(readFileSync(join(repoRoot, 'node_modules', packageName, 'package.json'), 'utf8'));
 
 /** Every npm package that ships to the user, resolved from disk (no network, no npm CLI). */
@@ -22,15 +28,24 @@ function shippedPackages(): string[] {
     }
   };
 
-  const root = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as {
-    dependencies?: Record<string, string>;
-  };
+  const root = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as PackageManifest;
   walk(root.dependencies);
   return [...seen].sort();
 }
 
 const claimedPackages = (): string[] =>
   ATTRIBUTIONS.map((entry) => entry.packageName).filter((name): name is string => !!name);
+
+/** A distinctive phrase from each license, so "shows the text" means the right text. */
+const LICENSE_MARKERS: Readonly<Record<string, string>> = {
+  MIT: 'MIT License',
+  'OFL-1.1': 'SIL OPEN FONT LICENSE',
+  '0BSD': 'Permission to use, copy, modify, and/or distribute',
+  Zlib: 'zlib License',
+};
+
+/** SPDX expressions are compared normalised, since `(MIT AND Zlib)` and `MIT AND Zlib` are one license. */
+const normaliseLicense = (license: string): string => license.replace(/[()]/g, '').trim();
 
 describe('attribution manifest (ADR-0003)', () => {
   it('attributes every npm package that ships to the user', () => {
@@ -50,11 +65,22 @@ describe('attribution manifest (ADR-0003)', () => {
     expect(wrong.map((entry) => entry.name)).toEqual([]);
   });
 
-  it('accepts only permissive licenses', () => {
-    const offenders = ATTRIBUTIONS.filter(
-      (entry) => !(PERMISSIVE_LICENSES as readonly string[]).includes(entry.license),
-    );
-    expect(offenders.map((entry) => `${entry.name}: ${entry.license}`)).toEqual([]);
+  it('states the license the installed package actually declares', () => {
+    const wrong = ATTRIBUTIONS.filter((entry) => {
+      if (!entry.packageName) return false;
+      const declared = readManifest(entry.packageName).license;
+      return declared === undefined || normaliseLicense(declared) !== entry.license;
+    });
+    expect(wrong.map((entry) => `${entry.name}: claims ${entry.license}`)).toEqual([]);
+  });
+
+  it('ships nothing under a license outside the permissive allowlist', () => {
+    const allowed = new Set<string>(PERMISSIVE_LICENSES);
+    const offenders = shippedPackages().filter((name) => {
+      const declared = readManifest(name).license;
+      return declared === undefined || !allowed.has(normaliseLicense(declared));
+    });
+    expect(offenders).toEqual([]);
   });
 
   it('names a copyright holder and a source URL for every entry', () => {
@@ -64,10 +90,18 @@ describe('attribution manifest (ADR-0003)', () => {
     expect(incomplete.map((entry) => entry.name)).toEqual([]);
   });
 
-  it('carries the full license text offline for every entry', () => {
-    for (const entry of ATTRIBUTIONS) {
-      expect(licenseTextFor(entry).length, entry.name).toBeGreaterThan(400);
+  it('can show the full text of every license on the allowlist, offline', () => {
+    for (const license of PERMISSIVE_LICENSES) {
+      const text = licenseTextFor(license);
+      // A composite expression such as `MIT AND Zlib` must show both licenses.
+      for (const id of license.split(' AND ')) {
+        expect(text, license).toContain(LICENSE_MARKERS[id] ?? `«no marker known for ${id}»`);
+      }
     }
+  });
+
+  it('refuses to show a license it has no text for', () => {
+    expect(() => licenseTextFor('Apache-2.0' as never)).toThrow(/no bundled license text/);
   });
 
   it('attributes the bundled fonts as OFL-1.1', () => {
