@@ -22,11 +22,14 @@ export interface SheetPreview {
   show(sheets: readonly SheetLayout[], fileName: string): void;
   /** Report a problem instead of a stale Sheet. */
   showProblem(message: string): void;
-  /** Add a button beside Export — used for the calibration sheet. */
-  addAction(label: string, run: () => void | Promise<void>): void;
 }
 
-export function createSheetPreview(): SheetPreview {
+export interface SheetPreviewOptions {
+  /** Buttons shown beside Export, in order. */
+  readonly actions?: readonly HTMLElement[];
+}
+
+export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): SheetPreview {
   const canvas = el('canvas', { class: 'preview__canvas' });
   const status = el('p', { class: 'preview__status', attrs: { role: 'status' }, text: '' });
   const sheetLabel = el('span', { class: 'pager__label', text: '' });
@@ -54,7 +57,7 @@ export function createSheetPreview(): SheetPreview {
     on: { click: () => turnTo(sheetIndex + 1) },
   });
   const pager = el('div', { class: 'pager' }, previous, sheetLabel, next);
-  const actions = el('div', { class: 'preview__actions' });
+  const actionBar = el('div', { class: 'preview__actions' }, ...actions);
 
   function turnTo(index: number): void {
     sheetIndex = Math.min(Math.max(index, 0), Math.max(sheets.length - 1, 0));
@@ -111,7 +114,7 @@ export function createSheetPreview(): SheetPreview {
       { class: 'preview__head' },
       el('h2', { class: 'panel__title', text: 'Preview' }),
       pager,
-      actions,
+      actionBar,
       exportButton,
     ),
     el('div', { class: 'preview__frame' }, canvas),
@@ -132,15 +135,6 @@ export function createSheetPreview(): SheetPreview {
         return;
       }
       void redraw();
-    },
-    addAction(label, run) {
-      actions.appendChild(
-        el('button', {
-          class: 'button',
-          text: label,
-          on: { click: () => void run() },
-        }),
-      );
     },
     showProblem(message) {
       redrawToken++;

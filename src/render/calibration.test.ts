@@ -30,8 +30,8 @@ describe('the calibration sheet — the test square', () => {
     const square = figures().get('100 mm test square');
 
     expect(square).toBeDefined();
-    expectMm(square?.width ?? -1, CALIBRATION_SQUARE_MM, 'square width');
-    expectMm(square?.height ?? -1, CALIBRATION_SQUARE_MM, 'square height');
+    expectMm(square?.width ?? -1, 100, 'square width');
+    expectMm(square?.height ?? -1, 100, 'square height');
     expect(CALIBRATION_SQUARE_MM).toBe(100);
   });
 
@@ -61,9 +61,28 @@ describe('the calibration sheet — outlines at 1:1', () => {
   it('cuts the notch into the outline of a preset that has one, and not one that has not', () => {
     const outlines = new Map(sheet().figures.map((figure) => [figure.label, figure.outline]));
 
-    // Classic keeps the cartridge's cut corner; Full covers it.
-    expect(outlines.get('Label — Classic')).toHaveLength(5);
-    expect(outlines.get('Label — Full')).toHaveLength(4);
+    // Classic keeps the cartridge's cut corner, so its top-right corner is
+    // missing and replaced by two points on the diagonal. Full covers it.
+    expect(outlines.get('Label — Classic')).toContainEqual({ x: 29, y: 0 });
+    expect(outlines.get('Label — Classic')).toContainEqual({ x: 35, y: 6 });
+    expect(outlines.get('Label — Classic')?.some((p) => p.x === 35 && p.y === 0)).toBe(false);
+    expect(outlines.get('Label — Full')).toContainEqual({ x: 38, y: 0 });
+  });
+
+  it('shows the Label this Release is actually set to, once it is not a preset', () => {
+    const nudged: PartDimensions = {
+      ...DEFAULT_PART_DIMENSIONS,
+      label: { width: 36.4, height: 53.1, notch: true, notchSize: 6 },
+    };
+
+    // Nudging the size is exactly when a collector wants their own outline to
+    // hold a cartridge against; the presets alone would not show it.
+    const own = figures(nudged).get('Label — this Release');
+    expectMm(own?.width ?? -1, 36.4, 'own Label width');
+    expectMm(own?.height ?? -1, 53.1, 'own Label height');
+
+    // On a preset there is nothing extra to draw.
+    expect(figures().has('Label — this Release')).toBe(false);
   });
 
   it('shows the J-Card and the Back Card at their current dimensions', () => {
@@ -97,6 +116,22 @@ describe('the calibration sheet — outlines at 1:1', () => {
 });
 
 describe('the calibration sheet — the page', () => {
+  it('keeps every caption clear of the next figure along', () => {
+    const drawn = sheet().figures;
+
+    for (const a of drawn) {
+      for (const b of drawn) {
+        if (a === b || a.sheet !== b.sheet) continue;
+        const sameRow = Math.abs(a.bounds.y - b.bounds.y) < 1;
+        if (!sameRow || b.bounds.x <= a.bounds.x) continue;
+        // A caption may spill into the gap but must stop short of its neighbour.
+        expect(a.bounds.x + a.bounds.width, `${a.label} caption vs ${b.label}`).toBeLessThan(
+          b.bounds.x,
+        );
+      }
+    }
+  });
+
   it('keeps every figure inside the printable margin', () => {
     for (const figure of sheet().figures) {
       expect(figure.bounds.x, `${figure.label} left`).toBeGreaterThanOrEqual(5);
@@ -180,6 +215,6 @@ describe('the calibration sheet — the page', () => {
       .flatMap((op) => (op.op === 'text' ? [op.text] : []))
       .join(' ');
     expect(printed).toContain('100 mm test square');
-    expect(printed).toMatch(/reduce the margin/i);
+    expect(printed).toMatch(/reduce the printable margin/i);
   });
 });

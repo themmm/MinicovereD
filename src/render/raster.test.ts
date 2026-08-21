@@ -176,7 +176,7 @@ describe('rasterising the calibration sheet', () => {
   });
 
   it('draws Sheet-level marks even though the calibration sheet has no Parts', () => {
-    const { layouts } = renderCalibrationSheet(
+    const { layouts, figures } = renderCalibrationSheet(
       { paper: A4, marginMm: 5 },
       DEFAULT_PART_DIMENSIONS,
       { widthMm: (text, style) => text.length * style.sizeMm * 0.5 },
@@ -187,8 +187,19 @@ describe('rasterising the calibration sheet', () => {
 
     drawSheet(context, first, EXPORT_DPI);
 
+    // Nothing on this page is a Part, so a renderer that only drew placements
+    // would produce a blank sheet. Every outline has to appear as a real path.
     expect(first.placements).toEqual([]);
-    expect(context.calls.filter((call) => call.method === 'fillText').length).toBeGreaterThan(5);
-    expect(context.calls.filter((call) => call.method === 'stroke').length).toBeGreaterThan(5);
+    const moves = context.calls.filter((call) => call.method === 'moveTo');
+    for (const figure of figures.filter((candidate) => candidate.sheet === 0)) {
+      const x = figure.bounds.x * (EXPORT_DPI / 25.4);
+      const y = figure.bounds.y * (EXPORT_DPI / 25.4);
+      expect(
+        moves.some(
+          (move) => Math.abs((move.args[0] ?? 0) - x) < 0.5 && Math.abs((move.args[1] ?? 0) - y) < 0.5,
+        ),
+        `${figure.label} outline drawn`,
+      ).toBe(true);
+    }
   });
 });

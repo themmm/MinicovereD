@@ -68,7 +68,24 @@ export function createWorkspace(): HTMLElement {
   let dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS;
 
   const measure = createCanvasTextMeasurer();
-  const preview = createSheetPreview();
+
+  // The calibration sheet is not a Release: it is the ruler you check the
+  // printer against before trusting anything else this app produced.
+  const calibrationButton = el('button', {
+    class: 'button',
+    text: 'Calibration sheet',
+    on: {
+      click: () => {
+        const { layouts } = renderCalibrationSheet(
+          { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
+          dimensions,
+          measure,
+        );
+        preview.show(layouts, 'mdcovergen-calibration.pdf');
+      },
+    },
+  });
+  const preview = createSheetPreview({ actions: [calibrationButton] });
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
 
   const design = (): ReleaseDesign => ({ release, templateId, params, dimensions });
@@ -110,16 +127,6 @@ export function createWorkspace(): HTMLElement {
     refresh();
   });
 
-  // The calibration sheet is not a Release: it is the ruler you check the
-  // printer against before trusting anything else this app produced.
-  preview.addAction('Calibration sheet', () => {
-    const { layouts } = renderCalibrationSheet(
-      { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
-      dimensions,
-      measure,
-    );
-    preview.show(layouts, 'mdcovergen-calibration.pdf');
-  });
 
   // Fonts are bundled but still load asynchronously; measuring before they are
   // ready would lay the Sheet out against a fallback face.

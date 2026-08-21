@@ -98,10 +98,16 @@ export function createLabelControls(
         input: (event) => {
           const value = Number((event.target as HTMLInputElement).value);
           if (!Number.isFinite(value) || value < LABEL_SIZE_RANGE.min || value > LABEL_SIZE_RANGE.max) {
+            // Typed mid-edit or out of range: leave the Label alone for now.
             return;
           }
           markCustom();
           apply({ ...dimensions, [field.key]: value }, false);
+        },
+        // Whatever the field ends up showing has to be the Label's real size.
+        // An emptied or rejected field would otherwise disagree with it forever.
+        blur: (event) => {
+          (event.target as HTMLInputElement).value = String(dimensions[field.key]);
         },
       },
     });
