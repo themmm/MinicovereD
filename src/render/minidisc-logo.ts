@@ -11,7 +11,7 @@ import type { ImageSource } from './layout.ts';
  * of the source SVG gives — and it is why there is no multi-colour variant.
  */
 
-/** Intrinsic size of the source artwork, from its viewBox. */
+/** Intrinsic size of the source artwork, from its own width and height. */
 const LOGO_WIDTH_PX = 519.87402;
 const LOGO_HEIGHT_PX = 504;
 
@@ -33,6 +33,11 @@ export function safeLogoColor(color: string): string {
   return SAFE_COLOR.test(color.trim()) ? color.trim() : FALLBACK_COLOR;
 }
 
+/**
+ * Colour swatches fire on every frame of a drag, and each colour interns a
+ * ~13 KB data URL. A handful of colours is all a design ever uses at once.
+ */
+const CACHE_LIMIT = 8;
 const cache = new Map<string, ImageSource>();
 
 export function miniDiscLogo(requestedColor: string): ImageSource {
@@ -47,6 +52,7 @@ export function miniDiscLogo(requestedColor: string): ImageSource {
     widthPx: LOGO_WIDTH_PX,
     heightPx: LOGO_HEIGHT_PX,
   };
+  if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   cache.set(color, source);
   return source;
 }

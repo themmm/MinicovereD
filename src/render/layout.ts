@@ -42,6 +42,8 @@ export type DrawOp =
       readonly fit: 'cover' | 'contain';
       /** What this image is, so a Sheet can be inspected without decoding it. */
       readonly role: 'artwork' | 'logo';
+      /** Rotation about the rect's centre, clockwise. The Spine reads sideways. */
+      readonly rotationDeg?: -90 | 0 | 90;
     }
   | { readonly op: 'text'; readonly text: string; readonly at: Point; readonly style: TextStyle };
 

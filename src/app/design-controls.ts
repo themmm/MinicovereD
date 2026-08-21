@@ -4,8 +4,9 @@ import { el } from './dom.ts';
 
 /**
  * How this Release looks: which Template, in what colours, with or without the
- * type over the cover and the MiniDisc logo. Every one of these belongs to the
- * Release, not to the app, so two albums can wear the same design differently.
+ * type over the artwork and the MiniDisc logo. Every one of these belongs to
+ * the Release, not to the app, so two Releases can wear the same design
+ * differently.
  */
 
 export interface DesignChoice {
@@ -25,13 +26,17 @@ const COLOURS: readonly ColourField[] = [
 ];
 
 interface ToggleField {
-  readonly key: 'showCoverText' | 'showLogo';
+  readonly key: 'showOverlayText' | 'showLogo';
   readonly label: string;
   readonly hint: string;
 }
 
 const TOGGLES: readonly ToggleField[] = [
-  { key: 'showCoverText', label: 'Text over the cover', hint: 'Artist and album on the Front Panel' },
+  {
+    key: 'showOverlayText',
+    label: 'Text over the artwork',
+    hint: 'Artist and album on top of full-bleed artwork',
+  },
   { key: 'showLogo', label: 'MiniDisc logo', hint: 'On Front Panel and Spine' },
 ];
 
@@ -113,7 +118,7 @@ export function createDesignControls(
     el('h2', { class: 'panel__title', text: 'Design' }),
     el('p', {
       class: 'panel__hint',
-      text: 'Template, colours and what appears on the cover — set per Release.',
+      text: 'Template, colours and what appears on the artwork — set per Release.',
     }),
     el(
       'label',

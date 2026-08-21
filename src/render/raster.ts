@@ -1,7 +1,7 @@
-import type { Mm, Point, Rect } from '../domain/units.ts';
+import type { Mm, Point } from '../domain/units.ts';
 import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
-import type { DrawOp, Guide, ImageSource, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
+import type { DrawOp, Guide, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
 
 /**
  * Draws a Sheet layout onto a canvas. This is the one place that knows about
@@ -105,21 +105,33 @@ function drawText(surface: Surface, op: Extract<DrawOp, { op: 'text' }>): void {
   context.restore();
 }
 
-function drawImage(surface: Surface, rect: Rect, from: ImageSource, fit: 'cover' | 'contain'): void {
-  const image = surface.images.get(from.dataUrl);
+function drawImage(surface: Surface, op: Extract<DrawOp, { op: 'image' }>): void {
+  const { context, scale } = surface;
+  const image = surface.images.get(op.source.dataUrl);
   if (!image) return;
-  const { source, dest } = fitImage(from, rect, fit);
-  surface.context.drawImage(
+
+  const { source, dest } = fitImage(op.source, op.rect, op.fit);
+  context.save();
+  if (op.rotationDeg) {
+    // Rotate about the rect's centre, so the caller reserves the box it sees.
+    const centreX = (dest.x + dest.width / 2) * scale;
+    const centreY = (dest.y + dest.height / 2) * scale;
+    context.translate(centreX, centreY);
+    context.rotate((op.rotationDeg * Math.PI) / 180);
+    context.translate(-centreX, -centreY);
+  }
+  context.drawImage(
     image,
     source.x,
     source.y,
     source.width,
     source.height,
-    dest.x * surface.scale,
-    dest.y * surface.scale,
-    dest.width * surface.scale,
-    dest.height * surface.scale,
+    dest.x * scale,
+    dest.y * scale,
+    dest.width * scale,
+    dest.height * scale,
   );
+  context.restore();
 }
 
 function drawOp(surface: Surface, op: DrawOp): void {
@@ -141,7 +153,7 @@ function drawOp(surface: Surface, op: DrawOp): void {
       context.stroke();
       return;
     case 'image':
-      drawImage(surface, op.rect, op.source, op.fit);
+      drawImage(surface, op);
       return;
     case 'text':
       drawText(surface, op);

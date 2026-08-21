@@ -12,10 +12,19 @@ import publicDomainTextLogo from './licenses/PD-textlogo.txt?raw';
  */
 
 /**
- * The licenses mdcovergen is allowed to ship under. An id may only appear here
- * once its text is bundled, so the dialog can always show it offline.
+ * The licenses mdcovergen is allowed to ship under. SPDX ids, plus SPDX's own
+ * `LicenseRef-` form for terms that have no id — the MiniDisc mark is public
+ * domain for copyright purposes but is nobody's standard license. An id may
+ * only appear here once its text is bundled, so the dialog can always show it
+ * offline.
  */
-export const PERMISSIVE_LICENSES = ['MIT', 'MIT AND Zlib', 'OFL-1.1', '0BSD', 'PD-textlogo'] as const;
+export const PERMISSIVE_LICENSES = [
+  'MIT',
+  'MIT AND Zlib',
+  'OFL-1.1',
+  '0BSD',
+  'LicenseRef-PD-textlogo',
+] as const;
 
 export type LicenseId = (typeof PERMISSIVE_LICENSES)[number];
 
@@ -40,7 +49,7 @@ const LICENSE_TEXTS: Readonly<Record<string, string>> = {
   'OFL-1.1': ofl,
   '0BSD': zeroBsd,
   Zlib: zlib,
-  'PD-textlogo': publicDomainTextLogo,
+  'LicenseRef-PD-textlogo': publicDomainTextLogo,
 };
 
 /**
@@ -110,7 +119,7 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     name: 'MiniDisc logo',
     kind: 'asset',
     version: 'Commons revision',
-    license: 'PD-textlogo',
+    license: 'LicenseRef-PD-textlogo',
     copyright: 'Sony Corporation',
     url: 'https://commons.wikimedia.org/wiki/File:MiniDisc-Logo.svg',
     note:

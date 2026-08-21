@@ -1,5 +1,7 @@
+import type { Release } from '../../domain/release.ts';
 import type { Mm, Point, Rect } from '../../domain/units.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
+import { readableInkFor, withAlpha } from '../colors.ts';
 import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise } from '../text.ts';
 import type { TextMeasurer } from '../text.ts';
@@ -42,6 +44,7 @@ export function logoOp(
   anchor: Point,
   widthMm: Mm,
   color: string,
+  rotationDeg: -90 | 0 = 0,
 ): DrawOp[] {
   if (!params.showLogo) return [];
   const height = widthMm / MINIDISC_LOGO_ASPECT;
@@ -52,8 +55,33 @@ export function logoOp(
       source: miniDiscLogo(color),
       fit: 'contain',
       role: 'logo',
+      ...(rotationDeg ? { rotationDeg } : {}),
     },
   ];
+}
+
+/** How tall the logo is at a given width. */
+export function logoHeight(widthMm: Mm): Mm {
+  return widthMm / MINIDISC_LOGO_ASPECT;
+}
+
+/** Grey standing in for artwork a Release does not have yet. */
+const PLACEHOLDER_TINT = 0.9;
+
+/**
+ * The Release's artwork in `rect`, or a flat panel when there is none. Shared,
+ * because "no artwork yet" has to look the same whichever Template is chosen.
+ */
+export function artworkOrPlaceholder(release: Release, rect: Rect, params: TemplateParams): DrawOp {
+  return release.artwork
+    ? { op: 'image', rect, source: release.artwork, fit: 'cover', role: 'artwork' }
+    : { op: 'fill-rect', rect, color: placeholderColor(params) };
+}
+
+function placeholderColor(params: TemplateParams): string {
+  // A tint of the ink, so the placeholder belongs to the chosen palette rather
+  // than being a grey that fights it.
+  return withAlpha(params.inkColor, 1 - PLACEHOLDER_TINT);
 }
 
 /**
@@ -61,32 +89,38 @@ export function logoOp(
  * read up the case edge, and the logo below it when enabled.
  */
 export function drawSpine({ release, params, measure }: PartContext, panel: Rect): DrawOp[] {
+  // The bar is the collector's accent colour, so the ink on it has to be
+  // chosen rather than configured: dark paper on a dark accent would otherwise
+  // put invisible type on the one Part that has to be read from a shelf.
+  const ink = readableInkFor(params.accentColor);
   const style: TextStyle = {
     sizeMm: 2.9,
     weight: 600,
-    color: params.paperColor,
+    color: ink,
     align: 'center',
     baseline: 'middle',
-    // Reading bottom-to-top, so the line is the right way up on a shelf.
+    // Bottom-to-top, so a shelved case reads the right way up (CONTEXT.md: Spine).
     rotationDeg: -90,
   };
+
   const centreX = panel.x + panel.width / 2;
+  // Rotated to match the type: on a shelf the mark and the line read together.
+  const logoLength = params.showLogo ? SPINE_LOGO_WIDTH + PAD : 0;
   const logo = logoOp(
     params,
-    { x: centreX - SPINE_LOGO_WIDTH / 2, y: panel.y + panel.height - PAD / 2 },
+    { x: centreX - SPINE_LOGO_WIDTH / 2, y: panel.y + panel.height - PAD },
     SPINE_LOGO_WIDTH,
-    params.paperColor,
+    ink,
+    -90,
   );
-  // The logo takes the foot of the Spine, so the type centres in what is left.
-  const textRoom = panel.height - 2 * PAD - (params.showLogo ? SPINE_LOGO_WIDTH * 2 : 0);
 
   return [
     { op: 'fill-rect', rect: panel, color: params.accentColor },
     text(
       spineLine(release),
-      { x: centreX, y: panel.y + (panel.height - (params.showLogo ? SPINE_LOGO_WIDTH * 2 : 0)) / 2 },
+      { x: centreX, y: panel.y + (panel.height - logoLength) / 2 },
       style,
-      textRoom,
+      panel.height - 2 * PAD - logoLength,
       measure,
     ),
     ...logo,

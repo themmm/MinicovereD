@@ -42,7 +42,7 @@ const LICENSE_MARKERS: Readonly<Record<string, string>> = {
   'OFL-1.1': 'SIL OPEN FONT LICENSE',
   '0BSD': 'Permission to use, copy, modify, and/or distribute',
   Zlib: 'zlib License',
-  'PD-textlogo': 'below the threshold of originality',
+  'LicenseRef-PD-textlogo': 'below the threshold of originality',
 };
 
 /** SPDX expressions are compared normalised, since `(MIT AND Zlib)` and `MIT AND Zlib` are one license. */
@@ -72,7 +72,7 @@ describe('attribution manifest (ADR-0003)', () => {
     expect(logo?.kind).toBe('asset');
     expect(logo?.note).toMatch(/trademark/i);
     // The license text has to say what "public domain" does not cover.
-    expect(licenseTextFor('PD-textlogo')).toMatch(/trademark/i);
+    expect(licenseTextFor('LicenseRef-PD-textlogo')).toMatch(/trademark/i);
   });
 
   it('states the license the installed package actually declares', () => {

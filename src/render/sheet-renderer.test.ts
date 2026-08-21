@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
 import { rectsOverlap } from '../domain/units.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, jCardSize, PART_KINDS } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
@@ -352,19 +352,20 @@ describe('SheetRenderer — Template parameters', () => {
     expect(colours).toContain('#007700');
   });
 
-  it('leaves the artwork clean when cover text is switched off', () => {
+  it('leaves the artwork clean when overlay text is switched off', () => {
     const withText = aDesign(aRelease(), { templateId: 'fullbleed' });
     const withoutText = aDesign(aRelease(), {
       templateId: 'fullbleed',
-      params: { showCoverText: false },
+      params: { showOverlayText: false },
     });
 
     expect(textsOn(withText, 'jcard')).toContain('Glen Campbell');
     expect(textsOn(withoutText, 'jcard')).not.toContain('Glen Campbell');
     // The Spine still carries artist and album: it is not "over the cover".
     expect(textsOn(withoutText, 'jcard')).toContain('Glen Campbell — Wichita Lineman');
-    // And the Back Card is untouched, or the tracklist would vanish with it.
-    expect(textsOn(withoutText, 'back-card').length).toBeGreaterThan(3);
+    // And the Back Card is untouched, or the tracklist would vanish with it:
+    // album, artist and one line per track.
+    expect(textsOn(withoutText, 'back-card')).toHaveLength(2 + aRelease().tracks.length);
   });
 
   it('puts the MiniDisc logo on Front Panel and Spine when it is enabled', () => {
@@ -395,14 +396,86 @@ describe('SheetRenderer — Template parameters', () => {
     const design = aDesign(aRelease(), { params: { showLogo: true } });
     const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const { width, height } = jCardSize(DEFAULT_PART_DIMENSIONS.jcard);
+    const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
 
-    for (const op of jcard?.ops ?? []) {
-      if (op.op !== 'image' || op.role !== 'logo') continue;
+    expect(logos, 'there are logos to check').toHaveLength(2);
+    for (const op of logos) {
+      if (op.op !== 'image') continue;
       expect(op.rect.x, 'logo left').toBeGreaterThanOrEqual(0);
       expect(op.rect.y, 'logo top').toBeGreaterThanOrEqual(0);
-      expect(op.rect.x + op.rect.width, 'logo right').toBeLessThanOrEqual(87.5);
-      expect(op.rect.y + op.rect.height, 'logo bottom').toBeLessThanOrEqual(79);
+      expect(op.rect.x + op.rect.width, 'logo right').toBeLessThanOrEqual(width);
+      expect(op.rect.y + op.rect.height, 'logo bottom').toBeLessThanOrEqual(height);
     }
+  });
+
+  it('never runs the Front Panel type through the logo, however long the name', () => {
+    // The failure this guards: a wide artist, ellipsised to the full panel
+    // width and centred, crossing a logo anchored in the bottom-right corner.
+    const wordy = aRelease({
+      artist: 'Godspeed You! Black Emperor',
+      album: 'Lift Your Skinny Fists Like Antennas to Heaven',
+    });
+    const design = aDesign(wordy, { params: { showLogo: true, showOverlayText: true } });
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const ops = jcard?.ops ?? [];
+
+    const logo = ops.find((op) => op.op === 'image' && op.role === 'logo' && !op.rotationDeg);
+    if (logo?.op !== 'image') throw new Error('no upright logo on the Front Panel');
+
+    const frontPanel = jcard?.panels?.find((panel) => panel.panel === 'front-panel')?.rect;
+    if (!frontPanel) throw new Error('J-Card has no Front Panel');
+
+    for (const op of ops) {
+      if (op.op !== 'text' || op.style.rotationDeg) continue;
+      if (op.at.x < frontPanel.x) continue;
+
+      const width = testMeasurer.widthMm(op.text, op.style);
+      const left = op.style.align === 'center' ? op.at.x - width / 2 : op.at.x;
+      const right = left + width;
+      const overlapsHorizontally = right > logo.rect.x && left < logo.rect.x + logo.rect.width;
+      const overlapsVertically =
+        op.at.y + op.style.sizeMm > logo.rect.y && op.at.y < logo.rect.y + logo.rect.height;
+
+      expect(
+        overlapsHorizontally && overlapsVertically,
+        `"${op.text}" runs into the logo`,
+      ).toBe(false);
+    }
+  });
+
+  it('turns the Spine logo with the Spine type, so both read the same way', () => {
+    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
+    if (!spine) throw new Error('J-Card has no Spine');
+
+    const onSpine = (x: number): boolean => x >= spine.x && x <= spine.x + spine.width;
+    const spineLogo = (jcard?.ops ?? []).find(
+      (op) => op.op === 'image' && op.role === 'logo' && onSpine(op.rect.x),
+    );
+    const spineText = (jcard?.ops ?? []).find((op) => op.op === 'text' && onSpine(op.at.x));
+
+    expect(spineLogo?.op === 'image' && spineLogo.rotationDeg).toBe(-90);
+    expect(spineText?.op === 'text' && spineText.style.rotationDeg).toBe(-90);
+  });
+
+  it('keeps Spine type readable however dark the accent colour is', () => {
+    const dark = aDesign(aRelease(), {
+      params: { accentColor: '#101418', paperColor: '#0b0b0b', inkColor: '#0b0b0b' },
+    });
+    const [sheet] = renderSheets([dark], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
+    if (!spine) throw new Error('J-Card has no Spine');
+
+    const spineText = (jcard?.ops ?? []).find(
+      (op) => op.op === 'text' && op.at.x >= spine.x && op.at.x <= spine.x + spine.width,
+    );
+
+    // Dark paper on a dark accent would print the Spine as a solid block.
+    expect(spineText?.op === 'text' && spineText.style.color).toBe('#ffffff');
   });
 
   it('reads the Spine bottom-to-top, the way a shelved case is read', () => {

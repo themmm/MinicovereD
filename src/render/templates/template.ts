@@ -14,7 +14,7 @@ export type TemplateId = 'classic' | 'fullbleed';
 
 /**
  * What a collector can change about a Template without leaving it. Shared by
- * every Template, and set per Release, so two albums can use the same design
+ * every Template, and set per Release, so two Releases can wear the same design
  * in different colours.
  */
 export interface TemplateParams {
@@ -25,10 +25,12 @@ export interface TemplateParams {
   /** The Spine bar, and highlights that go with it. */
   readonly accentColor: string;
   /**
-   * Artist and album over the Front Panel artwork. Turning it off is what lets
-   * full-bleed artwork stay clean.
+   * Artist and album drawn *on top of* the artwork — the Full-bleed Front Panel
+   * and Label. Turning it off is what lets full-bleed artwork stay clean
+   * (story 13). Type set beside the artwork, as on the Classic Label, is not
+   * over it and is unaffected.
    */
-  readonly showCoverText: boolean;
+  readonly showOverlayText: boolean;
   /** The MiniDisc logo on Front Panel and Spine (ADR-0004). */
   readonly showLogo: boolean;
 }
@@ -37,7 +39,7 @@ export const DEFAULT_TEMPLATE_PARAMS: TemplateParams = {
   paperColor: '#ffffff',
   inkColor: '#141414',
   accentColor: '#1f2933',
-  showCoverText: true,
+  showOverlayText: true,
   showLogo: true,
 };
 

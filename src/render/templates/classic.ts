@@ -1,9 +1,8 @@
 import { partShape } from '../../domain/parts.ts';
-import type { Release } from '../../domain/release.ts';
 import type { Mm, Rect } from '../../domain/units.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
-import type { TemplateParams } from './template.ts';
 import {
+  artworkOrPlaceholder,
   drawBackCard,
   drawInnerFlap,
   drawSpine,
@@ -19,31 +18,29 @@ import type { JCardContext, PartContext, Template } from './template.ts';
  * it. The counterpart to Full-bleed, where the artwork runs to the edges.
  */
 
-const PLACEHOLDER = '#e6e6e6';
-
-function artworkOrPlaceholder(release: Release, rect: Rect): DrawOp {
-  return release.artwork
-    ? { op: 'image', rect, source: release.artwork, fit: 'cover', role: 'artwork' }
-    : { op: 'fill-rect', rect, color: PLACEHOLDER };
-}
-
 function drawFrontPanel({ release, params, measure }: PartContext, panel: Rect): DrawOp[] {
   const artSide = panel.width - 2 * PAD;
   const artTop = panel.y + PAD;
   const artBottom = artTop + artSide;
-  const centreX = panel.x + panel.width / 2;
-  const textWidth = panel.width - 2 * PAD;
+
+  // The logo takes the bottom-right corner, so the caption gets the rest of the
+  // width and centres in that — otherwise a long artist runs straight through
+  // the mark, which no amount of ellipsising alone would prevent.
+  const logoColumn = params.showLogo ? FRONT_LOGO_WIDTH + PAD : 0;
+  const captionLeft = panel.x + PAD;
+  const captionWidth = panel.width - 2 * PAD - logoColumn;
+  const captionCentre = captionLeft + captionWidth / 2;
 
   const artistStyle: TextStyle = { sizeMm: 4, weight: 700, color: params.inkColor, align: 'center', baseline: 'top' };
   const albumStyle: TextStyle = { sizeMm: 3.2, weight: 400, color: params.inkColor, align: 'center', baseline: 'top' };
 
   return [
     { op: 'fill-rect', rect: panel, color: params.paperColor },
-    artworkOrPlaceholder(release, { x: panel.x + PAD, y: artTop, width: artSide, height: artSide }),
-    ...(params.showCoverText
+    artworkOrPlaceholder(release, { x: panel.x + PAD, y: artTop, width: artSide, height: artSide }, params),
+    ...(params.showOverlayText
       ? [
-          text(release.artist, { x: centreX, y: artBottom + 2.4 }, artistStyle, textWidth, measure),
-          text(release.album, { x: centreX, y: artBottom + 7.2 }, albumStyle, textWidth, measure),
+          text(release.artist, { x: captionCentre, y: artBottom + 2.4 }, artistStyle, captionWidth, measure),
+          text(release.album, { x: captionCentre, y: artBottom + 7.2 }, albumStyle, captionWidth, measure),
         ]
       : []),
     ...logoOp(
@@ -76,7 +73,9 @@ function drawLabel({ release, params, size, dimensions, measure }: PartContext):
 
   return [
     { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: params.paperColor },
-    artworkOrPlaceholder(release, { x: artLeft, y: pad, width: artSide, height: artSide }),
+    artworkOrPlaceholder(release, { x: artLeft, y: pad, width: artSide, height: artSide }, params),
+    // Beside the artwork rather than on top of it, so `showOverlayText` — which
+    // governs type over artwork — leaves this caption alone.
     text(release.artist, { x: centreX, y: captionTop }, artistStyle, textWidth, measure),
     text(release.album, { x: centreX, y: captionTop + artistStyle.sizeMm + 1 }, albumStyle, textWidth, measure),
   ];
@@ -95,4 +94,3 @@ export const CLASSIC_TEMPLATE: Template = {
   drawLabel,
 };
 
-export type { TemplateParams };
