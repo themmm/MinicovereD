@@ -88,21 +88,33 @@ export function createIndexedDbStore(): ProjectStore {
  * Waits for a lull before writing. Every keystroke changes the project, and
  * IndexedDB does not need to hear about all of them.
  */
+export interface DebouncedSave {
+  (project: Project): void;
+  /** Write whatever is waiting, now. */
+  readonly flush: () => void;
+}
+
 export function debounceSave(
   store: ProjectStore,
   delayMs: number,
   onError: (error: unknown) => void,
-): (project: Project) => void {
+): DebouncedSave {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Project | undefined;
 
-  return (project) => {
+  const write = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    const toSave = pending;
+    pending = undefined;
+    if (toSave) store.save(toSave).catch(onError);
+  };
+
+  const save = (project: Project): void => {
     pending = project;
     if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = undefined;
-      const toSave = pending;
-      if (toSave) store.save(toSave).catch(onError);
-    }, delayMs);
+    timer = setTimeout(write, delayMs);
   };
+
+  return Object.assign(save, { flush: write });
 }

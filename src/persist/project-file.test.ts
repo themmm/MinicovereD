@@ -223,3 +223,99 @@ describe('reading a project file with values that would break a render', () => {
     expect(result.project.sheet.parts.length).toBeGreaterThan(0);
   });
 });
+
+describe('reading a project file built to break things', () => {
+  const read = (value: unknown) => readProjectFile(JSON.stringify(value));
+
+  it('refuses two Releases that share an id', () => {
+    // Parts find their Release by id, so a duplicate prints the same content
+    // twice — the renderer already refuses it; the reader should say so first.
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        { release: { id: 'same', tracks: [] } },
+        { release: { id: 'same', tracks: [] } },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/share the id "same"/);
+  });
+
+  it('does not let a __proto__ key reach anything it touches', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [{ release: { id: 'r1', tracks: [], __proto__: { polluted: true } } }],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    if (result.ok) expect(Object.hasOwn(result.project.designs[0]!.release, 'polluted')).toBe(false);
+  });
+
+  it('ignores numbers that are not numbers', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        {
+          release: { id: 'r1', tracks: [{ position: 'first', title: 'One' }] },
+          dimensions: { label: { width: null, height: 'tall', notch: 'yes', notchSize: -3 } },
+        },
+      ],
+      sheet: { paperId: 'a4', marginMm: 'wide', parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    const [first] = result.project.designs;
+    expect(first?.release.tracks[0]?.position).toBe(1);
+    expect(first?.dimensions.label.width).toBe(35);
+    expect(first?.dimensions.label.notchSize).toBe(0);
+    expect(result.project.sheet.marginMm).toBe(5);
+  });
+
+  it('drops artwork that points anywhere but at itself', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        {
+          release: {
+            id: 'r1',
+            tracks: [],
+            // A project file must not be able to make the app fetch a URL.
+            artwork: { dataUrl: 'https://example.invalid/cover.jpg', widthPx: 500, heightPx: 500 },
+          },
+        },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.designs[0]?.release.artwork).toBeUndefined();
+  });
+
+  it('drops artwork claiming no pixels, which would divide by zero on a Part', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        {
+          release: {
+            id: 'r1',
+            tracks: [],
+            artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 0, heightPx: 0 },
+          },
+        },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.designs[0]?.release.artwork).toBeUndefined();
+  });
+});

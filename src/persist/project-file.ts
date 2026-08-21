@@ -226,10 +226,19 @@ export function readProjectFile(text: string): ProjectReadResult {
 
   const rawDesigns = Array.isArray(parsed['designs']) ? parsed['designs'] : [];
   const designs: ReleaseDesign[] = [];
+  const seenIds = new Set<string>();
+
   for (const [index, raw] of rawDesigns.entries()) {
     const source = isRecord(raw) ? raw : {};
     const release = readRelease(source['release'], index);
     if (typeof release === 'string') return { ok: false, error: release };
+
+    // Parts find their Release by id, so two Releases sharing one would print
+    // the same content twice. Better to say so than to render it.
+    if (seenIds.has(release.id)) {
+      return { ok: false, error: `Two Releases in that project share the id "${release.id}".` };
+    }
+    seenIds.add(release.id);
 
     designs.push({
       release,

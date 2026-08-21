@@ -114,6 +114,9 @@ export function createWorkspace(): HTMLElement {
 
   const controlsColumn = el('div', { class: 'workspace__column' });
 
+  /** Set the moment the collector touches anything, so a late restore cannot undo it. */
+  let edited = false;
+
   function refresh(): void {
     try {
       preview.show(renderSheets([design], sheetConfig, measure), fileNameFor(design.release));
@@ -123,6 +126,7 @@ export function createWorkspace(): HTMLElement {
   }
 
   function changed(): void {
+    edited = true;
     refresh();
     saveSoon(project());
   }
@@ -183,6 +187,10 @@ export function createWorkspace(): HTMLElement {
     changed();
   }
 
+  // A reload leaves at most one debounce window of work unwritten; asking for
+  // it on the way out closes that.
+  window.addEventListener('pagehide', () => saveSoon.flush());
+
   renderControls();
 
   // Fonts are bundled but still load asynchronously, and a unicode-range subset
@@ -197,6 +205,9 @@ export function createWorkspace(): HTMLElement {
     .load()
     .then((saved) => {
       if (!saved || saved.designs.length === 0) return;
+      // Reading the store is asynchronous, and a fast typist can be mid-word
+      // before it answers. Their edit wins; the saved copy is already theirs.
+      if (edited) return;
       apply(saved);
       projectControls.report('Restored your work from this browser.');
     })
