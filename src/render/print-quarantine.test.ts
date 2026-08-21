@@ -162,6 +162,22 @@ describe('the print quarantine (ADR-0008 rule 9)', () => {
     expect(literals.sort()).toEqual(['#000000b3', '#00000038', '#3c3c3c', '#ffffff'].sort());
   });
 
+  it('makes every form control inherit its colour rather than the browser’s', () => {
+    // The check above can only see colours that are *declared*. The leak that
+    // matters more is the missing declaration: a bare <button> takes
+    // `buttontext` from the browser, which is black, and black is in no palette
+    // here. It had the queue row and the result row before it was noticed, and
+    // an unstyled <a> had the browser's link blue in the licences dialog.
+    //
+    // So the invariant is the reset itself: controls inherit, and the one that
+    // wants the other ink says so explicitly.
+    const css = read(APP_CSS).replace(/\/\*[\s\S]*?\*\//g, '');
+    const reset = /button,\s*input,\s*select,\s*textarea\s*\{[^}]*color:\s*inherit/;
+
+    expect(reset.test(css), 'form controls must inherit their colour').toBe(true);
+    expect(/(^|\})\s*a\s*\{[^}]*color:\s*inherit/m.test(css), 'links must inherit theirs').toBe(true);
+  });
+
   it('sets text in one colour and never in an accent', () => {
     // Laws 1 and 2 of ADR-0008, which are otherwise only a habit. Hierarchy has
     // to come from size, weight, tracking and space — and an accent that cannot

@@ -23,7 +23,9 @@ import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
 import { createDesignControls } from './design-controls.ts';
 import { clear, el } from './dom.ts';
 import { createEmptyState } from './empty-state.ts';
+import { createFold } from './fold.ts';
 import { createLabelControls } from './label-controls.ts';
+import { createPartBand } from './part-band.ts';
 import { createProjectControls } from './project-controls.ts';
 import { createQueuePanel } from './queue-panel.ts';
 import { createReleaseForm } from './release-form.ts';
@@ -32,9 +34,17 @@ import { createSheetControls } from './sheet-controls.ts';
 import { createSheetPreview } from './sheet-preview.ts';
 
 /**
- * The workspace: a queue of Releases on the left, the Sheets they pack onto on
- * the right. It owns the state — and, since ADR-0001 puts that state nowhere
- * but this browser, saving it.
+ * The workspace, laid out as ADR-0010 decides: search, the Release being
+ * designed, its three Parts at one shared scale, and everything else folded
+ * away with a summary on its header.
+ *
+ * The two-column arrangement this replaces put the controls beside a permanent
+ * A4 Sheet, which meant the Front Panel was on screen at roughly 2× physical
+ * size with two-thirds of the preview showing empty paper. The Parts are the
+ * page now; the Sheet is a check.
+ *
+ * It owns the state — and, since ADR-0001 puts that state nowhere but this
+ * browser, saving it.
  */
 
 /** Long enough that typing does not write on every keystroke, short enough to survive a reload. */
@@ -67,7 +77,7 @@ export function createWorkspace(): HTMLElement {
   const store = createIndexedDbStore();
 
   const calibrationButton = el('button', {
-    class: 'button',
+    class: 'button button--tiny',
     text: 'Calibration sheet',
     attrs: { type: 'button' },
     on: {
@@ -80,10 +90,12 @@ export function createWorkspace(): HTMLElement {
           measure,
         );
         preview.show(layouts, 'minicovered-calibration.pdf');
+        outputFold.setOpen(true);
       },
     },
   });
   const preview = createSheetPreview({ actions: [calibrationButton] });
+  const partBand = createPartBand();
 
   const projectControls = createProjectControls(project, (imported) => {
     applyProject(imported);
@@ -129,24 +141,98 @@ export function createWorkspace(): HTMLElement {
     },
   });
 
-  const controlsColumn = el('div', { class: 'workspace__column' });
-  /** Holds only the panels that show the selected Release, and is the only part rebuilt. */
-  const releasePanels = el('div', { class: 'workspace__panels' });
+  /**
+   * The Release on screen, named in display type.
+   *
+   * Not decoration: with the controls folded away, this is the only thing
+   * saying which of several queued Releases the Parts below belong to.
+   */
+  const heroTitle = el('h2', { class: 'hero__title' });
+  const heroMeta = el('p', { class: 'hero__meta' });
+  const hero = el('section', { class: 'hero' }, heroTitle, heroMeta);
+
+  /**
+   * The folds are built once and only their contents are replaced, so that a
+   * fold the collector opened stays open when they select another Release.
+   * Rebuilding the folds themselves would close them all on every selection.
+   */
+  const metadataFold = createFold({ index: '01', title: 'Metadata' });
+  const designFold = createFold({ index: '02', title: 'Design' });
+  const outputFold = createFold(
+    { index: '03', title: 'Sheet check & output' },
+    preview.element,
+    el('div', { class: 'output__controls' }),
+  );
+  const outputControls = outputFold.body.querySelector('.output__controls') as HTMLElement;
+
+  preview.onSummary((summary) => outputFold.setSummary(summary));
+
+  const folds = el('div', { class: 'folds' }, metadataFold.element, designFold.element, outputFold.element);
+  const actions = el('div', { class: 'actions' }, preview.exportButton);
+
+  /** Everything that is a view of a selected Release, hidden together when there is none. */
+  const designSurface = el('div', { class: 'workspace__design' }, hero, partBand.element, folds, actions);
 
   /** Set the moment the collector touches anything, so a late restore cannot undo it. */
   let edited = false;
 
   function refresh(): void {
     queuePanel.show(queue, selectedId);
+    const entry = selected();
+    showHero(entry);
+    showSummaries(entry);
     try {
+      const sheets = renderSheets(queueDesigns(queue), sheetConfig, measure);
       preview.show(
-        renderSheets(queueDesigns(queue), sheetConfig, measure),
+        sheets,
         fileNameFor(queue),
         queue.length === 0 ? 'No Sheets yet — start with a Release.' : undefined,
       );
+      partBand.show(sheets, entry?.design.release.id ?? '');
     } catch (error) {
       preview.showProblem(errorMessage(error));
+      partBand.show([], '');
     }
+  }
+
+  /**
+   * The closed folds say what is inside them, on every change rather than only
+   * when the selection moves.
+   *
+   * A summary is the whole reason a fold is allowed to be closed (ADR-0010 item
+   * 6): it is what makes the contents known without opening it. One that still
+   * reads "nothing filled in yet" over a Release with a tracklist in it is worse
+   * than no summary at all, because it is read as current.
+   */
+  function showSummaries(entry: QueueEntry | undefined): void {
+    if (!entry) return;
+    const { release, templateId, dimensions } = entry.design;
+    const named = [release.artist, release.album].filter(Boolean).join(' — ');
+    metadataFold.setSummary(
+      `${named || 'nothing filled in yet'} · ${release.tracks.length} ${
+        release.tracks.length === 1 ? 'track' : 'tracks'
+      }`,
+    );
+    designFold.setSummary(
+      `Template ${templateId} · Label ${dimensions.label.width} × ${dimensions.label.height} mm`,
+    );
+  }
+
+  /** The hero follows every keystroke, because it is showing what is being typed. */
+  function showHero(entry: QueueEntry | undefined): void {
+    if (!entry) {
+      heroTitle.textContent = '';
+      heroMeta.textContent = '';
+      return;
+    }
+    const { artist, album, year, tracks } = entry.design.release;
+    heroTitle.textContent = album || 'Untitled Release';
+    const facts = [
+      artist || 'Unknown artist',
+      year ? String(year) : '',
+      `${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`,
+    ].filter(Boolean);
+    heroMeta.textContent = facts.join(' · ');
   }
 
   /**
@@ -176,9 +262,11 @@ export function createWorkspace(): HTMLElement {
     queue = addToQueue(queue, readyEntry({ ...DEFAULT_DESIGN, release }));
     selectedId = release.id;
     selectionChanged();
-    // The form is the whole point of pressing the button; land the caret in it
-    // rather than making them go and find it.
-    controlsColumn.querySelector<HTMLInputElement>('#field-artist')?.focus();
+    // The form is the whole point of pressing the button, and it is now behind
+    // a fold: open it before reaching for the field, or the caret lands in
+    // something nobody can see.
+    metadataFold.setOpen(true);
+    metadataFold.body.querySelector<HTMLInputElement>('#field-artist')?.focus();
   }
 
   /** Replaces the selected entry, leaving the rest of the queue alone. */
@@ -236,35 +324,42 @@ export function createWorkspace(): HTMLElement {
     changed();
   });
 
+  outputControls.append(sheetControls.element, projectControls.element);
+
   /**
-   * First in the column, because onboarding below the fold is not onboarding.
+   * First on the page, because onboarding below the fold is not onboarding.
    * It swaps with the Queue panel rather than sitting alongside it: an empty
    * list saying "nothing queued yet" is the same sentence twice.
    */
   const emptyState = createEmptyState(startReleaseByHand);
 
-  controlsColumn.append(
+  const element = el(
+    'div',
+    { class: 'workspace' },
+    el('div', { class: 'workspace__find' }, search),
     emptyState.element,
-    search,
     queuePanel.element,
-    releasePanels,
-    sheetControls.element,
-    projectControls.element,
+    designSurface,
   );
 
   /**
-   * Rebuilds the panels that *are* a view of the selected Release.
+   * Refills the folds that *are* a view of the selected Release.
    *
    * Only those: detaching a node takes the focus inside it with it, so
-   * rebuilding the whole column would blow away the caret and the queue's
-   * scroll position on every selection change — which is most of what the
-   * collector does.
+   * rebuilding more than this would blow away the caret and the queue's scroll
+   * position on every selection change — which is most of what the collector
+   * does.
    */
   function showSelectedRelease(): void {
     const entry = selected();
     emptyState.element.hidden = !!entry;
     queuePanel.element.hidden = !entry;
-    clear(releasePanels);
+    // Nothing to design is not an empty design surface: it is no design
+    // surface, so the Parts band and every fold go with it.
+    designSurface.hidden = !entry;
+
+    clear(metadataFold.body);
+    clear(designFold.body);
     if (!entry) {
       selectedId = '';
       return;
@@ -294,7 +389,10 @@ export function createWorkspace(): HTMLElement {
       }));
     });
 
-    releasePanels.append(form.element, designControls, labelControls);
+    metadataFold.body.appendChild(form.element);
+    designFold.body.append(designControls, labelControls);
+    // No summaries here: `refresh` sets them on every change, and every caller
+    // of this function refreshes straight afterwards.
     // No `queuePanel.show` here: every caller refreshes straight afterwards,
     // and rendering the list twice destroys the focus in it twice.
   }
@@ -356,7 +454,7 @@ export function createWorkspace(): HTMLElement {
     })
     .finally(() => emptyState.setRestoring(false));
 
-  return el('div', { class: 'workspace' }, controlsColumn, preview.element);
+  return element;
 }
 
 /** Names the file after the queue: one Release by name, several by count. */

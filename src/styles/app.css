@@ -62,6 +62,12 @@
   --radius: 8px;
   --gap: 16px;
 
+  /* Two curves, because the two movements are not the same movement. Most
+     things settle; the zoom is one large deliberate move and gets a slower,
+     more symmetric curve so it reads as a change of scale rather than a snap. */
+  --ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-zoom: cubic-bezier(0.42, 0.02, 0.24, 1);
+
   /* Light-only in v1 (ADR-0008): form controls and scrollbars follow, and the
      interactive accent reaches checkboxes without a selector for each. */
   color-scheme: light;
@@ -70,6 +76,24 @@
 
 * {
   box-sizing: border-box;
+}
+
+/*
+ * Form controls do not inherit colour: a bare <button> takes `buttontext` from
+ * the browser, which is black, and black is not in this palette. Under rule 1
+ * there is one text colour, so inheriting it is the correct default and any
+ * control that wants the other one — the single filled button — says so.
+ *
+ * This closes a whole class of leak rather than two instances of it. The queue
+ * row and the result row were both black, and neither had a `color` declaration
+ * to notice: the bug is the absence of one, which no rule about declared values
+ * can see.
+ */
+button,
+input,
+select,
+textarea {
+  color: inherit;
 }
 
 html,
@@ -256,26 +280,46 @@ a:focus-visible {
 
 /* ------------------------------------------------------------ workspace -- */
 
+/*
+ * One column, top to bottom: search · selection · the Release · its Parts ·
+ * the folds · the actions (ADR-0010).
+ *
+ * The two-column grid this replaces put the controls beside a permanent A4
+ * Sheet. That is what made the Front Panel show at roughly 2× physical size
+ * with two-thirds of the preview area showing empty paper — Parts pack to the
+ * top-left, and the paper does not care what is being designed.
+ */
 .workspace {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: var(--gap);
-  align-items: start;
-  max-width: 1240px;
-  margin: 0 auto;
-}
-
-.workspace__column {
   display: flex;
   flex-direction: column;
   gap: var(--gap);
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* The entry point, so the widest thing up here (ADR-0010 item 6). */
+.workspace__find > .panel {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+/*
+ * Everything that is a view of the selected Release. Hidden as one thing,
+ * because nothing to design is not an empty design surface — it is no design
+ * surface. This is what the replaceable `display: contents` block used to be
+ * for; the folds do that job now, and better, because a fold the collector
+ * opened survives a selection change.
+ */
+.workspace__design {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   min-width: 0;
 }
 
-/* The panels that show the selected Release: one replaceable block in the
-   column, laid out as if they were still direct children of it. */
-.workspace__panels {
-  display: contents;
+.workspace__design[hidden] {
+  display: none;
 }
 
 .field-row {
@@ -347,9 +391,513 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+/* ======================================================= the Parts band ==
+ * The Parts are the page (ADR-0010). Every width below is literally its
+ * millimetres — `calc(var(--w) * var(--mm))`, where `--w` is set from the
+ * layout model — so one token is one truth and the real size relationships
+ * between the three Parts stay visible.
+ *
+ * `--w` and `--h` come from TypeScript rather than being written here, because
+ * a Part's dimensions are adjustable parameters: the Label has presets and a
+ * size control, and hardcoding 35 × 52.5 would make this stylesheet quietly
+ * wrong the moment anyone used them.
+ */
+
+/*
+ * An unregistered custom property is not animatable, and it is not a typed
+ * value either — so `width: calc(var(--w) * var(--mm))` could not resolve to a
+ * length the browser is willing to interpolate, and every scale change was a
+ * jump cut. Registering them is what makes the zoom a movement.
+ */
+@property --mm {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 6.05px;
+}
+
+@property --mm-thumb {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 2.85px;
+}
+
+@property --cond {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --w {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --h {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/*
+ * A static 1 px marker, and the reason the condense can latch at all.
+ *
+ * A sticky element's own `offsetTop` moves the moment it sticks, so using the
+ * band as its own trip point is self-referential: it would enter the condensed
+ * state, move, and immediately no longer qualify. This does not move.
+ */
+.band-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+.band {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* The resting scale of all three Parts. The peers run 8-12 px/mm on a single
+     Part; three at once rest at ~6 and are clicked to isolate. */
+  --mm: clamp(3.1px, 0.5vw, 6.05px);
+  padding: calc(14px - 5px * var(--cond)) 0 calc(18px - 8px * var(--cond));
+  background: var(--page);
+  border-bottom: 1px solid var(--line);
+  /* Declared here and nowhere below. The same transition on a descendant that
+     merely inherits the value starts a competing animation and pins it at the
+     old one. */
+  transition:
+    --cond 380ms var(--ease),
+    box-shadow 240ms var(--ease);
+}
+
+/*
+ * Scrolling gives the folds below room: the band goes from about 664 px to
+ * 386 px, which turns 113 px of usable space underneath into 614 px.
+ *
+ * That shortens the document by roughly 280 px, which pulls the scroll position
+ * — so the two edges are 48 px and 10 px past the marker rather than one
+ * threshold, which the two edges would otherwise chase.
+ */
+.band[data-condensed] {
+  --mm: 3.15px;
+  --cond: 1;
+}
+
+.band[data-stuck] {
+  box-shadow: 0 12px 26px -20px color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+/*
+ * A Part being looked at outranks the scroll position: that zoom is a decision,
+ * and scrolling is not a reason to undo it.
+ *
+ * Both flags sit on this one element so the two rules have equal specificity and
+ * this one wins by coming last. With `data-condensed` on the wrapper instead,
+ * its descendant selector scored higher and silently beat the zoom — the same
+ * trap as a `.row span` that outranks a `.use` further up the sheet.
+ */
+.band[data-focus] {
+  --mm: min(clamp(5px, 1.15vw, 13.5px), calc(56vh / 79));
+  --cond: 0;
+}
+
+.band__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: calc(16px - 7px * var(--cond));
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  flex: 1 1 240px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* The rule that finishes an eyebrow is a graphic, which is the one thing an
+   accent is allowed to be — but a hairline reads better here than an accent. */
+.eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.band__note {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 11px;
+}
+
+/*
+ * Three rows, one column per Part, so the artwork, the caption and any warning
+ * line up across all three however tall any one of them turns out to be. `.spec`
+ * is `display: contents` for exactly that reason.
+ */
+.specimens {
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: start;
+  grid-template-rows: auto auto auto;
+  align-items: end;
+  gap: 9px clamp(18px, 3vw, 44px);
+}
+
+.spec {
+  display: contents;
+}
+
+/*
+ * The Part itself. `width` and `height` are what animate — never `transform`,
+ * which re-rasterises the element and shifts the antialiasing of every hairline
+ * and guide inside it, and reads as flickering edges.
+ *
+ * The canvas carries the cut line the Part actually prints with, which is
+ * #8a8a8a on paper at 3.45:1 — so the hairline ADR-0010 item 4 asks for is
+ * drawn by the renderer, and the border here only guarantees it where a guide
+ * falls on the canvas edge and is half-clipped.
+ */
+.spec__art {
+  width: calc(var(--w) * var(--mm));
+  height: calc(var(--h) * var(--mm));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  background: none;
+  cursor: zoom-in;
+  /* Never geometry on hover; colour and shadow only. */
+  transition:
+    width 540ms var(--ease-zoom),
+    height 540ms var(--ease-zoom),
+    box-shadow 150ms var(--ease),
+    border-color 150ms var(--ease);
+  box-shadow: 0 3px 14px -4px color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.spec__art:hover {
+  border-color: var(--ink);
+  box-shadow: 0 9px 24px -8px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.spec__art:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.spec__art[data-focused] {
+  cursor: zoom-out;
+}
+
+.spec__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spec__cap {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: opacity 540ms var(--ease-zoom);
+}
+
+.spec__cap b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The millimetres are the point of the caption, so they are not shouted. */
+.spec__cap span {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 11px;
+}
+
+/* Warnings sit at their cause (ADR-0010 item 5), and are the first thing to
+   give up room when the band condenses. */
+.spec__note {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 34ch;
+  opacity: calc(1 - var(--cond));
+  max-height: calc(90px * (1 - var(--cond)));
+  overflow: hidden;
+  /* Same reason as `.fold__clip`: clipped is not the same as out of the way. */
+  contain: paint;
+  transition: opacity 540ms var(--ease-zoom);
+}
+
+.spec__warning {
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 6px 9px 6px 12px;
+  background: var(--fill-warn);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: inset 3px 0 0 var(--yellow);
+}
+
+/*
+ * Isolating one Part shrinks the others rather than removing them.
+ * `display: none` on a sibling takes it away in a single frame, so the element
+ * that grows also *jumps* to where the missing sibling used to be. Shrinking
+ * keeps the row's shape and lets every position glide.
+ */
+.band[data-focus] .spec__art:not([data-focused]) {
+  width: calc(var(--w) * var(--mm-thumb));
+  height: calc(var(--h) * var(--mm-thumb));
+}
+
+.band[data-focus] .spec__art:not([data-focused]) ~ .spec__cap,
+.band[data-focus] .spec__art:not([data-focused]) ~ .spec__note {
+  opacity: 0;
+}
+
+.band-wrap[data-empty] .specimens {
+  display: none;
+}
+
+/* --------------------------------------------------- segmented control -- */
+
+/* 30 px tall with 24 px targets inside, which clears WCAG 2.2 SC 2.5.8. */
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.seg__btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  min-height: 24px;
+  min-width: 24px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease),
+    color 150ms var(--ease);
+}
+
+.seg__btn:hover {
+  background: var(--sunken);
+}
+
+.seg__btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* The pressed one is filled, which is the same ink-on-paper pair the primary
+   button uses — a segmented control is one control, so rule 3 still holds. */
+.seg__btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* ------------------------------------------------------------- the hero -- */
+
+.hero {
+  padding: 26px 0 22px;
+}
+
+.hero__title {
+  margin: 0;
+  max-width: 24ch;
+  font-size: clamp(26px, 3.6vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+.hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 20px;
+  margin: 13px 0 0;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------- the folds -- */
+
+.fold {
+  border-bottom: 1px solid var(--line);
+}
+
+.fold__btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  padding: 15px 2px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 30px;
+  transition: background 150ms var(--ease);
+}
+
+.fold__btn:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.fold__btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.fold__num {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+}
+
+.fold__ttl {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fold__sum {
+  margin-left: auto;
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.fold__caret {
+  width: 9px;
+  height: 9px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 260ms var(--ease);
+  flex: none;
+}
+
+.fold[data-open] .fold__caret {
+  transform: rotate(45deg);
+}
+
+/* `height` cannot animate to `auto`; a grid track from 0fr to 1fr can. */
+.fold__body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+}
+
+.fold[data-open] .fold__body {
+  grid-template-rows: 1fr;
+}
+
+/*
+ * On the grid *item*, not on the container. On the item its automatic minimum
+ * size becomes 0 and the track can actually close; on the container the track
+ * never closes and the fold stays open at full height.
+ *
+ * `overflow: hidden` alone stops the contents being *painted* but not being
+ * *scrolled to*: a closed fold's 721 px of form still counted towards the
+ * document's scrollable height, so a page with 1715 px of content scrolled to
+ * 2672 and ended in blank paper. Neither `overflow: clip` nor hiding the
+ * overflow further up fixed it — only paint containment, which is what actually
+ * says descendants may not reach outside this box.
+ */
+.fold__clip {
+  overflow: hidden;
+  min-height: 0;
+  contain: paint;
+}
+
+.fold__pad {
+  padding: 4px 2px 26px;
+  display: grid;
+  gap: 14px;
+  opacity: 0;
+  transition: opacity 200ms var(--ease) 70ms;
+}
+
+.fold[data-open] .fold__pad {
+  opacity: 1;
+}
+
+/*
+ * A panel inside a fold has already been introduced by the fold's own header,
+ * so it gives up its card: the border and the fill would be a second frame
+ * around the same content. Done here rather than in each control module,
+ * because which surface a panel sits on is the page's business, not the
+ * control's.
+ */
+.fold__pad .panel {
+  border: 0;
+  background: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.fold__pad .panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.output__controls {
+  display: grid;
+  gap: 22px;
+}
+
+/* ----------------------------------------------------- the Sheet check -- */
+
+.check {
+  display: grid;
+  gap: 12px;
+}
+
+.check__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 22px 0 10px;
+}
+
 @media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
+  .specimens {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    justify-items: start;
+  }
+
+  .spec {
+    display: grid;
+    gap: 8px;
   }
 }
 
@@ -609,10 +1157,14 @@ label.button {
   align-items: center;
 }
 
+/* WCAG 2.2 SC 2.5.8: 24 x 24 CSS px is the floor for a pointer target, and the
+   queue's reorder and remove controls were 25 x 22. */
 .button--tiny {
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 /* --------------------------------------------------------- search hits -- */
