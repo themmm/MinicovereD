@@ -2,19 +2,38 @@
 
 <p><img src="assets/logo.svg" width="96" alt="mdcovergen logo"></p>
 
-Design and print MiniDisc J-Cards, back cards, and cartridge labels — print-accurate PDFs at exact millimetre size, offline-capable, fully client-side. No account, no server, no manual tracklist typing: release data and cover art come from MusicBrainz and the Cover Art Archive.
+Design and print MiniDisc J-Cards, Back Cards and cartridge Labels — print-accurate PDFs at exact millimetre size, offline-capable, fully client-side. No account, no server, no manual tracklist typing: release data and cover art come from MusicBrainz and the Cover Art Archive.
 
 ## Highlights
 
-- **Three parts, one sheet**: J-Card (front + spine + inner flap), Back Card with tracklist, and the cartridge Label — laid out together on A4/Letter with cutting and fold guides.
+- **Three Parts, one Sheet**: J-Card (Front Panel + Spine + Inner Flap), Back Card with tracklist, and the cartridge Label — laid out together on A4/Letter with cutting and fold guides.
 - **Metadata on tap**: search MusicBrainz, auto-fill everything, override anything; full manual mode for mixtapes; batch queue for whole collections.
 - **Print-accurate**: exact-mm PDF at 300 DPI, configurable printable margins, bin-packed sheets, and a calibration sheet to verify your printer with scissors and a ruler.
 - **Local-first**: installable PWA that works offline; designs autosave in the browser and travel as a single project file.
 - **FOSS-only** dependencies and assets, licenses honored.
 
+## Development
+
+```sh
+npm install
+npm run dev              # local dev server
+npm test                 # unit tests
+npm run typecheck
+npm run build            # typecheck + dist/pwa + dist/singlefile
+```
+
+`npm run build:pwa` produces the hosted, installable, offline-capable build; `npm run build:singlefile`
+produces the self-contained `index.html` that opens by double-click (ADR-0002). Both bundle the same
+OFL fonts, so neither needs the network. To host under a sub-path, set `MDCOVERGEN_BASE`
+(e.g. `MDCOVERGEN_BASE=/mdcovergen/ npm run build:pwa`).
+
+Tests live at the three seams the spec names — SheetRenderer (geometry via the layout model),
+SheetPacker (rectangle sets) and MetadataAdapter (recorded HTTP fixtures, never the live network) —
+plus the attribution manifest that keeps ADR-0003 honest.
+
 ## Status
 
-Planning is complete; implementation runs ticket by ticket.
+Implementation runs ticket by ticket.
 
 - Spec: [.scratch/mdcovergen-v1/spec.md](.scratch/mdcovergen-v1/spec.md)
 - Tickets: [.scratch/mdcovergen-v1/issues/](.scratch/mdcovergen-v1/issues/)

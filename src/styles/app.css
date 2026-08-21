@@ -1,0 +1,297 @@
+@import './fonts.css';
+
+:root {
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-faint: #94a3b8;
+  --surface: #ffffff;
+  --surface-sunken: #f1f5f9;
+  --page: #f8fafc;
+  --line: #e2e8f0;
+  --accent: #b45309;
+  --accent-soft: #fef3c7;
+  --shell: #15202b;
+  --shell-ink: #e2e8f0;
+
+  --radius: 8px;
+  --gap: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------- shell -- */
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap);
+  padding: 12px 20px;
+  background: var(--shell);
+  color: var(--shell-ink);
+}
+
+.shell-header__logo {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+
+.shell-header__titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-header__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.shell-header__tagline {
+  margin: 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.shell-main {
+  flex: 1;
+  padding: 24px 20px 40px;
+}
+
+.shell-footer {
+  padding: 14px 20px 22px;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  border-top: 1px solid var(--line);
+}
+
+.shell-footer a {
+  color: var(--ink-soft);
+}
+
+/* ---------------------------------------------------------------- parts -- */
+
+.stack {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+}
+
+.panel__title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.panel__hint {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.button {
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 13px;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--ink-faint);
+}
+
+.button--onshell {
+  background: transparent;
+  border-color: #33415580;
+  color: var(--shell-ink);
+}
+
+.button--onshell:hover {
+  border-color: var(--shell-ink);
+}
+
+.status-pill {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #33415580;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.status-pill[data-state='ready'] {
+  border-color: #14532d;
+  background: #052e16;
+  color: #86efac;
+}
+
+/* -------------------------------------------------------- font specimen -- */
+
+.specimen {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 18px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.specimen dt {
+  color: var(--ink-faint);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.specimen dd {
+  margin: 0;
+  font-size: 20px;
+}
+
+.specimen dd[data-weight='bold'] {
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------- licenses -- */
+
+.about {
+  border: none;
+  border-radius: var(--radius);
+  padding: 0;
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(80vh, 720px);
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.about::backdrop {
+  background: #0f172acc;
+}
+
+.about__body {
+  padding: 20px 24px 24px;
+  overflow: auto;
+  max-height: min(80vh, 720px);
+}
+
+.about__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap);
+}
+
+.about__head h2 {
+  margin: 0;
+  font-size: 17px;
+  flex: 1;
+}
+
+.about__lede {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin: 6px 0 18px;
+}
+
+.about__group-title {
+  margin: 20px 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.credit {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface-sunken);
+}
+
+.credit__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.credit__name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.credit__version {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.credit__license {
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.credit__copyright {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 4px 0 0;
+}
+
+.credit__text {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--ink-soft);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.credit summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 6px;
+}
