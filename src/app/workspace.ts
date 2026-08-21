@@ -1,23 +1,21 @@
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
-import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
+import type { LabelDimensions } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import { parseTracklist } from '../domain/tracklist.ts';
+import { errorMessage } from '../errors.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
-import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
+import type { Project } from '../persist/project-file.ts';
+import { createIndexedDbStore, debounceSave } from '../persist/project-store.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
+import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
-import type {
-  ReleaseDesign,
-  SheetConfig,
-  TemplateId,
-  TemplateParams,
-} from '../render/sheet-renderer.ts';
-import { errorMessage } from '../errors.ts';
+import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
 import { createDesignControls } from './design-controls.ts';
+import { clear, el } from './dom.ts';
 import { createLabelControls } from './label-controls.ts';
-import { el } from './dom.ts';
+import { createProjectControls } from './project-controls.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
 import { createSheetControls } from './sheet-controls.ts';
@@ -25,14 +23,17 @@ import { createSheetPreview } from './sheet-preview.ts';
 
 /**
  * The workspace: a Release on the left, the Sheets it packs onto on the right.
- * It owns the state and nothing else — the form, the Sheet controls and the
- * preview each know only their own slice.
+ * It owns the state — and, since ADR-0001 puts that state nowhere but this
+ * browser, saving it.
  */
 
+/** Long enough that typing does not write on every keystroke, short enough to survive a reload. */
+const AUTOSAVE_DELAY_MS = 600;
+
 /**
- * The workspace opens on a worked example, so the live preview shows something
- * the moment the app loads. Ticket 10 replaces this with the empty state that
- * walks a first-time user to their own first Release.
+ * What a first-time visitor opens on, so the live preview shows something
+ * immediately. Ticket 10 replaces it with the empty state that walks them to
+ * their own first Release. A returning visitor gets their own work instead.
  */
 const EXAMPLE_RELEASE: Release = {
   id: 'release-1',
@@ -57,28 +58,35 @@ const EXAMPLE_RELEASE: Release = {
 };
 
 export function createWorkspace(): HTMLElement {
-  let release = EXAMPLE_RELEASE;
+  let design: ReleaseDesign = {
+    release: EXAMPLE_RELEASE,
+    templateId: 'classic',
+    params: DEFAULT_TEMPLATE_PARAMS,
+    dimensions: DEFAULT_PART_DIMENSIONS,
+  };
   let sheetConfig: SheetConfig = {
     paper: A4,
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
     parts: PART_KINDS,
   };
-  let templateId: TemplateId = 'classic';
-  let params: TemplateParams = DEFAULT_TEMPLATE_PARAMS;
-  let dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS;
+
+  const project = (): Project => ({ designs: [design], sheet: sheetConfig });
 
   const measure = createCanvasTextMeasurer();
+  const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
+  const store = createIndexedDbStore();
 
-  // The calibration sheet is not a Release: it is the ruler you check the
-  // printer against before trusting anything else this app produced.
   const calibrationButton = el('button', {
     class: 'button',
     text: 'Calibration sheet',
+    attrs: { type: 'button' },
     on: {
       click: () => {
+        // Not a Release: the ruler you check the printer against before
+        // trusting anything else this app produced.
         const { layouts } = renderCalibrationSheet(
           { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
-          dimensions,
+          design.dimensions,
           measure,
         );
         preview.show(layouts, 'mdcovergen-calibration.pdf');
@@ -86,69 +94,131 @@ export function createWorkspace(): HTMLElement {
     },
   });
   const preview = createSheetPreview({ actions: [calibrationButton] });
-  const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
 
-  const design = (): ReleaseDesign => ({ release, templateId, params, dimensions });
+  const projectControls = createProjectControls(project, (imported) => {
+    apply(imported);
+    // Say what was opened, not what the file held. A project file may carry a
+    // whole queue; this workspace shows one Release until ticket 09 lands, and
+    // claiming otherwise would be a lie the collector pays for later.
+    projectControls.report(
+      imported.designs.length > 1
+        ? `Opened the first of ${imported.designs.length} Releases in that file — this version shows one at a time. Your previous work has been replaced.`
+        : 'Opened that project. Your previous work has been replaced.',
+    );
+  });
+
+  const saveSoon = debounceSave(store, AUTOSAVE_DELAY_MS, (error) => {
+    projectControls.report(
+      `Could not save to this browser: ${errorMessage(error)}. Export a project file to be safe.`,
+    );
+  });
+
+  const controlsColumn = el('div', { class: 'workspace__column' });
+
+  /** Set the moment the collector touches anything, so a late restore cannot undo it. */
+  let edited = false;
 
   function refresh(): void {
     try {
-      preview.show(renderSheets([design()], sheetConfig, measure), fileNameFor(release));
+      preview.show(renderSheets([design], sheetConfig, measure), fileNameFor(design.release));
     } catch (error) {
       preview.showProblem(errorMessage(error));
     }
   }
 
-  const form = createReleaseForm(release, (edit) => {
-    release = edit(release);
+  function changed(): void {
+    edited = true;
     refresh();
-  });
+    saveSoon(project());
+  }
 
-  // A looked-up Release replaces what the fields show, and stays editable. It
-  // keeps its MusicBrainz id, which is what later tickets identify it by.
-  const search = createReleaseSearch(metadata, (found) => {
-    release = found;
-    form.setRelease(release);
-    refresh();
-  });
+  /** Rebuilds the controls from the state, rather than teaching each one to be told. */
+  function renderControls(): void {
+    const form = createReleaseForm(design.release, (edit) => {
+      design = { ...design, release: edit(design.release) };
+      changed();
+    });
 
-  const designControls = createDesignControls({ templateId, params }, (change) => {
-    templateId = change.templateId ?? templateId;
-    params = change.params ?? params;
-    refresh();
-  });
+    const search = createReleaseSearch(metadata, (found) => {
+      // A looked-up Release keeps its MusicBrainz id, which is what later
+      // tickets identify it by.
+      design = { ...design, release: found };
+      form.setRelease(found);
+      changed();
+    });
 
-  const labelControls = createLabelControls(dimensions.label, (label: LabelDimensions) => {
-    dimensions = { ...dimensions, label };
-    refresh();
-  });
+    const designControls = createDesignControls(
+      { templateId: design.templateId, params: design.params },
+      (change) => {
+        design = {
+          ...design,
+          templateId: change.templateId ?? design.templateId,
+          params: change.params ?? design.params,
+        };
+        changed();
+      },
+    );
 
-  const controls = createSheetControls(sheetConfig, (changes) => {
-    sheetConfig = { ...sheetConfig, ...changes };
-    refresh();
-  });
+    const labelControls = createLabelControls(design.dimensions.label, (label: LabelDimensions) => {
+      design = { ...design, dimensions: { ...design.dimensions, label } };
+      changed();
+    });
 
+    const sheetControls = createSheetControls(sheetConfig, (changes) => {
+      sheetConfig = { ...sheetConfig, ...changes };
+      changed();
+    });
 
-  // Fonts are bundled but still load asynchronously, and a unicode-range subset
-  // is not fetched until text in that range is drawn. Measuring before one
-  // arrives sizes the Sheet against a fallback face, so redraw when any of them
-  // lands — a Polish title typed into an empty form fetches latin-ext mid-edit.
-  void fontsReady().then(refresh);
-  onFontsLoaded(refresh);
-
-  return el(
-    'div',
-    { class: 'workspace' },
-    el(
-      'div',
-      { class: 'workspace__column' },
+    clear(controlsColumn);
+    controlsColumn.append(
       search,
       form.element,
       designControls,
       labelControls,
-      controls,
-    ),
-    preview.element,
-  );
+      sheetControls,
+      projectControls.element,
+    );
+  }
+
+  function apply(next: Project): void {
+    const [first] = next.designs;
+    if (first) design = first;
+    sheetConfig = next.sheet;
+    renderControls();
+    changed();
+  }
+
+  // A reload leaves at most one debounce window of work unwritten; asking for
+  // it on the way out closes that.
+  window.addEventListener('pagehide', () => saveSoon.flush());
+
+  renderControls();
+
+  // Fonts are bundled but still load asynchronously, and a unicode-range subset
+  // is not fetched until text in that range is drawn. Measuring before one
+  // arrives sizes the Sheet against a fallback face, so redraw when any lands.
+  void fontsReady().then(refresh);
+  onFontsLoaded(refresh);
+
+  // Whatever this browser last held, if anything. A first visit gets the
+  // example; a returning one gets its own work back.
+  void store
+    .load()
+    .then((saved) => {
+      if (!saved || saved.designs.length === 0) return;
+      // Reading the store is asynchronous, and a fast typist can be mid-word
+      // before it answers. Their edit wins; the saved copy is already theirs.
+      if (edited) return;
+      apply(saved);
+      projectControls.report('Restored your work from this browser.');
+    })
+    .catch((error: unknown) => {
+      projectControls.report(
+        `Could not read this browser's saved work: ${errorMessage(error)}. Starting fresh.`,
+      );
+    });
+
+  return el('div', { class: 'workspace' }, controlsColumn, preview.element);
 }
 
 function fileNameFor(release: Release): string {
