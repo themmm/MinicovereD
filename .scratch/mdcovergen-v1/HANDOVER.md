@@ -14,35 +14,58 @@ Written mid-run so a fresh session can pick this up without re-deriving anything
 | 06 Label presets, notch, calibration sheet | **merged** — [PR #6](https://github.com/themmm/mdcovergen/pull/6) |
 | 07 tracklist overflow, Unicode hardening | **merged** — [PR #7](https://github.com/themmm/mdcovergen/pull/7) |
 | 08 autosave + project files | **merged** — [PR #8](https://github.com/themmm/mdcovergen/pull/8) |
-| 09 batch queue | **committed on `ticket-09-batch-queue`, not yet reviewed or merged** |
-| 10 release polish | **not started** |
+| 09 batch queue | **reviewed, fixed, ready to merge** — branch `ticket-09-batch-queue` |
+| 10 release polish | **in progress** — two of its four criteria already hold; see below |
 
-208 tests, `tsc --noEmit` clean, both builds green.
+231 tests, `tsc --noEmit` clean, both builds green.
 
-## Finish ticket 09 first
+## What ticket 09 turned into
 
-Branch `ticket-09-batch-queue` has one commit. Still to do:
+The end-to-end run found three things the unit tests could not.
 
-1. **Run the end-to-end verification.** `/private/tmp/.../scratchpad/verify-t09.mjs` drives the
-   batch of five (one deliberately unfindable), checks the queue rows, reorder, remove, and the
-   packed multi-Release PDF. It needs **more than two minutes** — five Releases × ~3 requests
-   through a 1 req/s throttle — so run it backgrounded. It had not finished when this was written.
-2. **Known gap:** a queue entry's `status`/`error` is not persisted. Reload turns a flagged entry
-   into an ordinary empty Release. Arguably right (a stale error helps nobody) but it is a decision
-   nobody has written down — either persist it or say why not.
-3. ~~`renderControls()` rebuilt the column on every keystroke, destroying focus.~~ **Fixed** in
-   commit `796e32e`: rebuilding is for selection changes only. Verified with real key events —
-   nine characters land and the caret tracks them.
-4. Then run the review (see below), fix, PR, merge.
+**A batch reported its outcome into a panel that had just been replaced.** Handing the Releases
+over changes the selection, which rebuilt the whole controls column, so the sentence saying how
+the batch went was written to a detached node and never appeared. That is also why the live
+verification looked like it was hanging: it was waiting for a message the app was throwing away.
+Fixed by building the column once and rebuilding only the three panels that *are* a view of the
+selected Release.
 
-### Things the reviewer should be pointed at for ticket 09
+**Nothing bounded a request.** Every request goes through one serialised throttle, so a connection
+that is accepted and never answered would have wedged the whole metadata layer permanently. This
+was not hypothetical — a live run caught the Cover Art Archive redirecting to storage nodes that
+failed after 10.8 s and 20.3 s, and a MusicBrainz search that never answered at all. Both services
+now get a deadline at the network boundary (`AbortSignal`, so the request is cancelled rather than
+merely abandoned), and the Archive is not asked for a second image size once it has proved
+unreachable — both sizes come off the same node. A live batch of five went from timing out past
+180 s to finishing in 53 s, with the hung search aborted at exactly 15 s and the batch carrying on.
 
-- `resolveBatchIntoQueue` returns every entry, duplicates included; the *caller* dedupes via
-  `addToQueue`. Two searches resolving to the same MusicBrainz release is a real case — the
-  workspace reports "N of those Releases were already in the queue". Check that reads correctly.
-- `queue-panel.ts` renders the whole list on every `show()`. Fine at these sizes; worth a glance.
-- The example Release is re-inserted when the last entry is removed, so the queue is never empty.
-  That is a placeholder decision ticket 10 revisits with the empty state.
+**An unfinished queue entry did not survive a reload** — the open decision the previous handover
+left. It does now: the project file records *that* an entry still needs completing by hand,
+because that flag is the collector's to-do list, but not the *reason*, which was true of one
+moment on one network. `Project` therefore carries queue entries rather than bare designs.
+`PROJECT_VERSION` is deliberately **not** bumped — the reader refuses anything newer than it
+knows, so bumping would have made new files unreadable by the previous build for the sake of a
+field that is additive and optional anyway.
+
+Also fixed from the review: the example Release is displaced by the collector's first real work
+(a batch of five was leaving a queue of six); the batch summary counts what actually joined the
+queue; a pasted line is keyed by its text, not its position, so the same unfindable line twice is
+one Release; the queue list keeps its scroll position and puts the keyboard back on the button
+that was pressed; `pick()` can no longer strand the search panel disabled.
+
+### Deliberately not done in ticket 09
+
+- **An import or a late restore can land while a batch is running.** The batch's entries are then
+  appended to the newly-imported queue, a few seconds after the app said "your previous work has
+  been replaced". Needs a `busy()` predicate on the search panel. Real, rare, not a crash.
+- **A pasted line with no separator is searched as an artist.** Sending it as an unfielded
+  free-text query — what MusicBrainz's own search box does — would find both artists and albums,
+  but it changes `searchTerm` in the adapter, which is a shared seam and a product decision.
+- **A single lookup inherits the selected Release's template and colours; a batch entry gets the
+  defaults.** Same user intent, two outcomes. Worth deciding deliberately rather than by accident.
+- **CONTEXT.md needs `Queue` and `Queue Entry`.** Both are now load-bearing — a type, a directory,
+  a panel heading, a persisted flag — and the glossary has neither. Not done because another
+  session has uncommitted edits to that file (see below).
 
 ## Ticket 10 — what it asks for
 
@@ -50,14 +73,35 @@ Branch `ticket-09-batch-queue` has one commit. Still to do:
 empty/onboarding state leading to the first Release; a final ADR-0003 attribution completeness
 check; the single-file HTML artifact as a release deliverable.
 
-Notes for it:
-- Artwork already becomes a `data:` URL inside the Release and is autosaved to IndexedDB, so
-  "renders and exports previously fetched designs while offline" may already hold — **verify it**
-  with the offline harness rather than assuming.
-- The empty state replaces `EXAMPLE_RELEASE` in `src/app/workspace.ts`, which is marked with a
-  comment saying exactly that.
-- The attribution test already fails if a shipped npm package is unattributed. The completeness
-  check is about assets and data sources.
+Two of its four criteria **already hold**, verified rather than assumed:
+
+- *"renders and exports previously fetched designs including artwork while fully offline"* —
+  `verify-t10-offline.mjs` takes away all four sources (HTTP cache disabled, network emulated
+  offline, origin server killed, metadata stub failing every request), reloads, and finds the queue
+  restored, the fetched cover art with it, the Sheet rendering **pixel-identically** to the online
+  render, and a 210×297 mm PDF exported with no network at all. The negative control — a Release
+  fetched with no cover on file — still has none, so nothing is inventing artwork.
+- *"the single-file HTML artifact builds and boots by double-click"* — `verify-t10-singlefile.mjs`
+  loads `dist/singlefile/index.html` over `file://`, confirms nothing is left to fetch, no service
+  worker is registered, both bundled faces load from the inlined data, and a Release typed by hand
+  exports a 210×297 mm PDF. No request fails.
+
+The two that need work:
+
+- **The empty state.** `EXAMPLE_RELEASE` in `src/app/workspace.ts` is the placeholder it replaces.
+  Ticket 09 already made the example give way to the collector's first real Release; ticket 10
+  should remove it. Watch two things: `showSelectedRelease()` returns early when there is no
+  selected entry, and `sheet-preview.ts` leaves the last raster on the canvas when it is handed no
+  Sheets, saying "Nothing to print — choose at least one Part" — which is the wrong sentence for an
+  empty queue and the wrong picture for any of it.
+- **Attribution completeness — there is a real gap.** `workbox-window` 7.4.1 (MIT) ships in
+  `dist/pwa/assets/`, and the generated `sw.js` pulls workbox runtime chunks. It is not in
+  `ATTRIBUTIONS`, and the existing test *cannot* see it: `shippedPackages()` walks the root
+  `dependencies`, and workbox arrives through `vite-plugin-pwa`, a devDependency. The other shipped
+  non-code assets are `assets/logo.svg` (the project's own Mark), `assets/minidisc-logo.svg`
+  (attributed, ADR-0004) and `public/icons/*.png` (three renders of the Mark). A completeness check
+  that walks what the build actually emits, rather than what `package.json` declares, is the
+  test this criterion is asking for.
 
 ## The workflow being followed
 
@@ -102,10 +146,22 @@ two parallel agents were killed mid-run once when the machine was loaded. Give i
 
 `/private/tmp/claude-501/-Users-timo-git-mdcovergen/<session>/scratchpad/` holds:
 
-- `cdp.mjs` — minimal Chromium DevTools driver (`launch`, `newPage`, `evaluate`, `waitFor`, `goto`)
+- `cdp.mjs` — minimal Chromium DevTools driver (`launch`, `newPage`, `evaluate`, `waitFor`, `goto`,
+  and `on(method, handler)` for CDP events, which is what request interception needs)
 - `serve.mjs` — static file server
+- `mb-stub.mjs` — MusicBrainz and the Cover Art Archive, answered at the browser's network boundary
+  from the repo's own fixtures, rewritten per query so five searches resolve to five different
+  Releases. The app, the adapter, the throttle and the queue are all real; only the far side of
+  `fetch` is recorded. `cut()` then fails every request, which is the negative control for offline.
 - `verify-offline.mjs` — kills the origin server and proves the SW serves the app, **with a negative
   control** that must fail
+- `verify-t09-stub.mjs` — the whole of ticket 09 deterministically: nineteen checks from the batch
+  of five through reorder, remove, Part toggles and the packed PDF to a reload. **Use this one**;
+  the live driver depends on two third parties having a good day.
+- `verify-t10-offline.mjs`, `verify-t10-singlefile.mjs` — ticket 10's first and last criteria
+- `probe-t09-live.mjs` — drives a live batch and prints every request with how long it took and how
+  it ended. This is what found the Cover Art Archive latency; reach for it when live and stubbed
+  runs disagree.
 - `verify-export.mjs`, `verify-t0*.mjs` — per-ticket end-to-end drivers
 - `measure-square.mjs` — scans the rendered raster for the calibration square's own edges
 
@@ -115,14 +171,20 @@ printing inside the margin in 02, and the unloaded CJK font in 07.
 
 ## Things a fresh session must know
 
-- **Three other Claude sessions are working in this repo.** They have added `docs/adr/0007` and
-  `0008` (naming criteria; visual register) and glossary entries to `CONTEXT.md` — all currently
-  **uncommitted or untracked in the working tree**. Leave them alone; stage only your own files.
-- **`CONTEXT.md` needs a correction** nobody has made: it defines Label as *"Rectangular, with one
-  diagonally cut corner"*, but the Full preset ships `notch: false`. I did not edit it because
-  another session is actively editing that file.
+- **Other Claude sessions are working in this repo.** They have added `docs/adr/0007`, `0008` and
+  `0009` (naming criteria; visual register; the name — the project is to be renamed
+  **MinicovereD**) and glossary entries to `CONTEXT.md`, all currently **uncommitted or untracked
+  in the working tree**. Leave them alone; stage only your own files. Note that 0008 governs the
+  visual register, so anything that changes how the app *looks* — the ticket 10 empty state
+  included — should stay functional and neutral rather than making brand decisions in their lane.
 - **MusicBrainz rate-limits by IP.** Probing earns 503s that persist for minutes. Space live checks
-  out, and remember the adapter now retries 503 twice with backoff.
+  out, and remember the adapter retries 503 twice with backoff. The Cover Art Archive is a separate
+  problem: it redirects to `*.archive.org` storage nodes whose latency swings between two seconds
+  and never. Both are why the stubbed driver, not the live one, is the repeatable check.
+- **CONTEXT.md needs two things nobody has done**, both blocked on another session's uncommitted
+  edits to that file: `Queue` and `Queue Entry` glossary entries, and a correction — it defines
+  Label as *"Rectangular, with one diagonally cut corner"*, but the Full preset ships
+  `notch: false`.
 - **The `protect-main` ruleset is currently `disabled`** on GitHub, but the PR-only workflow is
   being followed regardless, as instructed.
 - ADR-0006 records why the MusicBrainz User-Agent requirement cannot be met client-side.
