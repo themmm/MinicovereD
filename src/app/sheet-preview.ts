@@ -18,13 +18,18 @@ const DOWNLOAD_URL_LIFETIME_MS = 30_000;
 
 export interface SheetPreview {
   readonly element: HTMLElement;
-  /** Show `sheets`, keeping the current page where it still exists. */
+  /** Show `sheets`, keeping the current Sheet where it still exists. */
   show(sheets: readonly SheetLayout[], fileName: string): void;
   /** Report a problem instead of a stale Sheet. */
   showProblem(message: string): void;
 }
 
-export function createSheetPreview(): SheetPreview {
+export interface SheetPreviewOptions {
+  /** Buttons shown beside Export, in order. */
+  readonly actions?: readonly HTMLElement[];
+}
+
+export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): SheetPreview {
   const canvas = el('canvas', { class: 'preview__canvas' });
   const status = el('p', { class: 'preview__status', attrs: { role: 'status' }, text: '' });
   const sheetLabel = el('span', { class: 'pager__label', text: '' });
@@ -52,6 +57,7 @@ export function createSheetPreview(): SheetPreview {
     on: { click: () => turnTo(sheetIndex + 1) },
   });
   const pager = el('div', { class: 'pager' }, previous, sheetLabel, next);
+  const actionBar = el('div', { class: 'preview__actions' }, ...actions);
 
   function turnTo(index: number): void {
     sheetIndex = Math.min(Math.max(index, 0), Math.max(sheets.length - 1, 0));
@@ -108,6 +114,7 @@ export function createSheetPreview(): SheetPreview {
       { class: 'preview__head' },
       el('h2', { class: 'panel__title', text: 'Preview' }),
       pager,
+      actionBar,
       exportButton,
     ),
     el('div', { class: 'preview__frame' }, canvas),

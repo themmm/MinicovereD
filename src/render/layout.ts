@@ -78,4 +78,11 @@ export interface SheetLayout {
   readonly paper: PaperSize;
   readonly marginMm: Mm;
   readonly placements: readonly PartPlacement[];
+  /**
+   * Marks belonging to the Sheet rather than to any Part, in paper
+   * coordinates. The calibration sheet is made entirely of these: nothing on it
+   * is a Release, it is a ruler.
+   */
+  readonly ops?: readonly DrawOp[];
+  readonly guides?: readonly Guide[];
 }

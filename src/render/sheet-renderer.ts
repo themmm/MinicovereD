@@ -56,6 +56,19 @@ export interface SheetConfig {
   readonly parts: readonly PartKind[];
 }
 
+/** What a packed rectangle is, on the way back from SheetPacker. */
+interface PartRef {
+  readonly releaseId: string;
+  readonly part: PartKind;
+}
+
+/** Human names for the Parts, used when one has to be named in an error. */
+const PART_LABELS: Readonly<Record<PartKind, string>> = {
+  jcard: 'J-Card',
+  'back-card': 'Back Card',
+  label: 'Label',
+};
+
 const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   classic: CLASSIC_TEMPLATE,
   fullbleed: FULLBLEED_TEMPLATE,
@@ -149,10 +162,10 @@ export function renderSheets(
     throw new Error('mdcovergen: two Releases share an id, so their Parts cannot be told apart');
   }
 
-  const items: PackItem[] = designs.flatMap((design) =>
+  const items: Array<PackItem<PartRef>> = designs.flatMap((design) =>
     config.parts.map((part) => ({
-      releaseId: design.release.id,
-      part,
+      ref: { releaseId: design.release.id, part },
+      label: `the ${PART_LABELS[part]} of ${design.release.album || design.release.id}`,
       size: partSize(part, design.dimensions),
     })),
   );
@@ -163,20 +176,21 @@ export function renderSheets(
     gapMm: DEFAULT_PART_GAP_MM,
   });
 
-  return packed.map((sheet) => ({
+  return packed.sheets.map((sheet) => ({
     paper: config.paper,
     marginMm: config.marginMm,
     placements: sheet.placements.map(({ item, rect }): PartPlacement => {
-      const design = byRelease.get(item.releaseId);
-      if (!design) throw new Error(`mdcovergen: no design for Release "${item.releaseId}"`);
+      const { releaseId, part } = item.ref;
+      const design = byRelease.get(releaseId);
+      if (!design) throw new Error(`mdcovergen: no design for Release "${releaseId}"`);
 
-      const { ops, panels } = drawPart(item.part, design, item.size, measure);
+      const { ops, panels } = drawPart(part, design, item.size, measure);
       return {
-        releaseId: item.releaseId,
-        part: item.part,
+        releaseId,
+        part,
         bounds: rect,
         ops,
-        guides: guidesFor(item.part, design.dimensions, item.size),
+        guides: guidesFor(part, design.dimensions, item.size),
         ...(panels ? { panels } : {}),
       };
     }),
