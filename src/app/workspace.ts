@@ -8,6 +8,15 @@ import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
 import type { Project } from '../persist/project-file.ts';
 import { createIndexedDbStore, debounceSave } from '../persist/project-store.ts';
+import {
+  addToQueue,
+  moveInQueue,
+  queueDesigns,
+  readyEntry,
+  removeFromQueue,
+  replaceInQueue,
+} from '../queue/release-queue.ts';
+import type { QueueEntry } from '../queue/release-queue.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
 import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
@@ -16,15 +25,16 @@ import { createDesignControls } from './design-controls.ts';
 import { clear, el } from './dom.ts';
 import { createLabelControls } from './label-controls.ts';
 import { createProjectControls } from './project-controls.ts';
+import { createQueuePanel } from './queue-panel.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
 import { createSheetControls } from './sheet-controls.ts';
 import { createSheetPreview } from './sheet-preview.ts';
 
 /**
- * The workspace: a Release on the left, the Sheets it packs onto on the right.
- * It owns the state — and, since ADR-0001 puts that state nowhere but this
- * browser, saving it.
+ * The workspace: a queue of Releases on the left, the Sheets they pack onto on
+ * the right. It owns the state — and, since ADR-0001 puts that state nowhere
+ * but this browser, saving it.
  */
 
 /** Long enough that typing does not write on every keystroke, short enough to survive a reload. */
@@ -57,20 +67,25 @@ const EXAMPLE_RELEASE: Release = {
   ),
 };
 
+const exampleDesign = (): ReleaseDesign => ({
+  release: EXAMPLE_RELEASE,
+  templateId: 'classic',
+  params: DEFAULT_TEMPLATE_PARAMS,
+  dimensions: DEFAULT_PART_DIMENSIONS,
+});
+
 export function createWorkspace(): HTMLElement {
-  let design: ReleaseDesign = {
-    release: EXAMPLE_RELEASE,
-    templateId: 'classic',
-    params: DEFAULT_TEMPLATE_PARAMS,
-    dimensions: DEFAULT_PART_DIMENSIONS,
-  };
+  let queue: QueueEntry[] = [readyEntry(exampleDesign())];
+  let selectedId: string = EXAMPLE_RELEASE.id;
   let sheetConfig: SheetConfig = {
     paper: A4,
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
     parts: PART_KINDS,
   };
 
-  const project = (): Project => ({ designs: [design], sheet: sheetConfig });
+  const project = (): Project => ({ designs: queueDesigns(queue), sheet: sheetConfig });
+  const selected = (): QueueEntry | undefined =>
+    queue.find((entry) => entry.design.release.id === selectedId) ?? queue[0];
 
   const measure = createCanvasTextMeasurer();
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
@@ -86,7 +101,7 @@ export function createWorkspace(): HTMLElement {
         // trusting anything else this app produced.
         const { layouts } = renderCalibrationSheet(
           { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
-          design.dimensions,
+          selected()?.design.dimensions ?? DEFAULT_PART_DIMENSIONS,
           measure,
         );
         preview.show(layouts, 'mdcovergen-calibration.pdf');
@@ -96,14 +111,11 @@ export function createWorkspace(): HTMLElement {
   const preview = createSheetPreview({ actions: [calibrationButton] });
 
   const projectControls = createProjectControls(project, (imported) => {
-    apply(imported);
-    // Say what was opened, not what the file held. A project file may carry a
-    // whole queue; this workspace shows one Release until ticket 09 lands, and
-    // claiming otherwise would be a lie the collector pays for later.
+    applyProject(imported);
     projectControls.report(
-      imported.designs.length > 1
-        ? `Opened the first of ${imported.designs.length} Releases in that file — this version shows one at a time. Your previous work has been replaced.`
-        : 'Opened that project. Your previous work has been replaced.',
+      `Opened ${imported.designs.length} ${
+        imported.designs.length === 1 ? 'Release' : 'Releases'
+      }. Your previous work has been replaced.`,
     );
   });
 
@@ -113,14 +125,34 @@ export function createWorkspace(): HTMLElement {
     );
   });
 
+  const queuePanel = createQueuePanel({
+    select: (releaseId) => {
+      selectedId = releaseId;
+      renderControls();
+    },
+    move: (releaseId, offset) => {
+      queue = moveInQueue(queue, releaseId, offset);
+      changed();
+    },
+    remove: (releaseId) => {
+      queue = removeFromQueue(queue, releaseId);
+      if (queue.length === 0) queue = [readyEntry(exampleDesign())];
+      if (!queue.some((entry) => entry.design.release.id === selectedId)) {
+        selectedId = queue[0]?.design.release.id ?? '';
+      }
+      changed();
+    },
+  });
+
   const controlsColumn = el('div', { class: 'workspace__column' });
 
   /** Set the moment the collector touches anything, so a late restore cannot undo it. */
   let edited = false;
 
   function refresh(): void {
+    queuePanel.show(queue, selectedId);
     try {
-      preview.show(renderSheets([design], sheetConfig, measure), fileNameFor(design.release));
+      preview.show(renderSheets(queueDesigns(queue), sheetConfig, measure), fileNameFor(queue));
     } catch (error) {
       preview.showProblem(errorMessage(error));
     }
@@ -128,40 +160,69 @@ export function createWorkspace(): HTMLElement {
 
   function changed(): void {
     edited = true;
-    refresh();
+    renderControls();
     saveSoon(project());
+  }
+
+  /** Replaces the selected entry, leaving the rest of the queue alone. */
+  function updateSelected(change: (design: ReleaseDesign) => ReleaseDesign): void {
+    queue = replaceInQueue(queue, selectedId, (entry) => ({
+      // Editing a failed entry by hand is what completes it.
+      status: 'ready',
+      design: change(entry.design),
+    }));
+    changed();
   }
 
   /** Rebuilds the controls from the state, rather than teaching each one to be told. */
   function renderControls(): void {
+    const entry = selected();
+    if (!entry) return;
+    selectedId = entry.design.release.id;
+    const { design } = entry;
+
     const form = createReleaseForm(design.release, (edit) => {
-      design = { ...design, release: edit(design.release) };
-      changed();
+      updateSelected((current) => ({ ...current, release: edit(current.release) }));
     });
 
-    const search = createReleaseSearch(metadata, (found) => {
-      // A looked-up Release keeps its MusicBrainz id, which is what later
-      // tickets identify it by.
-      design = { ...design, release: found };
-      form.setRelease(found);
-      changed();
-    });
-
-    const designControls = createDesignControls(
-      { templateId: design.templateId, params: design.params },
-      (change) => {
-        design = {
-          ...design,
-          templateId: change.templateId ?? design.templateId,
-          params: change.params ?? design.params,
-        };
+    const search = createReleaseSearch(
+      metadata,
+      (found) => {
+        // A looked-up Release joins the queue and becomes the one being edited.
+        queue = addToQueue(queue, readyEntry({ ...design, release: found }));
+        selectedId = found.id;
+        changed();
+      },
+      (entries) => {
+        const before = queue.length;
+        for (const resolvedEntry of entries) queue = addToQueue(queue, resolvedEntry);
+        const added = queue.length - before;
+        if (added > 0) selectedId = entries[0]?.design.release.id ?? selectedId;
+        if (added < entries.length) {
+          projectControls.report(
+            `${entries.length - added} of those Releases were already in the queue.`,
+          );
+        }
         changed();
       },
     );
 
+    const designControls = createDesignControls(
+      { templateId: design.templateId, params: design.params },
+      (change) => {
+        updateSelected((current) => ({
+          ...current,
+          templateId: change.templateId ?? current.templateId,
+          params: change.params ?? current.params,
+        }));
+      },
+    );
+
     const labelControls = createLabelControls(design.dimensions.label, (label: LabelDimensions) => {
-      design = { ...design, dimensions: { ...design.dimensions, label } };
-      changed();
+      updateSelected((current) => ({
+        ...current,
+        dimensions: { ...current.dimensions, label },
+      }));
     });
 
     const sheetControls = createSheetControls(sheetConfig, (changes) => {
@@ -172,19 +233,22 @@ export function createWorkspace(): HTMLElement {
     clear(controlsColumn);
     controlsColumn.append(
       search,
+      queuePanel.element,
       form.element,
       designControls,
       labelControls,
       sheetControls,
       projectControls.element,
     );
+    queuePanel.show(queue, selectedId);
   }
 
-  function apply(next: Project): void {
-    const [first] = next.designs;
-    if (first) design = first;
+  function applyProject(next: Project): void {
+    if (next.designs.length > 0) {
+      queue = next.designs.map(readyEntry);
+      selectedId = queue[0]?.design.release.id ?? '';
+    }
     sheetConfig = next.sheet;
-    renderControls();
     changed();
   }
 
@@ -193,6 +257,7 @@ export function createWorkspace(): HTMLElement {
   window.addEventListener('pagehide', () => saveSoon.flush());
 
   renderControls();
+  refresh();
 
   // Fonts are bundled but still load asynchronously, and a unicode-range subset
   // is not fetched until text in that range is drawn. Measuring before one
@@ -200,8 +265,7 @@ export function createWorkspace(): HTMLElement {
   void fontsReady().then(refresh);
   onFontsLoaded(refresh);
 
-  // Whatever this browser last held, if anything. A first visit gets the
-  // example; a returning one gets its own work back.
+  // Whatever this browser last held, if anything.
   void store
     .load()
     .then((saved) => {
@@ -209,8 +273,12 @@ export function createWorkspace(): HTMLElement {
       // Reading the store is asynchronous, and a fast typist can be mid-word
       // before it answers. Their edit wins; the saved copy is already theirs.
       if (edited) return;
-      apply(saved);
-      projectControls.report('Restored your work from this browser.');
+      applyProject(saved);
+      projectControls.report(
+        `Restored ${saved.designs.length} ${
+          saved.designs.length === 1 ? 'Release' : 'Releases'
+        } from this browser.`,
+      );
     })
     .catch((error: unknown) => {
       projectControls.report(
@@ -221,7 +289,13 @@ export function createWorkspace(): HTMLElement {
   return el('div', { class: 'workspace' }, controlsColumn, preview.element);
 }
 
-function fileNameFor(release: Release): string {
-  const stem = [release.artist, release.album].filter(Boolean).join(' - ') || 'mdcovergen';
-  return `${stem.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+/** Names the file after the queue: one Release by name, several by count. */
+function fileNameFor(queue: readonly QueueEntry[]): string {
+  const [first] = queue;
+  if (queue.length === 1 && first) {
+    const { artist, album } = first.design.release;
+    const stem = [artist, album].filter(Boolean).join(' - ') || 'mdcovergen';
+    return `${stem.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
+  }
+  return `mdcovergen-${queue.length}-releases.pdf`;
 }

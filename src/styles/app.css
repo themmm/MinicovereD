@@ -391,6 +391,78 @@ label.button {
   min-height: 1.2em;
 }
 
+/* ------------------------------------------------------------ the queue -- */
+
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.queue__row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.queue__row--failed .queue__pick {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.queue__pick {
+  font: inherit;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.queue__pick[aria-current='true'] {
+  border-color: var(--shell);
+  box-shadow: inset 2px 0 0 var(--shell);
+}
+
+.queue__title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue__facts {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.queue__row--failed .queue__facts {
+  color: var(--accent);
+}
+
+.queue__controls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.button--tiny {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+}
+
 /* --------------------------------------------------------- search hits -- */
 
 .search__status {

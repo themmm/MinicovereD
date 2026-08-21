@@ -1,6 +1,9 @@
 import type { Release } from '../domain/release.ts';
-import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata/metadata-adapter.ts';
 import { errorMessage } from '../errors.ts';
+import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata/metadata-adapter.ts';
+import { resolveBatchIntoQueue } from '../queue/batch.ts';
+import type { BatchRequest } from '../queue/batch.ts';
+import type { QueueEntry } from '../queue/release-queue.ts';
 import { clear, el } from './dom.ts';
 
 /**
@@ -9,9 +12,22 @@ import { clear, el } from './dom.ts';
  * end up on paper.
  */
 
+/** `Artist — Album` per line; an en or em dash, a hyphen, or a tab all separate. */
+export function parseBatchLines(text: string): BatchRequest[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line, index) => {
+      const [artist = '', album = ''] = line.split(/\s+[—–-]\s+|\t+/, 2);
+      return { id: `batch-${index}-${line}`, artist: artist.trim(), album: album.trim() };
+    });
+}
+
 export function createReleaseSearch(
   adapter: MetadataAdapter,
   onResolved: (release: Release) => void,
+  onBatchResolved: (entries: readonly QueueEntry[]) => void,
 ): HTMLElement {
   const artist = el('input', {
     class: 'field__input',
@@ -100,6 +116,56 @@ export function createReleaseSearch(
     );
   }
 
+  const batchInput = el('textarea', {
+    class: 'field__input field__input--area',
+    attrs: {
+      rows: 4,
+      id: 'search-batch',
+      placeholder: 'Daft Punk — Discovery\nCornelius — Fantasma\nGlen Campbell — Wichita Lineman',
+    },
+  });
+
+  const batchButton = el('button', {
+    class: 'button',
+    text: 'Look up all',
+    attrs: { type: 'button' },
+    on: { click: () => void lookUpBatch() },
+  });
+
+  async function lookUpBatch(): Promise<void> {
+    if (busy) return;
+    const wanted = parseBatchLines(batchInput.value);
+    if (wanted.length === 0) {
+      setBusy(false, 'Put one Release per line, as “Artist — Album”.');
+      return;
+    }
+
+    clear(results);
+    setBusy(true, `Looking up ${wanted.length} Releases, one a second…`);
+    batchButton.setAttribute('disabled', '');
+    try {
+      const entries = await resolveBatchIntoQueue(adapter, wanted, (progress) => {
+        status.textContent = progress.current
+          ? `Looking up ${progress.current} — ${progress.done} of ${progress.total} done…`
+          : `Looked up ${progress.done} of ${progress.total}.`;
+      });
+      onBatchResolved(entries);
+
+      const failed = entries.filter((entry) => entry.status === 'failed').length;
+      setBusy(
+        false,
+        failed === 0
+          ? `Added ${entries.length} Releases to the queue.`
+          : `Added ${entries.length} Releases; ${failed} could not be found and need completing by hand.`,
+      );
+      batchInput.value = '';
+    } catch (error) {
+      setBusy(false, `That batch failed: ${errorMessage(error)}`);
+    } finally {
+      batchButton.removeAttribute('disabled');
+    }
+  }
+
   const form = el(
     'form',
     {
@@ -133,6 +199,13 @@ export function createReleaseSearch(
       ),
     ),
     submit,
+    el(
+      'label',
+      { class: 'field', attrs: { for: 'search-batch' } },
+      el('span', { class: 'field__label', text: 'Or look up a batch — one Release per line' }),
+      batchInput,
+    ),
+    batchButton,
     status,
     results,
   );
