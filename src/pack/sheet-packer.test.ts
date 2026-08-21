@@ -97,22 +97,25 @@ describe('SheetPacker — a single Release', () => {
     ]);
   });
 
-  it('lays three Releases out without overlaps or margin intrusions', () => {
+  it('fits three whole Releases — nine Parts — on one A4 Sheet', () => {
     const sheets = packParts([...partsOf('r1'), ...partsOf('r2'), ...partsOf('r3')], A4_CONFIG);
 
+    expect(sheets).toHaveLength(1);
     expect(allPlacements(sheets)).toHaveLength(9);
     expectNoOverlaps(sheets);
     expectInsideMargin(sheets, A4, 5);
   });
 
-  it('wastes no paper on a batch: ten Releases pack tighter than one Sheet each', () => {
+  it('wastes no paper on a batch: ten Releases print on four Sheets, not ten', () => {
     const items = Array.from({ length: 10 }, (_, index) => partsOf(`r${index}`)).flat();
     const sheets = packParts(items, A4_CONFIG);
 
+    // Pinned: this is the heuristic's current quality, so a regression to a
+    // worse packing has to be a deliberate change to this number.
+    expect(sheets).toHaveLength(4);
     expect(allPlacements(sheets)).toHaveLength(30);
     expectNoOverlaps(sheets);
     expectInsideMargin(sheets, A4, 5);
-    expect(sheets.length).toBeLessThanOrEqual(4);
   });
 });
 
@@ -148,12 +151,12 @@ describe('SheetPacker — paper and margin', () => {
 
   it('honours a larger printable margin by fitting less on a Sheet', () => {
     const roomy: PackConfig = { paper: A4, marginMm: 20, gapMm: 4 };
-    const sheets = packParts(quarters(4), roomy);
 
-    // 170 × 257 printable: one 98 mm column, one 140 mm row plus nothing else.
-    expect(sheets.length).toBeGreaterThan(1);
-    expectInsideMargin(sheets, A4, 20);
-    expectNoOverlaps(sheets);
+    // 170 × 257 printable: a 98 mm-wide piece fits once across and a 140 mm-tall
+    // one once down, so each of the four needs its own Sheet.
+    expect(packParts(quarters(4), roomy)).toHaveLength(4);
+    expectInsideMargin(packParts(quarters(4), roomy), A4, 20);
+    expectNoOverlaps(packParts(quarters(4), roomy));
   });
 
   it('refuses a Part that cannot fit the printable area at all', () => {

@@ -61,10 +61,6 @@ export function createWorkspace(): HTMLElement {
   });
 
   function refresh(): void {
-    if (sheetConfig.parts.length === 0) {
-      preview.show([], fileNameFor(release));
-      return;
-    }
     try {
       preview.show(renderSheets([design()], sheetConfig, measure), fileNameFor(release));
     } catch (error) {

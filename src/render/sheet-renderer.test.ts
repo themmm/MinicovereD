@@ -242,9 +242,10 @@ describe('SheetRenderer — Sheet configuration', () => {
   it('lays the Sheet out on Letter when asked', () => {
     const [sheet] = renderSheets([aDesign()], { ...A4_SHEET, paper: LETTER }, testMeasurer);
 
-    expect(sheet?.paper.name).toBe('Letter');
-    expect(sheet?.paper.width).toBeCloseTo(215.9, 4);
-    expect(sheet?.paper.height).toBeCloseTo(279.4, 4);
+    expect(sheet?.paper.id).toBe('letter');
+    // Letter is shorter than A4, so the same Parts have to sit higher up.
+    const lowest = Math.max(...(sheet?.placements ?? []).map((p) => p.bounds.y + p.bounds.height));
+    expect(lowest).toBeLessThanOrEqual(LETTER.height - 5);
   });
 
   it('keeps Parts out of a widened printable margin', () => {

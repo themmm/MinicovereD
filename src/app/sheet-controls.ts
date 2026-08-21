@@ -54,20 +54,19 @@ export function createSheetControls(
     },
   });
 
-  const chosen = new Set<PartKind>(config.parts);
+  // The checkboxes are the state; reading them back keeps Parts in their
+  // canonical order however the user clicks.
+  const boxes = new Map<PartKind, HTMLInputElement>();
+  const chosenParts = (): PartKind[] => PART_KINDS.filter((part) => boxes.get(part)?.checked);
+
   const toggles = el('div', { class: 'toggles' });
   for (const part of PART_KINDS) {
     const box = el('input', {
       attrs: { type: 'checkbox', id: `part-${part}` },
-      on: {
-        change: (event) => {
-          if ((event.target as HTMLInputElement).checked) chosen.add(part);
-          else chosen.delete(part);
-          onChange({ parts: PART_KINDS.filter((candidate) => chosen.has(candidate)) });
-        },
-      },
+      on: { change: () => onChange({ parts: chosenParts() }) },
     });
-    box.checked = chosen.has(part);
+    box.checked = config.parts.includes(part);
+    boxes.set(part, box);
     toggles.appendChild(
       el('label', { class: 'toggle', attrs: { for: `part-${part}` } }, box, PART_LABELS[part]),
     );

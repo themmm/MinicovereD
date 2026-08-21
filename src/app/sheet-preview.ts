@@ -26,11 +26,11 @@ export interface SheetPreview {
 export function createSheetPreview(): SheetPreview {
   const canvas = el('canvas', { class: 'preview__canvas' });
   const status = el('p', { class: 'preview__status', attrs: { role: 'status' }, text: '' });
-  const pageLabel = el('span', { class: 'pager__label', text: '' });
+  const sheetLabel = el('span', { class: 'pager__label', text: '' });
 
   let sheets: readonly SheetLayout[] = [];
   let fileName = 'mdcovergen.pdf';
-  let page = 0;
+  let sheetIndex = 0;
   let redrawToken = 0;
 
   const exportButton = el('button', {
@@ -42,24 +42,24 @@ export function createSheetPreview(): SheetPreview {
     class: 'button',
     text: '‹',
     attrs: { 'aria-label': 'Previous Sheet' },
-    on: { click: () => turnTo(page - 1) },
+    on: { click: () => turnTo(sheetIndex - 1) },
   });
   const next = el('button', {
     class: 'button',
     text: '›',
     attrs: { 'aria-label': 'Next Sheet' },
-    on: { click: () => turnTo(page + 1) },
+    on: { click: () => turnTo(sheetIndex + 1) },
   });
-  const pager = el('div', { class: 'pager' }, previous, pageLabel, next);
+  const pager = el('div', { class: 'pager' }, previous, sheetLabel, next);
 
   function turnTo(index: number): void {
-    page = Math.min(Math.max(index, 0), Math.max(sheets.length - 1, 0));
+    sheetIndex = Math.min(Math.max(index, 0), Math.max(sheets.length - 1, 0));
     void redraw();
   }
 
   async function redraw(): Promise<void> {
     const token = ++redrawToken;
-    const sheet = sheets[page];
+    const sheet = sheets[sheetIndex];
     if (!sheet) return;
 
     const rendered = await rasterizeSheet(sheet, PREVIEW_DPI);
@@ -73,24 +73,24 @@ export function createSheetPreview(): SheetPreview {
     status.textContent =
       `${sheet.paper.name} · ${parts} ${parts === 1 ? 'Part' : 'Parts'} on this Sheet · ` +
       `${sheet.marginMm} mm margin`;
-    pageLabel.textContent = `Sheet ${page + 1} of ${sheets.length}`;
+    sheetLabel.textContent = `Sheet ${sheetIndex + 1} of ${sheets.length}`;
     pager.hidden = sheets.length < 2;
-    previous.toggleAttribute('disabled', page === 0);
-    next.toggleAttribute('disabled', page >= sheets.length - 1);
+    previous.toggleAttribute('disabled', sheetIndex === 0);
+    next.toggleAttribute('disabled', sheetIndex >= sheets.length - 1);
   }
 
   async function exportPdf(): Promise<void> {
     if (sheets.length === 0) return;
     exportButton.setAttribute('disabled', '');
     try {
-      const pages = [];
+      const pdfPages = [];
       for (const [index, sheet] of sheets.entries()) {
         status.textContent = `Rendering Sheet ${index + 1} of ${sheets.length} at ${EXPORT_DPI} DPI…`;
-        pages.push({ size: sheet.paper, png: await sheetToPng(sheet, EXPORT_DPI) });
+        pdfPages.push({ size: sheet.paper, png: await sheetToPng(sheet, EXPORT_DPI) });
       }
-      download(await buildPdf(pages), fileName);
-      status.textContent = `Exported ${pages.length} ${
-        pages.length === 1 ? 'Sheet' : 'Sheets'
+      download(await buildPdf(pdfPages), fileName);
+      status.textContent = `Exported ${pdfPages.length} ${
+        pdfPages.length === 1 ? 'Sheet' : 'Sheets'
       } at ${EXPORT_DPI} DPI`;
     } catch (error) {
       status.textContent = `Export failed: ${error instanceof Error ? error.message : String(error)}`;
@@ -119,7 +119,7 @@ export function createSheetPreview(): SheetPreview {
     show(nextSheets, nextFileName) {
       sheets = nextSheets;
       fileName = nextFileName;
-      page = Math.min(page, Math.max(sheets.length - 1, 0));
+      sheetIndex = Math.min(sheetIndex, Math.max(sheets.length - 1, 0));
       exportButton.toggleAttribute('disabled', sheets.length === 0);
       if (sheets.length === 0) {
         status.textContent = 'Nothing to print — choose at least one Part.';

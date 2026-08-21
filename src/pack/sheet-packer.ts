@@ -27,6 +27,9 @@ export interface PackConfig {
   readonly gapMm: Mm;
 }
 
+/** Breathing room between Parts so two cut lines never end up on top of each other. */
+export const DEFAULT_PART_GAP_MM: Mm = 4;
+
 export interface PackPlacement {
   readonly item: PackItem;
   /** Position on the Sheet, from the paper's top-left corner. */
@@ -37,48 +40,53 @@ export interface PackedSheet {
   readonly placements: readonly PackPlacement[];
 }
 
+/** The geometry every placement decision is made against. */
+interface Bed {
+  readonly area: Rect;
+  readonly gapMm: Mm;
+}
+
 /**
- * A row of Parts sharing a baseline. Shelves are how a next-fit-decreasing
- * packer keeps rectangles of mixed heights from stranding vertical space: each
- * shelf is as tall as its tallest Part, and short Parts go on a shelf of their
- * own rather than under a tall neighbour.
+ * A row of Parts sharing a top edge. Its height is fixed when it opens and
+ * never changes: `usedHeight` below records where the last-opened shelf ends,
+ * and would go stale if a shelf could grow after the fact. `fitsOnShelf`
+ * enforces that by refusing anything taller.
  */
 interface Shelf {
   /** Top edge of the shelf on the Sheet. */
   readonly y: Mm;
-  height: Mm;
-  /** Left edge of the next free slot. */
+  readonly height: Mm;
+  /** Right edge of the last Part placed, or the area's left edge when empty. */
   cursorX: Mm;
 }
 
 interface Sheet {
   readonly placements: PackPlacement[];
   readonly shelves: Shelf[];
-  /** Bottom edge of the lowest shelf. */
+  /** Bottom edge of the last shelf opened on this Sheet. */
   usedHeight: Mm;
 }
 
-function newSheet(): Sheet {
-  return { placements: [], shelves: [], usedHeight: 0 };
+/** Where the next Part on this shelf would start — no leading gap on an empty shelf. */
+function nextX(shelf: Shelf, bed: Bed): Mm {
+  return shelf.cursorX === bed.area.x ? bed.area.x : shelf.cursorX + bed.gapMm;
 }
 
-/** Can `item` go on `shelf` without leaving the area or making the shelf taller than it is? */
-function fitsOnShelf(shelf: Shelf, size: Size, area: Rect, gapMm: Mm): boolean {
-  const x = shelf.cursorX === area.x ? area.x : shelf.cursorX + gapMm;
-  return x + size.width <= area.x + area.width && size.height <= shelf.height;
+function fitsOnShelf(shelf: Shelf, size: Size, bed: Bed): boolean {
+  return nextX(shelf, bed) + size.width <= bed.area.x + bed.area.width && size.height <= shelf.height;
 }
 
-function placeOnShelf(sheet: Sheet, shelf: Shelf, item: PackItem, area: Rect, gapMm: Mm): void {
-  const x = shelf.cursorX === area.x ? area.x : shelf.cursorX + gapMm;
+function placeOnShelf(sheet: Sheet, shelf: Shelf, item: PackItem, bed: Bed): void {
+  const x = nextX(shelf, bed);
   sheet.placements.push({ item, rect: { x, y: shelf.y, ...item.size } });
   shelf.cursorX = x + item.size.width;
 }
 
-function openShelf(sheet: Sheet, item: PackItem, area: Rect, gapMm: Mm): Shelf | undefined {
-  const y = sheet.shelves.length === 0 ? area.y : sheet.usedHeight + gapMm;
-  if (y + item.size.height > area.y + area.height) return undefined;
+function openShelf(sheet: Sheet, item: PackItem, bed: Bed): Shelf | undefined {
+  const y = sheet.shelves.length === 0 ? bed.area.y : sheet.usedHeight + bed.gapMm;
+  if (y + item.size.height > bed.area.y + bed.area.height) return undefined;
 
-  const shelf: Shelf = { y, height: item.size.height, cursorX: area.x };
+  const shelf: Shelf = { y, height: item.size.height, cursorX: bed.area.x };
   sheet.shelves.push(shelf);
   sheet.usedHeight = y + item.size.height;
   return shelf;
@@ -86,12 +94,14 @@ function openShelf(sheet: Sheet, item: PackItem, area: Rect, gapMm: Mm): Shelf |
 
 /**
  * Bin-packs Parts onto as few Sheets as possible: first-fit-decreasing-height,
- * the standard shelf heuristic. Sorting by height first means tall Parts define
- * the shelves and short ones fill the gaps left over, rather than every shelf
- * being as tall as whatever landed on it first.
+ * the standard shelf heuristic. Sorting by height first means the tallest Part
+ * of each row opens the shelf and shorter ones fill the width beside it — so a
+ * Label rides along on the J-Card's row instead of stranding a row of its own.
+ * It is a good heuristic, not an optimal packing.
  */
 export function packParts(items: readonly PackItem[], config: PackConfig): readonly PackedSheet[] {
-  const area = printableArea(config.paper, config.marginMm);
+  const bed: Bed = { area: printableArea(config.paper, config.marginMm), gapMm: config.gapMm };
+  const { area } = bed;
 
   for (const item of items) {
     if (item.size.width > area.width || item.size.height > area.height) {
@@ -115,17 +125,15 @@ export function packParts(items: readonly PackItem[], config: PackConfig): reado
     let placed = false;
 
     for (const sheet of sheets) {
-      const shelf = sheet.shelves.find((candidate) =>
-        fitsOnShelf(candidate, item.size, area, config.gapMm),
-      );
+      const shelf = sheet.shelves.find((candidate) => fitsOnShelf(candidate, item.size, bed));
       if (shelf) {
-        placeOnShelf(sheet, shelf, item, area, config.gapMm);
+        placeOnShelf(sheet, shelf, item, bed);
         placed = true;
         break;
       }
-      const opened = openShelf(sheet, item, area, config.gapMm);
+      const opened = openShelf(sheet, item, bed);
       if (opened) {
-        placeOnShelf(sheet, opened, item, area, config.gapMm);
+        placeOnShelf(sheet, opened, item, bed);
         placed = true;
         break;
       }
@@ -133,13 +141,13 @@ export function packParts(items: readonly PackItem[], config: PackConfig): reado
 
     if (placed) continue;
 
-    const sheet = newSheet();
+    const sheet: Sheet = { placements: [], shelves: [], usedHeight: 0 };
     sheets.push(sheet);
-    const shelf = openShelf(sheet, item, area, config.gapMm);
+    const shelf = openShelf(sheet, item, bed);
     // Every item was checked against the printable area above, so a fresh
     // Sheet always has room for one.
     if (!shelf) throw new Error('mdcovergen: a Part that fits the paper failed to open a Sheet');
-    placeOnShelf(sheet, shelf, item, area, config.gapMm);
+    placeOnShelf(sheet, shelf, item, bed);
   }
 
   return sheets.map((sheet) => ({ placements: sheet.placements }));

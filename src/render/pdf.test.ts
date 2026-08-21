@@ -1,9 +1,13 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { A4 } from '../domain/paper.ts';
+import { A4, LETTER } from '../domain/paper.ts';
+import { PART_KINDS } from '../domain/parts.ts';
 import { ptToMm, pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { buildPdf } from './pdf.ts';
+import { renderSheets } from './sheet-renderer.ts';
+import type { ReleaseDesign, TextMeasurer } from './sheet-renderer.ts';
+import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
 
 /** A real 2×2 PNG, so pdf-lib embeds an image rather than a placeholder. */
 const PNG_2X2 = Uint8Array.from(
@@ -67,5 +71,26 @@ describe('300 DPI raster geometry', () => {
     // A4 Sheet by most of a pixel.
     expect(pxPerMm(300)).toBeCloseTo(11.8110236, 6);
     expect(pxPerMm(300) * 25.4).toBeCloseTo(300, 9);
+  });
+});
+
+describe('paper size travels from the Sheet configuration to the PDF page', () => {
+  const measurer: TextMeasurer = { widthMm: (text, style) => text.length * style.sizeMm * 0.5 };
+  const design: ReleaseDesign = {
+    release: { id: 'r1', artist: 'Glen Campbell', album: 'Wichita Lineman', tracks: [] },
+    templateId: 'classic',
+    dimensions: DEFAULT_PART_DIMENSIONS,
+  };
+
+  it.each([
+    ['A4', A4, 210, 297],
+    ['Letter', LETTER, 215.9, 279.4],
+  ])('exports a %s Sheet as a %s mm page', async (_name, paper, widthMm, heightMm) => {
+    const sheets = renderSheets([design], { paper, marginMm: 5, parts: PART_KINDS }, measurer);
+    const bytes = await buildPdf(sheets.map((sheet) => ({ size: sheet.paper, png: PNG_2X2 })));
+    const size = await pageSizeMm(bytes, 0);
+
+    expect(size.width).toBeCloseTo(widthMm, 4);
+    expect(size.height).toBeCloseTo(heightMm, 4);
   });
 });

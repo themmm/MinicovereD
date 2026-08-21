@@ -2,7 +2,6 @@ import type { PaperSize } from '../domain/paper.ts';
 import {
   DEFAULT_PART_DIMENSIONS,
   JCARD_PANEL_ORDER,
-  PART_KINDS,
   jCardSize,
   partShape,
   partSize,
@@ -10,7 +9,7 @@ import {
 import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Mm, Rect, Size } from '../domain/units.ts';
-import { packParts } from '../pack/sheet-packer.ts';
+import { DEFAULT_PART_GAP_MM, packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
@@ -45,9 +44,6 @@ export interface SheetConfig {
   readonly parts: readonly PartKind[];
 }
 
-/** Breathing room between Parts so two cut lines never end up on top of each other. */
-const PART_GAP_MM: Mm = 4;
-
 const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   classic: CLASSIC_TEMPLATE,
 };
@@ -58,10 +54,6 @@ export function templateFor(id: TemplateId): Template {
 
 export function defaultDesign(release: Release): ReleaseDesign {
   return { release, templateId: 'classic', dimensions: DEFAULT_PART_DIMENSIONS };
-}
-
-export function defaultSheetConfig(paper: PaperSize, marginMm: Mm): SheetConfig {
-  return { paper, marginMm, parts: PART_KINDS };
 }
 
 function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Rect>> {
@@ -132,6 +124,11 @@ export function renderSheets(
   measure: TextMeasurer,
 ): readonly SheetLayout[] {
   const byRelease = new Map(designs.map((design) => [design.release.id, design]));
+  // Parts find their way back to a Release by id, so two Releases sharing one
+  // would silently print the same content twice.
+  if (byRelease.size !== designs.length) {
+    throw new Error('mdcovergen: two Releases share an id, so their Parts cannot be told apart');
+  }
 
   const items: PackItem[] = designs.flatMap((design) =>
     config.parts.map((part) => ({
@@ -144,7 +141,7 @@ export function renderSheets(
   const packed = packParts(items, {
     paper: config.paper,
     marginMm: config.marginMm,
-    gapMm: PART_GAP_MM,
+    gapMm: DEFAULT_PART_GAP_MM,
   });
 
   return packed.map((sheet) => ({
