@@ -22,7 +22,10 @@ const JPEG_FRAME_MARKERS = new Set([
 ]);
 
 export function imageSize(bytes: Uint8Array): ImageSize | undefined {
-  return pngSize(bytes) ?? jpegSize(bytes);
+  const size = pngSize(bytes) ?? jpegSize(bytes);
+  // A zero-sized image is not artwork; letting one through would divide by
+  // zero the moment it met a Part.
+  return size && size.widthPx > 0 && size.heightPx > 0 ? size : undefined;
 }
 
 function readUint16(bytes: Uint8Array, offset: number): number | undefined {
