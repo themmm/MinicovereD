@@ -231,12 +231,14 @@ export function createWorkspace(): HTMLElement {
     },
     (entries) => {
       makeRoomForRealWork();
-      const added = entries.filter((entry) => {
+      const added: QueueEntry[] = [];
+      for (const entry of entries) {
+        // addToQueue refuses a Release already queued, so the queue growing is
+        // what "this one is new" means.
         const grown = addToQueue(queue, entry);
-        const isNew = grown.length > queue.length;
+        if (grown.length > queue.length) added.push(entry);
         queue = grown;
-        return isNew;
-      });
+      }
       if (added.length > 0) selectedId = added[0]?.design.release.id ?? selectedId;
       selectionChanged();
       // The search panel says how it went, in the panel the collector pressed —
