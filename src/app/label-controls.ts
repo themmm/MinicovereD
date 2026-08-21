@@ -18,6 +18,9 @@ const SIZES: readonly SizeField[] = [
   { key: 'height', label: 'Height (mm)' },
 ];
 
+/** Shown once the Label has been nudged away from every preset. */
+const CUSTOM = 'custom';
+
 export function createLabelControls(
   initial: LabelDimensions,
   onChange: (dimensions: LabelDimensions) => void,
@@ -47,12 +50,15 @@ export function createLabelControls(
     attrs: { id: 'label-preset' },
     on: {
       change: (event) => {
-        const preset = labelPreset((event.target as HTMLSelectElement).value as LabelPresetId);
+        const chosen = (event.target as HTMLSelectElement).value;
+        if (chosen === CUSTOM) return;
+        const preset = labelPreset(chosen as LabelPresetId);
         provenance.textContent = preset.provenance;
         apply(preset.dimensions, true);
       },
     },
   });
+  const custom = el('option', { text: 'Custom', attrs: { value: CUSTOM } });
   // A Label that has been nudged is no longer any preset, so the picker starts
   // on whichever one it currently matches, or on nothing.
   const matching = LABEL_PRESETS.find(
@@ -66,7 +72,15 @@ export function createLabelControls(
     option.selected = preset.id === matching?.id;
     picker.appendChild(option);
   }
+  picker.appendChild(custom);
+  custom.selected = !matching;
   provenance.textContent = matching?.provenance ?? 'Adjusted from a preset.';
+
+  /** A nudged Label is no longer any preset, and the picker should say so. */
+  const markCustom = (): void => {
+    custom.selected = true;
+    provenance.textContent = 'Adjusted from a preset — the calibration sheet will tell you if it fits.';
+  };
 
   const sizeFields = el('div', { class: 'field-row' });
   for (const field of SIZES) {
@@ -86,7 +100,7 @@ export function createLabelControls(
           if (!Number.isFinite(value) || value < LABEL_SIZE_RANGE.min || value > LABEL_SIZE_RANGE.max) {
             return;
           }
-          provenance.textContent = 'Adjusted from a preset.';
+          markCustom();
           apply({ ...dimensions, [field.key]: value }, false);
         },
       },
@@ -104,6 +118,7 @@ export function createLabelControls(
 
   notch.checked = initial.notch;
   notch.addEventListener('change', () => {
+    markCustom();
     apply({ ...dimensions, notch: notch.checked }, false);
   });
 
