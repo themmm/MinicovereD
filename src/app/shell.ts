@@ -49,7 +49,7 @@ export function mountShell(root: HTMLElement): void {
     el(
       'div',
       { class: 'shell-header__titles' },
-      el('h1', { class: 'shell-header__title', text: 'mdcovergen' }),
+      el('h1', { class: 'shell-header__title', text: 'MinicovereD' }),
       el('p', {
         class: 'shell-header__tagline',
         text: 'Print-accurate MiniDisc J-Cards, Back Cards and Labels',
@@ -64,7 +64,7 @@ export function mountShell(root: HTMLElement): void {
   const footer = el(
     'footer',
     { class: 'shell-footer' },
-    'mdcovergen · MIT licensed · works offline, stores nothing outside this device. ',
+    'MinicovereD · MIT licensed · works offline, stores nothing outside this device. ',
     el('a', { text: 'Bundled fonts and libraries', attrs: { href: '#' }, on: { click: openAbout } }),
   );
 

@@ -12,10 +12,10 @@ confuse the public about the origin of goods or services, or that implies an
 endorsement or affiliation that does not exist. Being free of copyright does
 not make a mark free of those restrictions.
 
-mdcovergen bundles this mark as an optional asset for personal use, matching
+MinicovereD bundles this mark as an optional asset for personal use, matching
 the look of original inserts, and every design can switch it off without
 breaking. It does not claim any association with, sponsorship by, or
 endorsement from the trademark owner. Anyone redistributing or building on
-mdcovergen should satisfy themselves that their own use is lawful in their
+MinicovereD should satisfy themselves that their own use is lawful in their
 jurisdiction; see docs/adr/0004-bundle-official-minidisc-logo.md for the
 decision and the risk it consciously accepts.

@@ -15,7 +15,7 @@ export const PAPER_SIZES: readonly PaperSize[] = [A4, LETTER];
 
 export function paperSizeById(id: PaperSizeId): PaperSize {
   const paper = PAPER_SIZES.find((candidate) => candidate.id === id);
-  if (!paper) throw new Error(`mdcovergen: unknown paper size "${id}"`);
+  if (!paper) throw new Error(`minicovered: unknown paper size "${id}"`);
   return paper;
 }
 

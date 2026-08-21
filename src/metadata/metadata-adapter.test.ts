@@ -126,7 +126,7 @@ describe('MetadataAdapter — search', () => {
 
     const musicbrainz = http.urls.filter((url) => url.includes('musicbrainz.org'));
     expect(musicbrainz.length).toBeGreaterThan(1);
-    expect(musicbrainz.every((url) => url.includes('client=mdcovergen-'))).toBe(true);
+    expect(musicbrainz.every((url) => url.includes('client=minicovered-'))).toBe(true);
   });
 });
 

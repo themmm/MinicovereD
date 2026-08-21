@@ -33,7 +33,7 @@ Four items that a naive find-and-replace of the bare word will miss:
 - `src/attribution/licenses/PD-textlogo.txt` (2) — the project name inside a licence note
 
 The `client=` identifier from ADR-0006 becomes `client=minicovered-0.1.0`. npm is not a constraint (the package is
-`private`). Two decisions still open: whether `.scratch/mdcovergen-v1/` is renamed (it is an active working directory,
+`private`). Two decisions still open: whether `.scratch/minicovered-v1/` is renamed (it is an active working directory,
 linked twice from the README — unlike the ADRs, so probably yes) and the GitHub repository name (which redirects after).
 
 The README must document both forms explicitly — that is ADR-0009's requirement, and it is the whole mitigation for

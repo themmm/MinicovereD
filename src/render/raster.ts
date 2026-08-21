@@ -246,7 +246,7 @@ export async function rasterizeSheet(layout: SheetLayout, dpi: number): Promise<
   canvas.height = height;
 
   const context = canvas.getContext('2d');
-  if (!context) throw new Error('mdcovergen: this browser has no 2D canvas context');
+  if (!context) throw new Error('minicovered: this browser has no 2D canvas context');
 
   drawSheet(context, layout, dpi, await decodeAll(layout));
   return canvas;
@@ -255,6 +255,6 @@ export async function rasterizeSheet(layout: SheetLayout, dpi: number): Promise<
 export async function sheetToPng(layout: SheetLayout, dpi: number): Promise<Uint8Array> {
   const canvas = await rasterizeSheet(layout, dpi);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-  if (!blob) throw new Error('mdcovergen: the browser could not encode the Sheet as PNG');
+  if (!blob) throw new Error('minicovered: the browser could not encode the Sheet as PNG');
   return new Uint8Array(await blob.arrayBuffer());
 }

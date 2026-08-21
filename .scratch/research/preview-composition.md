@@ -20,7 +20,7 @@ Measured from headless screenshots at 1400 px wide, 2026-08-21.
 **Unanimous: one Part at a time, large.** Not one of the three shows an imposition sheet, and not one shows all Parts at once.
 jkap is the extreme — the artifact is ~12× physical size and the tool has exactly one Part.
 
-Note for the spec: `.scratch/mdcovergen-v1/spec.md` claims "No existing free tool covers all three Parts at once (jkap: label only;
+Note for the spec: `.scratch/minicovered-v1/spec.md` claims "No existing free tool covers all three Parts at once (jkap: label only;
 RunePML: cover + spine only; atriptych: static templates)." Tapercraft is a fourth entrant not in that list — it covers the J-Card
 (Front Panel + Spine) interactively, is freemium with a sign-in wall, and also does VHS, cassette, CD and vinyl. It does **not** appear
 to cover the Back Card or the Label, so the gap the spec names survives; the competitive claim needs the extra name. *Feature list read

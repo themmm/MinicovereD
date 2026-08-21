@@ -71,7 +71,7 @@ export const LABEL_PRESETS: readonly LabelPreset[] = [
 
 export function labelPreset(id: LabelPresetId): LabelPreset {
   const preset = LABEL_PRESETS.find((candidate) => candidate.id === id);
-  if (!preset) throw new Error(`mdcovergen: unknown Label preset "${id}"`);
+  if (!preset) throw new Error(`minicovered: unknown Label preset "${id}"`);
   return preset;
 }
 

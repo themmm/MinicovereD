@@ -23,7 +23,7 @@ describe('the fetch HTTP client', () => {
     const { calls } = stubFetch(ok);
 
     await createFetchHttpClient().get('https://musicbrainz.org/ws/2/release', {
-      headers: { 'User-Agent': 'mdcovergen/0.1.0', Accept: 'application/json' },
+      headers: { 'User-Agent': 'minicovered/0.1.0', Accept: 'application/json' },
     });
 
     // Sending them anyway risks a preflight MusicBrainz does not answer.

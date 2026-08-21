@@ -159,7 +159,7 @@ describe('reading a project file that is not one', () => {
   });
 
   it('says so when the JSON is not a project file', () => {
-    expect(failure(JSON.stringify({ hello: 'world' }))).toMatch(/mdcovergen project/i);
+    expect(failure(JSON.stringify({ hello: 'world' }))).toMatch(/minicovered project/i);
   });
 
   it('says so when the file comes from a newer version', () => {

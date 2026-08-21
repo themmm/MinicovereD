@@ -1,4 +1,4 @@
-# mdcovergen
+# MinicovereD
 
 A tool for designing and printing cover inlays and disc labels for MiniDiscs. The glossary covers the domain from the metadata of a release through to the printed sheet.
 

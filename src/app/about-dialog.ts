@@ -72,7 +72,7 @@ export function createAboutDialog(): HTMLDialogElement {
     el(
       'div',
       { class: 'about__head' },
-      el('h2', { text: 'About mdcovergen' }),
+      el('h2', { text: 'About MinicovereD' }),
       el('button', {
         class: 'button',
         text: 'Close',
@@ -82,7 +82,7 @@ export function createAboutDialog(): HTMLDialogElement {
     el('p', {
       class: 'about__lede',
       text:
-        'mdcovergen is MIT-licensed and runs entirely in your browser — no account, no server, ' +
+        'MinicovereD is MIT-licensed and runs entirely in your browser — no account, no server, ' +
         'no data leaves this device. Everything it ships is free and open source:',
     }),
   );
