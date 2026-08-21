@@ -13,12 +13,22 @@ import { DEFAULT_PART_GAP_MM, packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
-import type { JCardContext, PartContext, Template, TemplateId } from './templates/template.ts';
+import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
+import { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
+import type {
+  JCardContext,
+  PartContext,
+  Template,
+  TemplateId,
+  TemplateParams,
+} from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
 export type { SheetLayout, PartPlacement, Guide, DrawOp, TextStyle } from './layout.ts';
 export type { TextMeasurer } from './text.ts';
-export type { TemplateId } from './templates/template.ts';
+export type { TemplateId, TemplateParams, Template } from './templates/template.ts';
+export { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
+export { TEMPLATES };
 
 /**
  * SheetRenderer: from Releases plus their Templates and a Sheet configuration
@@ -34,6 +44,8 @@ export type { TemplateId } from './templates/template.ts';
 export interface ReleaseDesign {
   readonly release: Release;
   readonly templateId: TemplateId;
+  /** Colours and toggles for this Release, independent of any other. */
+  readonly params: TemplateParams;
   readonly dimensions: PartDimensions;
 }
 
@@ -46,6 +58,7 @@ export interface SheetConfig {
 
 const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   classic: CLASSIC_TEMPLATE,
+  fullbleed: FULLBLEED_TEMPLATE,
 };
 
 export function templateFor(id: TemplateId): Template {
@@ -53,7 +66,12 @@ export function templateFor(id: TemplateId): Template {
 }
 
 export function defaultDesign(release: Release): ReleaseDesign {
-  return { release, templateId: 'classic', dimensions: DEFAULT_PART_DIMENSIONS };
+  return {
+    release,
+    templateId: 'classic',
+    params: DEFAULT_TEMPLATE_PARAMS,
+    dimensions: DEFAULT_PART_DIMENSIONS,
+  };
 }
 
 function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Rect>> {
@@ -97,6 +115,7 @@ function drawPart(
   const template = templateFor(design.templateId);
   const context: PartContext = {
     release: design.release,
+    params: design.params,
     dimensions: design.dimensions,
     size,
     measure,

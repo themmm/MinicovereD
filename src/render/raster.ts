@@ -1,8 +1,7 @@
-import type { Artwork } from '../domain/release.ts';
 import type { Mm, Point, Rect } from '../domain/units.ts';
 import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
-import type { DrawOp, Guide, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
+import type { DrawOp, Guide, ImageSource, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
 
 /**
  * Draws a Sheet layout onto a canvas. This is the one place that knows about
@@ -106,10 +105,10 @@ function drawText(surface: Surface, op: Extract<DrawOp, { op: 'text' }>): void {
   context.restore();
 }
 
-function drawArtwork(surface: Surface, rect: Rect, artwork: Artwork, fit: 'cover' | 'contain'): void {
-  const image = surface.images.get(artwork.dataUrl);
+function drawImage(surface: Surface, rect: Rect, from: ImageSource, fit: 'cover' | 'contain'): void {
+  const image = surface.images.get(from.dataUrl);
   if (!image) return;
-  const { source, dest } = fitImage(artwork, rect, fit);
+  const { source, dest } = fitImage(from, rect, fit);
   surface.context.drawImage(
     image,
     source.x,
@@ -142,7 +141,7 @@ function drawOp(surface: Surface, op: DrawOp): void {
       context.stroke();
       return;
     case 'image':
-      drawArtwork(surface, op.rect, op.artwork, op.fit);
+      drawImage(surface, op.rect, op.source, op.fit);
       return;
     case 'text':
       drawText(surface, op);
@@ -215,7 +214,7 @@ async function decodeArtwork(dataUrl: string): Promise<HTMLImageElement> {
 async function decodeAll(layout: SheetLayout): Promise<Map<string, CanvasImageSource>> {
   const urls = new Set<string>();
   for (const placement of layout.placements) {
-    for (const op of placement.ops) if (op.op === 'image') urls.add(op.artwork.dataUrl);
+    for (const op of placement.ops) if (op.op === 'image') urls.add(op.source.dataUrl);
   }
   const entries = await Promise.all(
     [...urls].map(async (url) => [url, await decodeArtwork(url)] as const),

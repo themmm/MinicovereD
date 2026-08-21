@@ -8,6 +8,7 @@ import { buildPdf } from './pdf.ts';
 import { renderSheets } from './sheet-renderer.ts';
 import type { ReleaseDesign, TextMeasurer } from './sheet-renderer.ts';
 import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
+import { DEFAULT_TEMPLATE_PARAMS } from './sheet-renderer.ts';
 
 /** A real 2×2 PNG, so pdf-lib embeds an image rather than a placeholder. */
 const PNG_2X2 = Uint8Array.from(
@@ -79,6 +80,7 @@ describe('paper size travels from the Sheet configuration to the PDF page', () =
   const design: ReleaseDesign = {
     release: { id: 'r1', artist: 'Glen Campbell', album: 'Wichita Lineman', tracks: [] },
     templateId: 'classic',
+    params: DEFAULT_TEMPLATE_PARAMS,
     dimensions: DEFAULT_PART_DIMENSIONS,
   };
 
