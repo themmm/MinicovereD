@@ -20,80 +20,105 @@ export interface ProjectStore {
 const DATABASE = 'mdcovergen';
 const STORE = 'project';
 const KEY = 'current';
+const VERSION = 1;
 
-function open(): Promise<IDBDatabase> {
+/**
+ * Another tab holding an old version open blocks the upgrade. Without this the
+ * promise never settles and the app waits forever with nothing on screen.
+ */
+const BLOCKED_MESSAGE =
+  'Another mdcovergen tab is holding this browser’s saved work open. Close it and reload.';
+
+function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 1);
+    const request = indexedDB.open(DATABASE, VERSION);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onblocked = () => reject(new Error(BLOCKED_MESSAGE));
+    request.onsuccess = () => {
+      // If a later version wants in, get out of its way rather than blocking it.
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error ?? new Error('IndexedDB could not be opened'));
   });
 }
 
-function transact<T>(
-  database: IDBDatabase,
-  mode: IDBTransactionMode,
-  run: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
+/**
+ * Reads settle on the request; writes settle on the *transaction*. A put can
+ * succeed and its transaction still abort at commit — a large embedded artwork
+ * against a near-full quota does exactly that — and reporting that as saved is
+ * how work quietly disappears.
+ */
+function read<T>(database: IDBDatabase, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(STORE, mode);
+    const transaction = database.transaction(STORE, 'readonly');
     const request = run(transaction.objectStore(STORE));
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB read failed'));
+    transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB read was aborted'));
+  });
+}
+
+function write(database: IDBDatabase, run: (store: IDBObjectStore) => IDBRequest): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(STORE, 'readwrite');
+    run(transaction.objectStore(STORE));
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error('IndexedDB could not commit the write'));
+    transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed'));
   });
 }
 
 export function createIndexedDbStore(): ProjectStore {
+  let connection: Promise<IDBDatabase> | undefined;
+  const database = (): Promise<IDBDatabase> => (connection ??= openDatabase());
+
+  // One connection, one queue. Two overlapping saves on separate connections
+  // have no guaranteed commit order, and the older project can land last.
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialise = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
   return {
-    async load() {
-      const database = await open();
-      try {
-        const text = await transact<unknown>(database, 'readonly', (store) => store.get(KEY));
+    load: () =>
+      serialise(async () => {
+        const text = await read<unknown>(await database(), (store) => store.get(KEY));
         if (typeof text !== 'string') return undefined;
 
         const result = readProjectFile(text);
-        // Autosaved state that will not parse is state this version cannot use.
-        // Reporting it as absent is better than refusing to start.
+        // Autosaved state this version cannot read is state it cannot use.
+        // Reporting it as absent beats refusing to start.
         return result.ok ? result.project : undefined;
-      } finally {
-        database.close();
-      }
-    },
+      }),
 
-    async save(project) {
-      const database = await open();
-      try {
-        await transact(database, 'readwrite', (store) =>
+    save: (project) =>
+      serialise(async () => {
+        await write(await database(), (store) =>
           store.put(writeProjectFile(project.designs, project.sheet), KEY),
         );
-      } finally {
-        database.close();
-      }
-    },
+      }),
 
-    async clear() {
-      const database = await open();
-      try {
-        await transact(database, 'readwrite', (store) => store.delete(KEY));
-      } finally {
-        database.close();
-      }
-    },
+    clear: () => serialise(async () => write(await database(), (store) => store.delete(KEY))),
   };
 }
 
-/**
- * Waits for a lull before writing. Every keystroke changes the project, and
- * IndexedDB does not need to hear about all of them.
- */
 export interface DebouncedSave {
   (project: Project): void;
   /** Write whatever is waiting, now. */
   readonly flush: () => void;
 }
 
+/**
+ * Waits for a lull before writing. Every keystroke changes the project, and
+ * IndexedDB does not need to hear about all of them — but a reload must not
+ * cost the collector the last thing they typed, hence `flush`.
+ */
 export function debounceSave(
   store: ProjectStore,
   delayMs: number,
@@ -102,7 +127,7 @@ export function debounceSave(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Project | undefined;
 
-  const write = (): void => {
+  const writeNow = (): void => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
     const toSave = pending;
@@ -113,8 +138,8 @@ export function debounceSave(
   const save = (project: Project): void => {
     pending = project;
     if (timer !== undefined) clearTimeout(timer);
-    timer = setTimeout(write, delayMs);
+    timer = setTimeout(writeNow, delayMs);
   };
 
-  return Object.assign(save, { flush: write });
+  return Object.assign(save, { flush: writeNow });
 }

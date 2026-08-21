@@ -36,6 +36,10 @@ export type ProjectReadResult =
 /** Below this a Sheet has no printable area worth the name. */
 const MAX_MARGIN_MM = 40;
 
+/** No Part is smaller than a fold or larger than the biggest paper this app prints. */
+const MIN_PART_MM = 1;
+const MAX_PART_MM = 300;
+
 export function writeProjectFile(
   designs: readonly ReleaseDesign[],
   sheet: SheetConfig,
@@ -160,8 +164,10 @@ function readDimensions(value: unknown): PartDimensions {
   const jcard = isRecord(source['jcard']) ? source['jcard'] : {};
   const backCard = isRecord(source['backCard']) ? source['backCard'] : {};
   const defaults = DEFAULT_PART_DIMENSIONS;
+  // Bounded at both ends: a Part wider than any paper this app knows is not a
+  // Part, and letting it through only moves the failure into the renderer.
   const positive = (raw: unknown, fallback: number): number =>
-    Math.max(0.1, asNumber(raw, fallback));
+    clamp(asNumber(raw, fallback), MIN_PART_MM, MAX_PART_MM);
 
   return {
     jcard: {
@@ -180,7 +186,9 @@ function readDimensions(value: unknown): PartDimensions {
 
 function readTemplateId(value: unknown): TemplateId {
   const id = asString(value);
-  return id in TEMPLATES ? (id as TemplateId) : 'classic';
+  // hasOwn, not `in`: `in` walks the prototype chain, so "constructor" and
+  // "toString" would pass and templateFor would hand back Object.
+  return Object.hasOwn(TEMPLATES, id) ? (id as TemplateId) : 'classic';
 }
 
 function readSheet(value: unknown): SheetConfig | string {

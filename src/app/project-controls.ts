@@ -60,10 +60,8 @@ export function createProjectControls(
               status.textContent = `${result.error} Nothing was changed.`;
               return;
             }
+            // The caller reports what it actually applied.
             onImported(result.project);
-            status.textContent = `Opened ${result.project.designs.length} ${
-              result.project.designs.length === 1 ? 'Release' : 'Releases'
-            } from ${file.name}.`;
           })
           .catch((error: unknown) => {
             status.textContent = `That file could not be read: ${errorMessage(error)}. Nothing was changed.`;

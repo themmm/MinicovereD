@@ -1,6 +1,5 @@
 import type { PaperSize } from '../domain/paper.ts';
 import {
-  DEFAULT_PART_DIMENSIONS,
   JCARD_PANEL_ORDER,
   jCardSize,
   partShape,
@@ -14,7 +13,6 @@ import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout, SheetWarning } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
-import { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
 import type {
   JCardContext,
   PartContext,
@@ -76,15 +74,6 @@ const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
 
 export function templateFor(id: TemplateId): Template {
   return TEMPLATES[id];
-}
-
-export function defaultDesign(release: Release): ReleaseDesign {
-  return {
-    release,
-    templateId: 'classic',
-    params: DEFAULT_TEMPLATE_PARAMS,
-    dimensions: DEFAULT_PART_DIMENSIONS,
-  };
 }
 
 function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Rect>> {

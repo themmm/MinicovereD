@@ -57,15 +57,13 @@ const EXAMPLE_RELEASE: Release = {
   ),
 };
 
-const exampleDesign = (): ReleaseDesign => ({
-  release: EXAMPLE_RELEASE,
-  templateId: 'classic',
-  params: DEFAULT_TEMPLATE_PARAMS,
-  dimensions: DEFAULT_PART_DIMENSIONS,
-});
-
 export function createWorkspace(): HTMLElement {
-  let design: ReleaseDesign = exampleDesign();
+  let design: ReleaseDesign = {
+    release: EXAMPLE_RELEASE,
+    templateId: 'classic',
+    params: DEFAULT_TEMPLATE_PARAMS,
+    dimensions: DEFAULT_PART_DIMENSIONS,
+  };
   let sheetConfig: SheetConfig = {
     paper: A4,
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
@@ -99,10 +97,13 @@ export function createWorkspace(): HTMLElement {
 
   const projectControls = createProjectControls(project, (imported) => {
     apply(imported);
+    // Say what was opened, not what the file held. A project file may carry a
+    // whole queue; this workspace shows one Release until ticket 09 lands, and
+    // claiming otherwise would be a lie the collector pays for later.
     projectControls.report(
-      `Opened ${imported.designs.length} ${
-        imported.designs.length === 1 ? 'Release' : 'Releases'
-      }. Your previous work has been replaced.`,
+      imported.designs.length > 1
+        ? `Opened the first of ${imported.designs.length} Releases in that file — this version shows one at a time. Your previous work has been replaced.`
+        : 'Opened that project. Your previous work has been replaced.',
     );
   });
 
