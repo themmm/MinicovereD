@@ -1,8 +1,8 @@
 import { buildPdf } from '../render/pdf.ts';
 import { EXPORT_DPI, rasterizeSheet, sheetToPng } from '../render/raster.ts';
-import type { SheetLayout } from '../render/sheet-renderer.ts';
+import type { SheetLayout, SheetWarning } from '../render/sheet-renderer.ts';
 import { errorMessage } from '../errors.ts';
-import { el } from './dom.ts';
+import { clear, el } from './dom.ts';
 
 /**
  * Live preview of the packed Sheets, and the export that turns them into one
@@ -32,6 +32,9 @@ export interface SheetPreviewOptions {
 export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): SheetPreview {
   const canvas = el('canvas', { class: 'preview__canvas' });
   const status = el('p', { class: 'preview__status', attrs: { role: 'status' }, text: '' });
+  // No live region here: the status line above already announces every redraw,
+  // and two of them talk over each other.
+  const warnings = el('ul', { class: 'warnings' });
   const sheetLabel = el('span', { class: 'pager__label', text: '' });
 
   let sheets: readonly SheetLayout[] = [];
@@ -80,6 +83,12 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
     status.textContent =
       `${sheet.paper.name} · ${parts} ${parts === 1 ? 'Part' : 'Parts'} on this Sheet · ` +
       `${sheet.marginMm} mm margin`;
+    clear(warnings);
+    for (const warning of sheet.warnings ?? []) {
+      warnings.appendChild(el('li', { class: 'warnings__item', text: describeWarning(warning) }));
+    }
+    warnings.hidden = (sheet.warnings ?? []).length === 0;
+
     sheetLabel.textContent = `Sheet ${sheetIndex + 1} of ${sheets.length}`;
     pager.hidden = sheets.length < 2;
     previous.toggleAttribute('disabled', sheetIndex === 0);
@@ -119,6 +128,7 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
     ),
     el('div', { class: 'preview__frame' }, canvas),
     status,
+    warnings,
   );
   pager.hidden = true;
 
@@ -132,6 +142,7 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
       if (sheets.length === 0) {
         status.textContent = 'Nothing to print — choose at least one Part.';
         pager.hidden = true;
+        warnings.hidden = true;
         return;
       }
       void redraw();
@@ -141,9 +152,19 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
       sheets = [];
       exportButton.setAttribute('disabled', '');
       pager.hidden = true;
+      warnings.hidden = true;
       status.textContent = message;
     },
   };
+}
+
+/** The wording lives here, not in the geometry that noticed the problem. */
+function describeWarning(warning: SheetWarning): string {
+  const { releaseTitle, trackCount, sizeMm, floorMm } = warning;
+  return (
+    `${releaseTitle}: ${trackCount} tracks only fit at ${sizeMm.toFixed(2)} mm type, below the ` +
+    `${floorMm.toFixed(2)} mm a printer reliably holds. Every track is there, but they may not be legible.`
+  );
 }
 
 function download(bytes: Uint8Array, fileName: string): void {

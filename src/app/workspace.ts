@@ -5,7 +5,7 @@ import type { Release } from '../domain/release.ts';
 import { parseTracklist } from '../domain/tracklist.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
-import { createCanvasTextMeasurer, fontsReady } from '../render/canvas-text-measurer.ts';
+import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
 import type {
@@ -128,9 +128,12 @@ export function createWorkspace(): HTMLElement {
   });
 
 
-  // Fonts are bundled but still load asynchronously; measuring before they are
-  // ready would lay the Sheet out against a fallback face.
+  // Fonts are bundled but still load asynchronously, and a unicode-range subset
+  // is not fetched until text in that range is drawn. Measuring before one
+  // arrives sizes the Sheet against a fallback face, so redraw when any of them
+  // lands — a Polish title typed into an empty form fetches latin-ext mid-edit.
   void fontsReady().then(refresh);
+  onFontsLoaded(refresh);
 
   return el(
     'div',

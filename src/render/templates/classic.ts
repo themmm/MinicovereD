@@ -85,12 +85,14 @@ export const CLASSIC_TEMPLATE: Template = {
   id: 'classic',
   name: 'Classic',
   description: 'Solid background, artwork as a square, type below it.',
-  drawJCard: (context: JCardContext) => [
-    ...drawInnerFlap(context, context.panels['inner-flap']),
-    ...drawSpine(context, context.panels.spine),
-    ...drawFrontPanel(context, context.panels['front-panel']),
-  ],
+  drawJCard: (context: JCardContext) => ({
+    ops: [
+      ...drawInnerFlap(context, context.panels['inner-flap']),
+      ...drawSpine(context, context.panels.spine),
+      ...drawFrontPanel(context, context.panels['front-panel']),
+    ],
+  }),
   drawBackCard,
-  drawLabel,
+  drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
 };
 

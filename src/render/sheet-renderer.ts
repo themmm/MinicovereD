@@ -11,7 +11,7 @@ import type { Release } from '../domain/release.ts';
 import type { Mm, Rect, Size } from '../domain/units.ts';
 import { DEFAULT_PART_GAP_MM, packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
-import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
+import type { Guide, PanelBounds, PartPlacement, SheetLayout, SheetWarning } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
@@ -24,7 +24,7 @@ import type {
 } from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
-export type { SheetLayout, PartPlacement, Guide, DrawOp, TextStyle } from './layout.ts';
+export type { SheetLayout, PartPlacement, Guide, DrawOp, TextStyle, SheetWarning } from './layout.ts';
 export type { TextMeasurer } from './text.ts';
 export type { TemplateId, TemplateParams, Template } from './templates/template.ts';
 export { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
@@ -124,7 +124,7 @@ function drawPart(
   design: ReleaseDesign,
   size: Size,
   measure: TextMeasurer,
-): { ops: PartPlacement['ops']; panels?: readonly PanelBounds[] } {
+): { ops: PartPlacement['ops']; warnings?: readonly SheetWarning[]; panels?: readonly PanelBounds[] } {
   const template = templateFor(design.templateId);
   const context: PartContext = {
     release: design.release,
@@ -139,14 +139,14 @@ function drawPart(
       const panels = jCardPanels(design.dimensions);
       const jCardContext: JCardContext = { ...context, panels };
       return {
-        ops: template.drawJCard(jCardContext),
+        ...template.drawJCard(jCardContext),
         panels: JCARD_PANEL_ORDER.map((panel) => ({ panel, rect: panels[panel] })),
       };
     }
     case 'back-card':
-      return { ops: template.drawBackCard(context) };
+      return template.drawBackCard(context);
     case 'label':
-      return { ops: template.drawLabel(context) };
+      return template.drawLabel(context);
   }
 }
 
@@ -176,15 +176,16 @@ export function renderSheets(
     gapMm: DEFAULT_PART_GAP_MM,
   });
 
-  return packed.sheets.map((sheet) => ({
-    paper: config.paper,
-    marginMm: config.marginMm,
-    placements: sheet.placements.map(({ item, rect }): PartPlacement => {
+  return packed.sheets.map((sheet) => {
+    const warnings: SheetWarning[] = [];
+
+    const placements = sheet.placements.map(({ item, rect }): PartPlacement => {
       const { releaseId, part } = item.ref;
       const design = byRelease.get(releaseId);
       if (!design) throw new Error(`mdcovergen: no design for Release "${releaseId}"`);
 
-      const { ops, panels } = drawPart(part, design, item.size, measure);
+      const { ops, panels, warnings: partWarnings } = drawPart(part, design, item.size, measure);
+      warnings.push(...(partWarnings ?? []));
       return {
         releaseId,
         part,
@@ -193,8 +194,15 @@ export function renderSheets(
         guides: guidesFor(part, design.dimensions, item.size),
         ...(panels ? { panels } : {}),
       };
-    }),
-  }));
+    });
+
+    return {
+      paper: config.paper,
+      marginMm: config.marginMm,
+      placements,
+      ...(warnings.length > 0 ? { warnings } : {}),
+    };
+  });
 }
 
 /** Re-exported so callers of the seam do not have to reach into the domain. */

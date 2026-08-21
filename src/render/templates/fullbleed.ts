@@ -116,11 +116,13 @@ export const FULLBLEED_TEMPLATE: Template = {
   id: 'fullbleed',
   name: 'Full-bleed',
   description: 'Artwork edge to edge, type as an overlay.',
-  drawJCard: (context: JCardContext) => [
-    ...drawInnerFlap(context, context.panels['inner-flap']),
-    ...drawSpine(context, context.panels.spine),
-    ...drawFrontPanel(context, context.panels['front-panel']),
-  ],
+  drawJCard: (context: JCardContext) => ({
+    ops: [
+      ...drawInnerFlap(context, context.panels['inner-flap']),
+      ...drawSpine(context, context.panels.spine),
+      ...drawFrontPanel(context, context.panels['front-panel']),
+    ],
+  }),
   drawBackCard,
-  drawLabel,
+  drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
 };

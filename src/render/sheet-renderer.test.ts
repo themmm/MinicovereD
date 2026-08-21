@@ -541,3 +541,152 @@ describe('SheetRenderer — Label dimensions', () => {
     expect(cutOf(square)).toContainEqual({ x: 35, y: 0 });
   });
 });
+
+describe('SheetRenderer — tracklist overflow', () => {
+  const backCardText = (trackCount: number): Array<{ text: string; x: number; y: number; sizeMm: number }> => {
+    const release = aRelease({
+      tracks: Array.from({ length: trackCount }, (_, index) => ({
+        position: index + 1,
+        title: `Track ${index + 1}`,
+      })),
+    });
+    const [sheet] = renderSheets([aDesign(release)], A4_SHEET, testMeasurer);
+    const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
+    return (backCard?.ops ?? []).flatMap((op) =>
+      op.op === 'text' ? [{ text: op.text, x: op.at.x, y: op.at.y, sizeMm: op.style.sizeMm }] : [],
+    );
+  };
+
+  const trackLines = (trackCount: number) =>
+    backCardText(trackCount).filter((line) => /^\d+\./.test(line.text));
+
+  it('prints all 25 tracks of a 25-track Release, in two columns', () => {
+    const lines = trackLines(25);
+
+    expect(lines).toHaveLength(25);
+    expect(new Set(lines.map((line) => line.x)).size).toBe(2);
+    for (let position = 1; position <= 25; position++) {
+      expect(lines.some((line) => line.text.startsWith(`${position}.`)), `track ${position}`).toBe(true);
+    }
+  });
+
+  it('keeps one column while one column will do', () => {
+    expect(new Set(trackLines(12).map((line) => line.x)).size).toBe(1);
+  });
+
+  it('shrinks the type rather than losing a track', () => {
+    const modest = trackLines(25);
+    const enormous = trackLines(70);
+
+    expect(enormous).toHaveLength(70);
+    expect(enormous[0]?.sizeMm).toBeLessThan(modest[0]?.sizeMm ?? 0);
+  });
+
+  it('keeps every track inside the Back Card', () => {
+    const [sheet] = renderSheets(
+      [
+        aDesign(
+          aRelease({
+            tracks: Array.from({ length: 70 }, (_, index) => ({
+              position: index + 1,
+              title: `Track ${index + 1}`,
+            })),
+          }),
+        ),
+      ],
+      A4_SHEET,
+      testMeasurer,
+    );
+    const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
+    if (!backCard) throw new Error('no Back Card');
+
+    for (const op of backCard.ops) {
+      if (op.op !== 'text') continue;
+      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(backCard.bounds.height);
+      expect(op.at.x, op.text).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('passes Unicode titles through to the Part unchanged', () => {
+    const release = aRelease({
+      artist: 'コーネリアス',
+      album: 'ファンタズマ',
+      tracks: [
+        { position: 1, title: '夢の中で' },
+        { position: 2, title: 'Grüße aus Köln' },
+        { position: 3, title: 'Ærø · Łódź' },
+      ],
+    });
+    const [sheet] = renderSheets([aDesign(release)], A4_SHEET, testMeasurer);
+    const printed = (sheet?.placements ?? [])
+      .flatMap((placement) => placement.ops)
+      .flatMap((op) => (op.op === 'text' ? [op.text] : []));
+
+    // A trim by code unit, not code point, is what puts a lone surrogate on
+    // paper; a replacement character never appears in the string itself.
+    expect(printed.some((line) => /[\uD800-\uDFFF]/.test(line))).toBe(false);
+    expect(printed).toContain('1. 夢の中で');
+    expect(printed).toContain('2. Grüße aus Köln');
+    expect(printed.some((line) => line.includes('ファンタズマ'))).toBe(true);
+  });
+});
+
+describe('SheetRenderer — warnings about what was drawn', () => {
+  const sheetFor = (trackCount: number) =>
+    renderSheets(
+      [
+        aDesign(
+          aRelease({
+            album: 'Everything At Once',
+            tracks: Array.from({ length: trackCount }, (_, index) => ({
+              position: index + 1,
+              title: `Track ${index + 1}`,
+            })),
+          }),
+        ),
+      ],
+      A4_SHEET,
+      testMeasurer,
+    )[0];
+
+  it('says nothing when the tracklist fits at a printable size', () => {
+    expect(sheetFor(25)?.warnings).toBeUndefined();
+  });
+
+  it('reports type that had to shrink past what a printer holds', () => {
+    const [warning, ...rest] = sheetFor(200)?.warnings ?? [];
+
+    expect(rest).toEqual([]);
+    expect(warning?.kind).toBe('type-below-print-floor');
+    expect(warning?.releaseTitle).toBe('Everything At Once');
+    expect(warning?.trackCount).toBe(200);
+    expect(warning?.sizeMm).toBeLessThan(warning?.floorMm ?? 0);
+  });
+
+  it('warns once per Release, from the Back Card that carries the list', () => {
+    // Three Parts are drawn; only one of them has a tracklist on it.
+    const sheet = sheetFor(200);
+
+    expect(sheet?.placements).toHaveLength(3);
+    expect(sheet?.warnings).toHaveLength(1);
+  });
+
+  it('reports nothing when the job does not print the Back Card at all', () => {
+    const sheets = renderSheets(
+      [
+        aDesign(
+          aRelease({
+            tracks: Array.from({ length: 200 }, (_, index) => ({
+              position: index + 1,
+              title: `Track ${index + 1}`,
+            })),
+          }),
+        ),
+      ],
+      { ...A4_SHEET, parts: ['label'] },
+      testMeasurer,
+    );
+
+    expect(sheets[0]?.warnings).toBeUndefined();
+  });
+});

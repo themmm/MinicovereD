@@ -1,7 +1,7 @@
 import type { JCardPanel, PartDimensions } from '../../domain/parts.ts';
 import type { Release } from '../../domain/release.ts';
 import type { Rect, Size } from '../../domain/units.ts';
-import type { DrawOp } from '../layout.ts';
+import type { DrawOp, SheetWarning } from '../layout.ts';
 import type { TextMeasurer } from '../text.ts';
 
 /**
@@ -57,12 +57,22 @@ export interface JCardContext extends PartContext {
   readonly panels: Readonly<Record<JCardPanel, Rect>>;
 }
 
+/**
+ * What drawing a Part produced: the marks, and anything the collector should
+ * know about them. Warnings come back with the drawing rather than being
+ * recomputed beside it, so what is reported always describes what was drawn.
+ */
+export interface PartDrawing {
+  readonly ops: readonly DrawOp[];
+  readonly warnings?: readonly SheetWarning[];
+}
+
 export interface Template {
   readonly id: TemplateId;
   readonly name: string;
   /** One line saying what this design does, for the picker. */
   readonly description: string;
-  drawJCard(context: JCardContext): readonly DrawOp[];
-  drawBackCard(context: PartContext): readonly DrawOp[];
-  drawLabel(context: PartContext): readonly DrawOp[];
+  drawJCard(context: JCardContext): PartDrawing;
+  drawBackCard(context: PartContext): PartDrawing;
+  drawLabel(context: PartContext): PartDrawing;
 }

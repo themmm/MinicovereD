@@ -16,6 +16,11 @@ export function createCanvasTextMeasurer(): TextMeasurer {
 
   const cache = new Map<string, number>();
 
+  // A width measured before its face arrived is a width against the fallback,
+  // and caching it would outlive the font load. Every face that finishes
+  // loading invalidates what was measured without it.
+  document.fonts.addEventListener('loadingdone', () => cache.clear());
+
   return {
     widthMm(text: string, style: TextStyle): number {
       const font = fontFor(style, MEASURE_PX_PER_MM);
@@ -32,9 +37,49 @@ export function createCanvasTextMeasurer(): TextMeasurer {
 }
 
 /**
- * Bundled fonts load asynchronously even though they never touch the network.
- * Measuring before they are ready would size the layout to a fallback face.
+ * The bundled faces and, for each, a character from every unicode-range subset
+ * it ships as. One character per subset is what forces the browser to fetch
+ * that subset; anything it is not asked for stays unloaded and silently falls
+ * back to whatever the system has.
+ */
+const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
+  {
+    family: 'Noto Sans Variable',
+    // latin · latin-ext · greek · greek-ext · cyrillic · cyrillic-ext · vietnamese · devanagari
+    sample: 'Aä Łź α ᾰ Б Ԑ ế अ',
+  },
+  { family: 'Noto Sans JP', sample: '東' },
+];
+
+/**
+ * Bundled fonts load asynchronously even though they never touch the network,
+ * and a face with a unicode-range is not loaded at all until text in that range
+ * is rendered. `document.fonts.ready` alone therefore resolves with the CJK
+ * face still absent, and both measuring and drawing silently fall through to
+ * whatever the system happens to have — tofu, on a machine with no CJK font.
+ * Asking for each face by name is what actually fetches it.
  */
 export async function fontsReady(): Promise<void> {
+  await Promise.all(
+    BUNDLED_FACES.map(async ({ family, sample }) => {
+      try {
+        await document.fonts.load(`400 16px "${family}"`, sample);
+        await document.fonts.load(`700 16px "${family}"`, sample);
+      } catch {
+        // A face that will not load is a fallback, not a failure: the app still
+        // renders, just not in the typography it shipped with.
+      }
+    }),
+  );
   await document.fonts.ready;
+}
+
+/**
+ * Runs `listener` whenever a font finishes loading. A subset that arrives after
+ * the first render leaves the layout sized against a fallback face, so the
+ * caller has to draw again — clearing the measurement cache alone only fixes
+ * the *next* render.
+ */
+export function onFontsLoaded(listener: () => void): void {
+  document.fonts.addEventListener('loadingdone', listener);
 }
