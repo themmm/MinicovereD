@@ -113,12 +113,12 @@ export function createWorkspace(): HTMLElement {
   // The calibration sheet is not a Release: it is the ruler you check the
   // printer against before trusting anything else this app produced.
   preview.addAction('Calibration sheet', () => {
-    const { layout } = renderCalibrationSheet(
+    const { layouts } = renderCalibrationSheet(
       { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
       dimensions,
       measure,
     );
-    preview.show([layout], 'mdcovergen-calibration.pdf');
+    preview.show(layouts, 'mdcovergen-calibration.pdf');
   });
 
   // Fonts are bundled but still load asynchronously; measuring before they are

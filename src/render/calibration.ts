@@ -33,7 +33,9 @@ const CAPTION_LINES = 2;
 /** One outlined shape on the sheet, with the caption printed beneath it. */
 export interface CalibrationFigure {
   readonly label: string;
-  /** Where it sits on the paper. */
+  /** Which Sheet it landed on, counting from zero. */
+  readonly sheet: number;
+  /** Where it sits on that paper. */
   readonly bounds: Rect;
   /** Its outline in Part-local coordinates — notched, where the shape is. */
   readonly outline: readonly Point[];
@@ -42,8 +44,15 @@ export interface CalibrationFigure {
 }
 
 export interface CalibrationSheet {
-  readonly layout: SheetLayout;
+  /**
+   * One layout per printed Sheet. A generous printable margin can leave too
+   * little room for every outline at 1:1, and shrinking them would defeat the
+   * entire purpose, so the sheet runs onto as many pages as it needs.
+   */
+  readonly layouts: readonly SheetLayout[];
   readonly figures: readonly CalibrationFigure[];
+  /** Outlines too wide for the printable area at all, named rather than dropped. */
+  readonly omitted: readonly string[];
 }
 
 export interface CalibrationConfig {
@@ -69,27 +78,59 @@ const heading = (text: string, at: Point, sizeMm: Mm, weight: 400 | 700): DrawOp
   style: { sizeMm, weight, color: INK, align: 'left', baseline: 'top' },
 });
 
-/** Lays figures out in rows, wrapping when a row runs out of width. */
+interface Shape {
+  readonly label: string;
+  readonly width: Mm;
+  readonly height: Mm;
+  readonly outline: readonly Point[];
+  readonly folds?: readonly Mm[];
+}
+
+/**
+ * Lays figures out in rows, wrapping when a row runs out of width and starting
+ * a new Sheet when the page runs out of height. Nothing is ever scaled: an
+ * outline that is not 1:1 is worse than useless.
+ */
 function arrange(
-  shapes: ReadonlyArray<{ label: string; width: Mm; height: Mm; outline: readonly Point[]; folds?: readonly Mm[] }>,
+  shapes: readonly Shape[],
   area: Rect,
-  startY: Mm,
-): { figures: CalibrationFigure[]; bottom: Mm } {
+  firstSheetTop: Mm,
+): { figures: CalibrationFigure[]; omitted: string[]; bottomOfSheet: Map<number, Mm> } {
   const figures: CalibrationFigure[] = [];
+  const omitted: string[] = [];
+  const bottomOfSheet = new Map<number, Mm>();
   // Each figure reserves room under it for its two caption lines.
   const captionRoom = CAPTION_GAP + CAPTION_LINES * CAPTION_LINE;
+
+  let sheet = 0;
   let cursorX = area.x;
-  let cursorY = startY;
+  let cursorY = firstSheetTop;
   let rowHeight = 0;
 
+  const closeRow = (): void => {
+    bottomOfSheet.set(sheet, cursorY + rowHeight + captionRoom);
+    cursorX = area.x;
+    cursorY += rowHeight + captionRoom + GAP;
+    rowHeight = 0;
+  };
+
   for (const shape of shapes) {
-    if (cursorX > area.x && cursorX + shape.width > area.x + area.width) {
+    if (shape.width > area.width || shape.height + captionRoom > area.height) {
+      omitted.push(shape.label);
+      continue;
+    }
+    if (cursorX > area.x && cursorX + shape.width > area.x + area.width) closeRow();
+    if (cursorY + shape.height + captionRoom > area.y + area.height) {
+      closeRow();
+      sheet += 1;
       cursorX = area.x;
-      cursorY += rowHeight + captionRoom + GAP;
+      cursorY = area.y;
       rowHeight = 0;
     }
+
     figures.push({
       label: shape.label,
+      sheet,
       bounds: { x: cursorX, y: cursorY, width: shape.width, height: shape.height },
       outline: shape.outline,
       ...(shape.folds ? { folds: shape.folds } : {}),
@@ -97,7 +138,9 @@ function arrange(
     cursorX += shape.width + GAP;
     rowHeight = Math.max(rowHeight, shape.height);
   }
-  return { figures, bottom: cursorY + rowHeight + captionRoom };
+  bottomOfSheet.set(sheet, cursorY + rowHeight + captionRoom);
+
+  return { figures, omitted, bottomOfSheet };
 }
 
 function squareOutline(size: Mm): Point[] {
@@ -166,7 +209,7 @@ export function renderCalibrationSheet(
   const backCard = partShape('back-card', dimensions);
   const { innerFlapWidth, spineWidth } = dimensions.jcard;
 
-  const { figures, bottom } = arrange(
+  const { figures, omitted, bottomOfSheet } = arrange(
     [
       {
         label: '100 mm test square',
@@ -201,11 +244,23 @@ export function renderCalibrationSheet(
     area.y + 22,
   );
 
-  const guides: Guide[] = [];
-  const ops: DrawOp[] = [...instructions];
+  const sheetCount = Math.max(...figures.map((figure) => figure.sheet), 0) + 1;
+  const guides: Guide[][] = Array.from({ length: sheetCount }, () => []);
+  const ops: DrawOp[][] = Array.from({ length: sheetCount }, (_, index) =>
+    index === 0
+      ? [...instructions]
+      : [
+          heading(
+            `mdcovergen calibration sheet — page ${index + 1} of ${sheetCount}`,
+            { x: area.x, y: area.y - CAPTION_LINE - 1 },
+            3.2,
+            700,
+          ),
+        ],
+  );
 
   for (const figure of figures) {
-    guides.push({
+    (guides[figure.sheet] as Guide[]).push({
       kind: 'cut',
       points: figure.outline.map((point) => ({
         x: figure.bounds.x + point.x,
@@ -215,7 +270,7 @@ export function renderCalibrationSheet(
     });
 
     for (const fold of figure.folds ?? []) {
-      guides.push({
+      (guides[figure.sheet] as Guide[]).push({
         kind: 'fold',
         points: [
           { x: figure.bounds.x + fold, y: figure.bounds.y },
@@ -229,7 +284,8 @@ export function renderCalibrationSheet(
     // the next one's, or two captions run into each other on the paper.
     const captionWidth = figure.bounds.width + GAP;
     const captionTop = figure.bounds.y + figure.bounds.height + CAPTION_GAP;
-    ops.push(
+    const sheetOps = ops[figure.sheet] as DrawOp[];
+    sheetOps.push(
       caption(figure.label, { x: figure.bounds.x, y: captionTop }, measure, captionWidth),
       caption(
         `${figure.bounds.width} × ${figure.bounds.height} mm`,
@@ -239,20 +295,35 @@ export function renderCalibrationSheet(
       ),
     );
 
-    if (figure.label === '100 mm test square') ops.push(...squareTicks(figure.bounds));
+    if (figure.label === '100 mm test square') sheetOps.push(...squareTicks(figure.bounds));
   }
 
-  ops.push(
-    heading(
-      'Every outline above is drawn from the dimensions this app is currently set to.',
-      { x: area.x, y: bottom + GAP },
-      3,
-      400,
-    ),
+  const footerOn = (sheet: number, text: string): void => {
+    const bottom = bottomOfSheet.get(sheet) ?? area.y;
+    if (bottom + GAP + CAPTION_LINE > area.y + area.height) return;
+    (ops[sheet] as DrawOp[]).push(heading(text, { x: area.x, y: bottom + GAP }, 3, 400));
+  };
+
+  footerOn(
+    sheetCount - 1,
+    'Every outline above is drawn from the dimensions this app is currently set to.',
   );
+  if (omitted.length > 0) {
+    footerOn(
+      sheetCount - 1,
+      `Too large for this printable area, so not shown: ${omitted.join(', ')}. Reduce the margin.`,
+    );
+  }
 
   return {
-    layout: { paper: config.paper, marginMm: config.marginMm, placements: [], ops, guides },
+    layouts: Array.from({ length: sheetCount }, (_, index) => ({
+      paper: config.paper,
+      marginMm: config.marginMm,
+      placements: [],
+      ops: ops[index] ?? [],
+      guides: guides[index] ?? [],
+    })),
     figures,
+    omitted,
   };
 }

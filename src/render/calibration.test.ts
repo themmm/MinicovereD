@@ -36,7 +36,8 @@ describe('the calibration sheet — the test square', () => {
   });
 
   it('says on the paper what the square should measure', () => {
-    const printed = (sheet().layout.ops ?? [])
+    const printed = sheet()
+      .layouts.flatMap((layout) => layout.ops ?? [])
       .flatMap((op) => (op.op === 'text' ? [op.text] : []))
       .join(' ');
 
@@ -109,11 +110,12 @@ describe('the calibration sheet — the page', () => {
     }
   });
 
-  it('never overlaps two figures', () => {
+  it('never overlaps two figures on the same Sheet', () => {
     const drawn = sheet().figures;
 
     for (const [index, a] of drawn.entries()) {
       for (const b of drawn.slice(index + 1)) {
+        if (a.sheet !== b.sheet) continue;
         expect(rectsOverlap(a.bounds, b.bounds), `${a.label} overlaps ${b.label}`).toBe(false);
       }
     }
@@ -126,7 +128,7 @@ describe('the calibration sheet — the page', () => {
       measurer,
     );
 
-    expect(onLetter.layout.paper.id).toBe('letter');
+    expect(onLetter.layouts[0]?.paper.id).toBe('letter');
     for (const figure of onLetter.figures) {
       expect(figure.bounds.x + figure.bounds.width, figure.label).toBeLessThanOrEqual(
         LETTER.width - 5,
@@ -138,6 +140,46 @@ describe('the calibration sheet — the page', () => {
   });
 
   it('carries no Parts: nothing here is a Release, it is a ruler', () => {
-    expect(sheet().layout.placements).toEqual([]);
+    expect(sheet().layouts.every((layout) => layout.placements.length === 0)).toBe(true);
+  });
+
+  it('fits on one Sheet at the default margin', () => {
+    expect(sheet().layouts).toHaveLength(1);
+    expect(sheet().omitted).toEqual([]);
+  });
+
+  it('runs onto more Sheets rather than off the bottom of a generous margin', () => {
+    const roomy = renderCalibrationSheet({ paper: A4, marginMm: 40 }, DEFAULT_PART_DIMENSIONS, measurer);
+
+    expect(roomy.layouts.length).toBeGreaterThan(1);
+    expect(roomy.figures).toHaveLength(5);
+    for (const figure of roomy.figures) {
+      expect(figure.bounds.y + figure.bounds.height, `${figure.label} bottom`).toBeLessThanOrEqual(
+        A4.height - 40,
+      );
+      expect(figure.bounds.x + figure.bounds.width, `${figure.label} right`).toBeLessThanOrEqual(
+        A4.width - 40,
+      );
+    }
+  });
+
+  it('names what it could not print at 1:1 rather than shrinking it', () => {
+    // A margin this wide leaves under 100 mm of width: the test square would
+    // have to be scaled, and a scaled ruler is worse than no ruler.
+    const cramped = renderCalibrationSheet(
+      { paper: A4, marginMm: 60 },
+      DEFAULT_PART_DIMENSIONS,
+      measurer,
+    );
+
+    expect(cramped.omitted).toContain('100 mm test square');
+    expect(cramped.figures.some((figure) => figure.label === '100 mm test square')).toBe(false);
+
+    const printed = cramped.layouts
+      .flatMap((layout) => layout.ops ?? [])
+      .flatMap((op) => (op.op === 'text' ? [op.text] : []))
+      .join(' ');
+    expect(printed).toContain('100 mm test square');
+    expect(printed).toMatch(/reduce the margin/i);
   });
 });
