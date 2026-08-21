@@ -4,6 +4,8 @@ A tool for designing and printing cover inlays and disc labels for MiniDiscs. Th
 
 ## Language
 
+### From Release to Sheet
+
 **Release**:
 The metadata unit that serves as the source for a design: artist, album, tracklist, cover image, and supplementary info (e.g. year). Can be fetched automatically or created by hand (e.g. a mixtape).
 _Avoid_: Album, Titel, Projekt
@@ -47,3 +49,27 @@ _Avoid_: Schnittlinien
 **Template**:
 A named visual design that determines the layout, typography, and color logic of a Part. Parameterizable per Release.
 _Avoid_: Theme, Stil
+
+### Identity
+
+**Logo**:
+The official MiniDisc logo, bundled as an optional asset and toggleable per design. Belongs to Sony, not to this project.
+_Avoid_: MD Logo, Sony Logo, Mark
+
+**Mark**:
+This project's own pictorial mark, built on a coarse module grid. Lives on screen and in the repository; never on a Part.
+_Avoid_: Logo, Brand, Icon, Maskottchen
+
+**Wordmark**:
+The project's name set as type. A separate artifact from the Mark, and never set in a pixel font. Lives on screen and in
+the repository; **never on a Part** — the Spine already carries the Logo, which Sony requires to be displayed
+independently, and the name reads as a Sony sub-brand (ADR-0009).
+_Avoid_: Logo, Schriftzug, Lettering
+
+**Icon**:
+A rendered placement of the Mark at a fixed pixel size — favicon, app icon, maskable icon. Not the Mark itself.
+_Avoid_: Logo, Mark, Bildchen
+
+**Register**:
+The project's visual idiom: grid geometry in exactly one layer — the Mark — with contemporary technique everywhere else. Here "oldschool" means module grids, monospace typography, and one named 16-colour palette; it never means reproducing a historical interface.
+_Avoid_: Retro, Theme, Skin, Look, Vibe

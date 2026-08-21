@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en" data-font="jetbrains" data-palette="everforest-light" data-jcard="assembled" data-scale="fit">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MinicovereD — Runde 3</title>
+<style>
+/*FACES*/
+
+/* ===========================================================================
+   MATERIALS (round 1+2) — Everforest Light, JetBrains Mono, prose in Noto Sans.
+   LAW, measured over the whole palette: #5c6a72 is the only colour that clears
+   4.5:1 on its own grounds. So: one text colour, hierarchy from size/weight/
+   space, accents only ever as graphics, one ink-filled control.
+
+   COMPOSITION (round 3, see .scratch/research/preview-composition.md) — the
+   Parts are the page, at one shared scale. The A4 Sheet is a print check.
+   =========================================================================== */
+@property --mm {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 6.05px;
+}
+@property --cond {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+:root {
+  --font-print: 'Noto Sans Proto', system-ui, sans-serif;
+  --font-chrome: 'JetBrains Mono Proto', ui-monospace, monospace;
+
+  --surface: #fdf6e3; --page: #efebd4; --sunken: #f4f0d9;
+  --ink: #5c6a72; --rule: #e0dcc7; --rule-strong: #829181;
+  --blue: #3a94c5; --aqua: #35a77c; --yellow: #dfa000; --red: #f85552;
+  --fill-warn: #faedcd; --fill-ok: #e9f0e9;
+
+  --paper: #ffffff; --mount: #3c3c3c; --rule-cm: #a8a8a8;
+
+  /* the shared scale of every Part on the page. One token, one truth. */
+  --mm: clamp(3.1px, 0.5vw, 6.05px);
+
+  --cond: 0;
+  --mm-thumb: 2.85px;
+  --ease: cubic-bezier(.33, 1, .68, 1);
+  /* the zoom is one large move, so it gets a slower, more symmetric curve */
+  --t-zoom: 540ms;
+  --ease-zoom: cubic-bezier(.42, .02, .24, 1);
+  --t: 150ms var(--ease);
+  --r: 5px;
+}
+[data-font='fira']      { --font-chrome: 'Fira Code Proto', ui-monospace, monospace; }
+[data-font='plex']      { --font-chrome: 'IBM Plex Mono Proto', ui-monospace, monospace; }
+[data-font='jetbrains'] { --font-chrome: 'JetBrains Mono Proto', ui-monospace, monospace; }
+[data-font='system']    { --font-chrome: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+[data-scale='true'] { --mm: 3.7795px; }           /* nominal CSS millimetre */
+/* thumbnails, not absent: the row keeps its shape and the focused Part glides */
+[data-focus] .spec--jcard:not([data-focused]) .spec__art {
+  width: calc(87.5 * var(--mm-thumb)); height: calc(79 * var(--mm-thumb)); }
+[data-focus][data-jcard='assembled'] .spec--jcard:not([data-focused]) .spec__art {
+  width: calc(73.5 * var(--mm-thumb)); }
+[data-focus] .spec--back:not([data-focused]) .spec__art {
+  width: calc(69 * var(--mm-thumb)); height: calc(79 * var(--mm-thumb)); }
+[data-focus] .spec--label:not([data-focused]) .spec__art {
+  width: calc(35 * var(--mm-thumb)); height: calc(52.5 * var(--mm-thumb)); }
+[data-focus] .spec:not([data-focused]) .spec__cap,
+[data-focus] .spec:not([data-focused]) .spec__note { opacity: 0; }
+.spec__art { cursor: zoom-in; }
+[data-focus] .spec__art { cursor: zoom-out; }
+
+[data-palette='everforest-dark'] {
+  --surface:#2d353b; --page:#232a2e; --sunken:#1e2326; --ink:#d3c6aa;
+  --rule:#475258; --rule-strong:#859289; --blue:#7fbbb3; --aqua:#83c092; --yellow:#dbbc7f; --red:#e67e80;
+  --fill-warn:#4d4c43; --fill-ok:#425047; color-scheme: dark;
+}
+[data-palette='catppuccin-mocha'] {
+  --surface:#1e1e2e; --page:#181825; --sunken:#11111b; --ink:#cdd6f4;
+  --rule:#313244; --rule-strong:#7f849c; --blue:#89b4fa; --aqua:#94e2d5; --yellow:#f9e2af; --red:#f38ba8;
+  --fill-warn:#2c2a20; --fill-ok:#1e2a20; color-scheme: dark;
+}
+[data-palette='kanagawa'] {
+  --surface:#2a2a37; --page:#1f1f28; --sunken:#16161d; --ink:#dcd7ba;
+  --rule:#54546d; --rule-strong:#717c7c; --blue:#7e9cd8; --aqua:#7aa89f; --yellow:#e6c384; --red:#e46876;
+  --fill-warn:#49443c; --fill-ok:#2b3328; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--ink);
+  font: 400 13.5px/1.55 var(--font-chrome);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 60px;
+}
+.prose { font-family: var(--font-print); }
+
+.wrap { max-width: 1220px; margin: 0 auto; padding: 0 30px; }
+
+/* -------------------------------------------------------------- atoms ----- */
+.eyebrow { display: flex; align-items: center; gap: 10px; margin: 0;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.eyebrow::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+.eyebrow .num { font-weight: 400; opacity: .5; }
+.eyebrow .tail { opacity: .6; font-weight: 400; letter-spacing: .04em; text-transform: none; font-size: 11px; }
+
+.display { font-size: clamp(26px, 3.6vw, 44px); font-weight: 600; letter-spacing: -.03em; line-height: 1.02; margin: 0; }
+.micro { font-size: 11.5px; opacity: .74; }
+
+.i { font: inherit; font-size: 13px; width: 100%; min-height: 34px; padding: 7px 10px; color: var(--ink);
+  background: var(--sunken); border: 1px solid var(--rule-strong); border-radius: var(--r);
+  transition: border-color var(--t), background var(--t), box-shadow var(--t); }
+.i:hover { border-color: var(--ink); }
+.i:focus, .i:focus-visible { outline: none; border-color: var(--blue); background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 26%, transparent); }
+textarea.i { resize: vertical; line-height: 1.5; }
+
+.b { font: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink); background: transparent;
+  border: 1px solid var(--rule-strong); border-radius: var(--r);
+  min-height: 30px; min-width: 30px; padding: 5px 12px; cursor: pointer;
+  transition: background var(--t), border-color var(--t), transform var(--t); }
+.b:hover { background: var(--sunken); border-color: var(--ink); }
+.b:active { transform: translateY(1px); }
+.b:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.b--go { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 600;
+  position: relative; overflow: hidden; }
+.b--go:hover { background: color-mix(in srgb, var(--ink) 85%, var(--surface)); }
+.b--go[data-busy] { color: transparent; }
+.b--go[data-busy]::after { content: ''; position: absolute; inset: 0; background: var(--aqua);
+  transform-origin: left; animation: fill 1.1s var(--ease) forwards; }
+@keyframes fill { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+
+/* segmented control — 30 px tall, clears WCAG 2.2 SC 2.5.8 outright */
+.seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--rule-strong); border-radius: 999px; }
+.seg button { font: inherit; font-size: 11px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+  border: 0; background: transparent; color: var(--ink); opacity: .62;
+  min-height: 24px; padding: 3px 11px; border-radius: 999px; cursor: pointer; transition: all var(--t); }
+.seg button:hover { opacity: 1; background: var(--sunken); }
+.seg button[aria-pressed='true'] { opacity: 1; background: var(--ink); color: var(--surface); }
+
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--aqua); flex: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua) 22%, transparent); }
+.state { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; }
+
+.note { display: flex; gap: 9px; align-items: flex-start; padding: 7px 10px 7px 0;
+  border-radius: var(--r); background: var(--fill-warn); font-size: 11.5px; line-height: 1.45; }
+.note::before { content: ''; align-self: stretch; width: 3px; border-radius: 3px; background: var(--yellow); flex: none; }
+.note--err { background: color-mix(in srgb, var(--red) 12%, var(--surface)); }
+.note--err::before { background: var(--red); }
+
+/* ------------------------------------------------------------- header ----- */
+.top { display: flex; align-items: center; gap: 12px; padding: 16px 0 14px; }
+.top__wm { white-space: nowrap; }
+
+/* the entry point, and therefore the widest thing in the header */
+.find { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px;
+  flex: 1 1 420px; max-width: 620px; margin: 0 6px; }
+.find__box { position: relative; display: flex; align-items: center; }
+.find__box svg { position: absolute; left: 11px; opacity: .5; pointer-events: none; }
+.find .i { padding-left: 34px; min-height: 38px; font-size: 13.5px; }
+
+/* results expand rather than appear — 0fr to 1fr is animatable, height is not */
+.hits { display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+  background: var(--surface); border-bottom: 1px solid var(--rule); }
+.hits[data-open] { grid-template-rows: 1fr; }
+.hits:not([data-open]) { border-bottom-color: transparent; }
+.hits__clip { overflow: hidden; min-height: 0; }
+.hits__bar { display: flex; align-items: center; gap: 12px; margin-bottom: 7px; }
+.b--icon { padding: 3px 9px; min-height: 24px; font-size: 14px; line-height: 1; }
+.parse { margin: 0 0 12px; font-size: 11.5px; opacity: .78; }
+.parse b { font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 10px; opacity: .7; }
+.parse code { font-family: inherit; background: var(--sunken); border: 1px solid var(--rule);
+  border-radius: 3px; padding: 1px 5px; }
+.row .use { font-size: 10px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+  opacity: 0; transition: opacity var(--t); }
+.row[aria-current='true'] .use { opacity: .85; }
+.row { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; }
+.row b, .row span { grid-column: 1; }
+.hits__inner { padding: 14px 0 16px; opacity: 0; transform: translateY(-4px);
+  transition: opacity 220ms var(--ease) 60ms, transform 220ms var(--ease) 60ms; }
+.hits[data-open] .hits__inner { opacity: 1; transform: none; }
+
+/* -------------------------------------------------- 3. everything else folds --
+   Default state is closed: search and its results are the only things open. */
+.fold { border-bottom: 1px solid var(--rule); }
+.fold__btn { display: flex; align-items: center; gap: 12px; width: 100%; font: inherit; color: var(--ink);
+  background: transparent; border: 0; padding: 15px 2px; cursor: pointer; text-align: left; min-height: 30px;
+  transition: background var(--t); }
+.fold__btn:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.fold__btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.fold__btn .num { font-size: 10.5px; font-weight: 400; letter-spacing: .12em; opacity: .5; }
+.fold__btn .ttl { font-size: 11.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.fold__btn .sum { margin-left: auto; font-size: 11.5px; opacity: .62; text-align: right; }
+.fold__btn .caret { width: 9px; height: 9px; border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); opacity: .55;
+  transition: transform 260ms var(--ease); flex: none; }
+.fold[data-open] .fold__btn .caret { transform: rotate(45deg); }
+.fold__body { display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease); }
+.fold[data-open] .fold__body { grid-template-rows: 1fr; }
+.fold__clip { overflow: hidden; min-height: 0; }
+.fold__pad { padding: 4px 2px 26px; display: grid; gap: 14px; opacity: 0;
+  transition: opacity 200ms var(--ease) 70ms; }
+.fold[data-open] .fold__pad { opacity: 1; }
+
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 22px 0 10px; }
+.top__wm { font-size: 13.5px; font-weight: 600; letter-spacing: -.02em; }
+
+.hero { padding: 26px 0 22px; }
+.hero .display { max-width: 24ch; }
+.hero__meta { display: flex; flex-wrap: wrap; gap: 5px 20px; margin-top: 13px; font-size: 12px; opacity: .8; }
+
+/* ========================= THE PARTS ARE THE PAGE ========================= */
+.band { position: sticky; top: 0; z-index: 20; z-index: 20;
+  padding: calc(14px - 5px * var(--cond)) 0 calc(18px - 8px * var(--cond));
+  background: var(--page); border-bottom: 1px solid var(--rule);
+  transition: --cond 380ms var(--ease), box-shadow 240ms var(--ease);
+}
+/* the condensed state — reached by transition, not by tracking the scroll */
+[data-condensed] .band { --mm: 3.15px; --cond: 1; }
+/* a focused Part outranks it: that zoom is a decision, not a scroll position */
+[data-focus] .band { --mm: min(clamp(5px, 1.15vw, 13.5px), calc(56vh / 79)); --cond: 0; }
+
+/* the per-Part warnings are the first thing to give up room */
+.spec__note { opacity: calc(1 - var(--cond)); max-height: calc(90px * (1 - var(--cond)));
+  overflow: hidden; }
+.band__head { margin-bottom: calc(16px - 7px * var(--cond)); }
+[data-stuck] .band { box-shadow: 0 12px 26px -20px #00000066; }
+
+.band__head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.band__head .eyebrow { flex: 1 1 240px; }
+
+.specimens { display: grid; grid-auto-flow: column; justify-content: start;
+  grid-template-rows: auto auto auto; align-items: end; gap: 9px clamp(18px, 3vw, 44px); }
+.spec { display: contents; }
+
+.spec__art {
+  position: relative; background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  box-shadow: 0 3px 14px -4px #0000002e, 0 1px 2px #00000014;
+  transition: width var(--t-zoom) var(--ease-zoom), height var(--t-zoom) var(--ease-zoom),
+              box-shadow var(--t), border-color var(--t), filter var(--t);
+}
+.spec:hover .spec__art { box-shadow: 0 9px 24px -8px #00000042, 0 1px 2px #0000001a;
+  border-color: var(--ink); }
+.spec__art svg { display: block; width: 100%; height: 100%; }
+.spec__cap { display: flex; align-items: baseline; gap: 9px; font-size: 10.5px;
+  letter-spacing: .06em; text-transform: uppercase; }
+.spec__cap b { font-weight: 600; white-space: nowrap; }
+.spec__cap span { opacity: .58; letter-spacing: .02em; text-transform: none; font-size: 11px; }
+.spec__note { max-width: 34ch; }
+.spec__cap, .spec__note { transition: opacity var(--t-zoom) var(--ease-zoom); }
+
+/* one scale for all three — sizes are literally the millimetres */
+.spec--jcard   .spec__art { width: calc(87.5 * var(--mm)); height: calc(79 * var(--mm)); }
+[data-jcard='assembled'] .spec--jcard .spec__art { width: calc(73.5 * var(--mm)); }
+.spec--back    .spec__art { width: calc(69 * var(--mm));   height: calc(79 * var(--mm)); }
+.spec--label   .spec__art { width: calc(35 * var(--mm));   height: calc(52.5 * var(--mm));
+  border: 0; background: none; box-shadow: none;
+  filter: drop-shadow(0 3px 10px #00000030) drop-shadow(0 1px 1px #00000018); }
+.spec--label:hover .spec__art { filter: drop-shadow(0 8px 18px #00000042) drop-shadow(0 1px 1px #00000018); }
+[data-jcard='assembled'] .jc-flat { display: none; }
+[data-jcard='flat'] .jc-assembled { display: none; }
+
+/* --------------------------------------------------------- the controls --- */
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 366px; gap: 46px; align-items: start; padding-top: 8px; }
+.set { padding: 22px 0; border-bottom: 1px solid var(--rule); display: grid; gap: 13px; }
+.set:last-child { border-bottom: 0; }
+.dl { display: grid; grid-template-columns: 138px minmax(0, 1fr); gap: 11px 20px; align-items: center; }
+.dl > .k { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; opacity: .68; }
+.dl > .k.top { align-self: start; padding-top: 9px; }
+
+.rows { list-style: none; margin: 0; padding: 0; }
+.row { display: grid; gap: 1px; width: 100%; text-align: left; font: inherit; color: var(--ink);
+  background: transparent; border: 0; border-bottom: 1px solid var(--rule);
+  padding: 9px 10px 9px 13px; cursor: pointer; position: relative; transition: background var(--t); }
+.row::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--blue);
+  transform: scaleY(0); transition: transform var(--t); }
+.row:hover { background: var(--sunken); }
+.row:hover::before, .row[aria-current='true']::before { transform: scaleY(1); }
+.row[aria-current='true'] { background: var(--sunken); }
+.row:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.row b { font-size: 13px; font-weight: 600; }
+.row span { font-size: 11.5px; opacity: .72; }
+
+.toggles { display: grid; gap: 8px; }
+.t { display: flex; align-items: center; gap: 9px; font-size: 12.5px; cursor: pointer; min-height: 24px; }
+.t input { accent-color: var(--blue); width: 15px; height: 15px; margin: 0; }
+.sw { display: flex; gap: 14px; flex-wrap: wrap; }
+.sw label { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; min-height: 24px; }
+.sw input { width: 30px; height: 24px; padding: 0; border: 1px solid var(--rule-strong); border-radius: 4px; background: none; cursor: pointer; }
+
+/* ----------------------------------------------- the Sheet, as a check ---- */
+.out { display: grid; gap: 14px; position: sticky; top: 132px; }
+.check { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.check__head { display: flex; align-items: center; gap: 10px; padding: 11px 13px; cursor: pointer; list-style: none; }
+.check__head::-webkit-details-marker { display: none; }
+.check__head b { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.check__head .caret { margin-left: auto; opacity: .5; transition: transform var(--t); }
+details[open] .check__head .caret { transform: rotate(90deg); }
+.check__facts { padding: 0 13px 12px; display: grid; gap: 3px; font-size: 11.5px; }
+.check__facts div { display: flex; gap: 8px; }
+.check__facts span:first-child { opacity: .6; min-width: 11ch; }
+/* the one place a sheet of paper is the subject, so the one place with a mount */
+.check__stage { background: var(--mount); padding: 18px; display: grid; place-items: center; }
+.check__stage svg { display: block; width: 100%; max-width: 250px; height: auto;
+  background: var(--paper); box-shadow: 0 6px 20px #00000066; }
+
+.bar { position: fixed; inset: auto 0 0 0; z-index: 90; display: flex; align-items: center;
+  gap: 8px 16px; flex-wrap: wrap; min-height: 52px; padding: 8px 14px;
+  background: #101014f2; color: #f4f4f5; border-top: 2px solid #f4f4f5;
+  font: 11.5px/1 ui-monospace, Menlo, monospace; backdrop-filter: blur(8px); }
+.bar b { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; opacity: .6; }
+.bar select { font: inherit; padding: 5px 6px; background: #26262e; color: #f4f4f5; border: 1px solid #55555f; border-radius: 4px; }
+.bar .sp { flex: 1; }
+.bar em { font-style: normal; color: #a8b0bb; }
+
+@media (max-width: 1080px) {
+  .cols { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .out { position: static; }
+  .specimens { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- artwork: stands in for the user's cover art, drawn rather than a grey box -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#1d2b3a"/><stop offset=".52" stop-color="#5d4a52"/>
+    <stop offset=".78" stop-color="#c07a4a"/><stop offset="1" stop-color="#e8a862"/>
+  </linearGradient>
+  <symbol id="art" viewBox="0 0 60 46" preserveAspectRatio="xMidYMid slice">
+    <rect width="60" height="46" fill="url(#sky)"/>
+    <circle cx="41" cy="34" r="5.2" fill="#f6d79a" opacity=".92"/>
+    <rect y="36.5" width="60" height="9.5" fill="#241c1b"/>
+    <path d="M0 36.8 Q30 35.4 60 36.8" stroke="#241c1b" stroke-width=".5" fill="none"/>
+    <g fill="#241c1b">
+      <rect x="8" y="14" width=".9" height="23"/><rect x="4.6" y="17" width="7.7" height=".8"/>
+      <rect x="26" y="21" width=".7" height="16"/><rect x="23.4" y="23.2" width="5.9" height=".6"/>
+      <rect x="39" y="26" width=".55" height="11"/><rect x="37" y="27.6" width="4.6" height=".5"/>
+      <rect x="49" y="29.4" width=".4" height="7.6"/><rect x="47.5" y="30.5" width="3.4" height=".4"/>
+    </g>
+    <g stroke="#241c1b" stroke-width=".35" fill="none" opacity=".9">
+      <path d="M8.4 17.6 Q17 20.4 26.3 23.7"/><path d="M8.4 18.9 Q17 22 26.3 24.9"/>
+      <path d="M26.3 23.7 Q32.6 25.4 39.2 28"/><path d="M26.3 24.9 Q32.6 26.6 39.2 29"/>
+      <path d="M39.2 28 Q44 29 49.1 30.8"/>
+    </g>
+  </symbol>
+</defs></svg>
+
+<div class="wrap">
+  <header class="top">
+    <svg width="19" height="19" viewBox="0 0 16 16" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true">
+      <path d="M2 4h2v8H2zM5 4h2v3H5zM5 9h2v3H5zM8 4h2v8H8zM11 6h2v4h-2z"/></svg>
+    <span class="top__wm">MinicovereD</span>
+
+    <form class="find" id="find" onsubmit="return false">
+      <span class="find__box">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"/><path d="m20 20-4.3-4.3"/></svg>
+        <input class="i" id="q" value="Glen Campbell — Wichita Lineman" aria-label="Search MusicBrainz"
+               placeholder="Artist — Album, an album title, or a MusicBrainz MBID">
+      </span>
+      <button class="b b--go" data-go>Search</button>
+    </form>
+
+    <button class="b" id="reopen" style="white-space:nowrap">3 hits</button>
+    <span class="state"><span class="dot"></span>Saved</span>
+    <button class="b">About</button>
+  </header>
+</div>
+
+<!-- the results of the one thing that is always open -->
+<div class="hits" id="hits">
+ <div class="hits__clip"><div class="wrap"><div class="hits__inner">
+   <div class="hits__bar">
+     <p class="eyebrow" style="flex:1">
+       <span class="num">3 Releases</span>
+       <span class="tail">MusicBrainz · 1 request/s (ADR-0006)</span>
+     </p>
+     <button class="b b--icon" id="closeHits" aria-label="Close the result list"
+             title="Close — Esc">×</button>
+   </div>
+   <p class="parse" id="parse"></p>
+   <ul class="rows">
+     <li><button class="row" aria-current="true"><b>Glen Campbell — Wichita Lineman</b><span>1968 · Capitol · US · 11 tracks · Cover Art Archive: front</span><span class="use" style="grid-column:2;grid-row:1/span 2">in use</span></button></li>
+     <li><button class="row"><b>Glen Campbell — Wichita Lineman</b><span>2001 · Capitol · reissue · 12 tracks · no artwork</span><span class="use" style="grid-column:2;grid-row:1/span 2">in use</span></button></li>
+     <li><button class="row"><b>Glen Campbell — Gentle on My Mind</b><span>1967 · Capitol · US · 12 tracks · front + back</span><span class="use" style="grid-column:2;grid-row:1/span 2">in use</span></button></li>
+   </ul>
+   <p class="micro prose" style="margin:10px 0 0">Picking a Release fills every field below; nothing you edited by hand is overwritten. The list stays open — pick again if this is the wrong pressing.</p>
+ </div></div></div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <p class="eyebrow" style="margin-bottom:13px"><span class="num">Release</span></p>
+    <h1 class="display">Wichita Lineman</h1>
+    <div class="hero__meta">
+      <span>Glen Campbell</span><span>1968</span><span>Capitol · ST-103</span>
+      <span>10 tracks · 32:14</span><span>MusicBrainz 4f2e…c1a9</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== the Parts, one shared scale ====================== -->
+<div class="band">
+ <div class="wrap">
+  <div class="band__head">
+    <p class="eyebrow"><span class="num">Parts</span><span class="tail" id="scaleNote"></span></p>
+    <div class="seg" role="group" aria-label="J-Card view">
+      <button data-jc="assembled" aria-pressed="true">Assembled</button>
+      <button data-jc="flat" aria-pressed="false">Flat</button>
+    </div>
+    <div class="seg" role="group" aria-label="Scale">
+      <button data-sc="fit" aria-pressed="true">Fit</button>
+      <button data-sc="true" aria-pressed="false">1:1</button>
+    </div>
+    <button class="b b--go" data-go style="min-height:30px">Export PDF</button>
+  </div>
+
+  <div class="specimens">
+
+   <!-- ---------------------------------------------------------- J-Card --- -->
+   <div class="spec spec--jcard" data-part="jcard">
+    <div class="spec__art">
+      <!-- assembled: Front Panel face-on with the 5.5 mm Spine standing beside it.
+           Orthographic, fold marked. No perspective, no plastic (ADR-0008 rule 3). -->
+      <svg class="jc-assembled" viewBox="0 0 73.5 79">
+        <rect width="73.5" height="79" fill="#f4f1ea"/>
+        <rect width="5.5" height="79" fill="#1b1b1b"/>
+        <g transform="translate(0 79) rotate(-90)">
+          <text x="4" y="3.75" fill="#f4f1ea" font-size="2.8" font-weight="600" font-family="var(--font-print)">Glen Campbell — Wichita Lineman</text>
+          <image href="__MDLOGO__" x="68.5" y="1.15" width="3.2" height="3.1" opacity=".95" style="filter:invert(1)"/>
+        </g>
+        <g transform="translate(5.5 0)">
+          <rect width="68" height="79" fill="#1b1b1b"/>
+          <use href="#art" x="4" y="4" width="60" height="46"/>
+          <rect x="4" y="4" width="60" height="46" fill="none" stroke="#3a3a3a" stroke-width=".25"/>
+          <text x="4" y="59" fill="#f4f1ea" font-size="4.6" font-weight="700" font-family="var(--font-print)">Wichita Lineman</text>
+          <text x="4" y="64.6" fill="#a8b3bd" font-size="3.2" font-family="var(--font-print)">Glen Campbell</text>
+          <text x="4" y="74.5" fill="#d08a3e" font-size="2.7" font-family="var(--font-print)">1968 · Capitol · ST-103</text>
+        </g>
+        <line x1="5.5" y1="0" x2="5.5" y2="79" stroke="#8a8a8a" stroke-width=".18" stroke-dasharray="1.5 1.1"/>
+      </svg>
+
+      <!-- flat: what actually prints — Inner Flap 14 | Spine 5.5 | Front Panel 68 -->
+      <svg class="jc-flat" viewBox="0 0 87.5 79">
+        <rect width="87.5" height="79" fill="#f4f1ea"/>
+        <text x="7" y="40" fill="#9aa0a2" font-size="2.5" text-anchor="middle" transform="rotate(-90 7 40)" font-family="var(--font-print)">inner flap · folded inside</text>
+        <rect x="14" width="5.5" height="79" fill="#1b1b1b"/>
+        <g transform="translate(14 79) rotate(-90)">
+          <text x="4" y="3.75" fill="#f4f1ea" font-size="2.8" font-weight="600" font-family="var(--font-print)">Glen Campbell — Wichita Lineman</text>
+          <image href="__MDLOGO__" x="68.5" y="1.15" width="3.2" height="3.1" opacity=".95" style="filter:invert(1)"/>
+        </g>
+        <g transform="translate(19.5 0)">
+          <rect width="68" height="79" fill="#1b1b1b"/>
+          <use href="#art" x="4" y="4" width="60" height="46"/>
+          <text x="4" y="59" fill="#f4f1ea" font-size="4.6" font-weight="700" font-family="var(--font-print)">Wichita Lineman</text>
+          <text x="4" y="64.6" fill="#a8b3bd" font-size="3.2" font-family="var(--font-print)">Glen Campbell</text>
+          <text x="4" y="74.5" fill="#d08a3e" font-size="2.7" font-family="var(--font-print)">1968 · Capitol · ST-103</text>
+        </g>
+        <g stroke="#8a8a8a" stroke-width=".18" stroke-dasharray="1.5 1.1">
+          <line x1="14" y1="0" x2="14" y2="79"/><line x1="19.5" y1="0" x2="19.5" y2="79"/>
+        </g>
+      </svg>
+    </div>
+    <div class="spec__cap"><b>J&#8209;Card</b><span data-jcdim></span></div>
+    <p class="note note--err spec__note"><span class="prose">Spine type is 2.4 mm — under the 7 pt Sony recommends for a 5.5 mm edge.</span></p>
+   </div>
+
+   <!-- ------------------------------------------------------- Back Card --- -->
+   <div class="spec spec--back" data-part="back">
+    <div class="spec__art">
+      <svg viewBox="0 0 69 79">
+        <rect width="69" height="79" fill="#f4f1ea"/>
+        <text x="4.5" y="8" fill="#1b1b1b" font-size="3.3" font-weight="700" font-family="var(--font-print)">Wichita Lineman</text>
+        <text x="4.5" y="12.4" fill="#6c6c6c" font-size="2.5" font-family="var(--font-print)">Glen Campbell · 1968</text>
+        <line x1="4.5" y1="15.4" x2="64.5" y2="15.4" stroke="#c9c2b4" stroke-width=".25"/>
+        <g font-family="var(--font-print)" font-size="2.55" fill="#1b1b1b">
+          <text x="4.5" y="21">1</text><text x="9" y="21">Wichita Lineman</text><text x="64.5" y="21" text-anchor="end" fill="#8a8a8a">3:04</text>
+          <text x="4.5" y="26">2</text><text x="9" y="26">Dreams of the Everyday Housewife</text><text x="64.5" y="26" text-anchor="end" fill="#8a8a8a">2:24</text>
+          <text x="4.5" y="31">3</text><text x="9" y="31">Ann</text><text x="64.5" y="31" text-anchor="end" fill="#8a8a8a">2:41</text>
+          <text x="4.5" y="36">4</text><text x="9" y="36">Reason to Believe</text><text x="64.5" y="36" text-anchor="end" fill="#8a8a8a">3:12</text>
+          <text x="4.5" y="41">5</text><text x="9" y="41">You Better Sit Down Kids</text><text x="64.5" y="41" text-anchor="end" fill="#8a8a8a">4:02</text>
+          <text x="4.5" y="46">6</text><text x="9" y="46">If You Go Away</text><text x="64.5" y="46" text-anchor="end" fill="#8a8a8a">3:38</text>
+          <text x="4.5" y="51">7</text><text x="9" y="51">Fate of Man</text><text x="64.5" y="51" text-anchor="end" fill="#8a8a8a">2:19</text>
+          <text x="4.5" y="56">8</text><text x="9" y="56">Words</text><text x="64.5" y="56" text-anchor="end" fill="#8a8a8a">2:52</text>
+        </g>
+        <line x1="4.5" y1="59.8" x2="64.5" y2="59.8" stroke="#c9c2b4" stroke-width=".25"/>
+        <text x="4.5" y="64" fill="#b0562c" font-size="2.4" font-family="var(--font-print)">+2 more — no room at this size</text>
+        <text x="4.5" y="75.5" fill="#8a8a8a" font-size="2.2" font-family="var(--font-print)">Capitol ST-103 · 32:14</text>
+      </svg>
+    </div>
+    <div class="spec__cap"><b>Back Card</b><span>69 × 79 mm</span></div>
+    <p class="note spec__note"><span class="prose">2 of 10 tracks dropped. Two columns, or 0.2 mm smaller type, fits all ten.</span></p>
+   </div>
+
+   <!-- ----------------------------------------------------------- Label --- -->
+   <div class="spec spec--label" data-part="label">
+    <div class="spec__art">
+      <svg viewBox="0 0 35 52.5">
+        <clipPath id="notch"><path d="M0 0 H29 L35 6 V52.5 H0 Z"/></clipPath>
+        <g clip-path="url(#notch)">
+        <path d="M0 0 H29 L35 6 V52.5 H0 Z" fill="#1b1b1b"/>
+        <use href="#art" x="0" y="0" width="35" height="20" opacity=".9"/>
+                <text x="3" y="27" fill="#f4f1ea" font-size="3.1" font-weight="700" font-family="var(--font-print)">Wichita</text>
+        <text x="3" y="31" fill="#f4f1ea" font-size="3.1" font-weight="700" font-family="var(--font-print)">Lineman</text>
+        <text x="3" y="35.4" fill="#a8b3bd" font-size="2.4" font-family="var(--font-print)">Glen Campbell</text>
+        <text x="3" y="49.8" fill="#d08a3e" font-size="2.3" font-family="var(--font-print)">1968</text>
+        </g>
+        <path d="M0.15 0.15 H28.938 L34.85 6.062 V52.35 H0.15 Z" fill="none" stroke="#829181" stroke-width=".3"/>
+      </svg>
+    </div>
+    <div class="spec__cap"><b>Label</b><span>35 × 52.5 mm</span></div>
+    <p class="micro spec__note">Classic preset · 6 mm notch clears the cartridge corner.</p>
+   </div>
+
+  </div>
+ </div>
+</div>
+
+<div class="wrap">
+ <div class="acc">
+
+  <section class="fold" data-fold="meta">
+    <button class="fold__btn" aria-expanded="false">
+      <span class="num">01</span><span class="ttl">Metadata</span>
+      <span class="sum">Glen Campbell · 1968 · 10 tracks</span><span class="caret"></span>
+    </button>
+    <div class="fold__body"><div class="fold__clip"><div class="fold__pad">
+      <div class="dl">
+        <span class="k">Artist</span><input class="i" value="Glen Campbell">
+        <span class="k">Album</span><input class="i" value="Wichita Lineman">
+        <span class="k">Year</span><input class="i" value="1968">
+        <span class="k">Notes</span><input class="i" value="Capitol · ST-103">
+        <span class="k top">Tracklist · 10</span>
+        <textarea class="i" rows="6">Wichita Lineman
+Dreams of the Everyday Housewife
+Ann
+Reason to Believe
+You Better Sit Down Kids
+If You Go Away
+Fate of Man
+Words
+Baby Please Don’t Go
+That Keeps It Hangin’ On</textarea>
+        <span class="k">Artwork</span>
+        <span style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+          <button class="b">Choose image…</button>
+          <span class="micro">from Cover Art Archive · 1000 × 1000</span></span>
+      </div>
+    </div></div></div>
+  </section>
+
+  <section class="fold" data-fold="design">
+    <button class="fold__btn" aria-expanded="false">
+      <span class="num">02</span><span class="ttl">Design</span>
+      <span class="sum">Classic · Label 35 × 52.5 · logo on</span><span class="caret"></span>
+    </button>
+    <div class="fold__body"><div class="fold__clip"><div class="fold__pad">
+      <div class="dl">
+        <span class="k">Template</span><select class="i"><option>Classic</option><option>Full-bleed</option></select>
+        <span class="k">Label preset</span><select class="i"><option>Classic · 35 × 52.5</option><option>Full · 38 × 54</option></select>
+        <span class="k">Print colours</span>
+        <span class="sw">
+          <label><input type="color" value="#1b1b1b"> Ink</label>
+          <label><input type="color" value="#f4f1ea"> Paper</label>
+          <label><input type="color" value="#d08a3e"> Accent</label>
+        </span>
+        <span class="k top">On the artwork</span>
+        <span class="toggles">
+          <label class="t"><input type="checkbox" checked> MiniDisc logo on the Spine</label>
+          <label class="t"><input type="checkbox" checked> Year on the Front Panel</label>
+          <label class="t"><input type="checkbox" checked> Notch on the Label</label>
+          <label class="t"><input type="checkbox"> Track times on the Back Card</label>
+        </span>
+      </div>
+      <p class="micro prose" style="max-width:60ch">These are print colours, chosen per Release. The app’s own palette never reaches a Part.</p>
+    </div></div></div>
+  </section>
+
+  <section class="fold" data-fold="sheet">
+    <button class="fold__btn" aria-expanded="false">
+      <span class="num">03</span><span class="ttl">Sheet &amp; output</span>
+      <span class="sum">1 × A4 · 3 Parts · margin 5.0 mm</span><span class="caret"></span>
+    </button>
+    <div class="fold__body"><div class="fold__clip"><div class="fold__pad">
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:34px;align-items:start">
+        <div class="dl">
+          <span class="k">Paper</span><select class="i"><option>A4 · 210 × 297 mm</option><option>Letter</option></select>
+          <span class="k">Printable margin</span><input class="i" value="5.0 mm">
+          <span class="k top">Parts to print</span>
+          <span class="toggles">
+            <label class="t"><input type="checkbox" checked> J-Card · 87.5 × 79</label>
+            <label class="t"><input type="checkbox" checked> Back Card · 69 × 79</label>
+            <label class="t"><input type="checkbox" checked> Label · 35 × 52.5</label>
+          </span>
+          <span class="k">Guides</span>
+          <span class="toggles">
+            <label class="t"><input type="checkbox" checked> Cut and fold marks, 0.15 mm</label>
+          </span>
+        </div>
+        <div class="check">
+          <div class="check__facts" style="padding:12px 13px">
+            <div><span>Packed</span><span>3 of 3 on 1 Sheet</span></div>
+            <div><span>Used</span><span>195 × 151 mm</span></div>
+            <div><span>Export</span><span>300 DPI, exact mm</span></div>
+          </div>
+          <div class="check__stage">
+            <svg viewBox="0 0 210 297" aria-label="A4 Sheet with the three Parts packed">
+              <rect width="210" height="297" fill="#ffffff"/>
+              <rect x="5" y="5" width="200" height="287" fill="none" stroke="#cfcfcf" stroke-width=".3" stroke-dasharray="2 1.5"/>
+              <g fill="#e8e4da" stroke="#8a8a8a" stroke-width=".25">
+                <rect x="5" y="5" width="87.5" height="79"/><rect x="97.5" y="5" width="69" height="79"/>
+                <path d="M5 89 H34 L40 95 V141.5 H5 Z"/>
+              </g>
+              <g stroke="#8a8a8a" stroke-width=".25" stroke-dasharray="2 1.5">
+                <line x1="19" y1="5" x2="19" y2="84"/><line x1="24.5" y1="5" x2="24.5" y2="84"/>
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+  </section>
+
+ </div>
+
+ <div class="actions">
+   <button class="b b--go" data-go style="min-height:38px;padding:8px 18px">Export PDF · 1 Sheet</button>
+   <button class="b">Calibration sheet</button>
+   <button class="b">Export project…</button>
+   <span style="flex:1"></span>
+   <span class="micro prose">Same renderer as the PDF — 140 DPI here, 300 on export, identical geometry.</span>
+ </div>
+</div>
+
+<div class="bar">
+  <b>font</b><select id="f">
+    <option value="jetbrains">JetBrains Mono — 54.3 KiB (chosen)</option>
+    <option value="fira">Fira Code — 46.6 KiB</option>
+    <option value="plex">IBM Plex Mono — 54 KiB</option>
+    <option value="system">system mono — 0 KiB</option>
+  </select>
+  <b>palette</b><select id="p">
+    <option value="everforest-light">Everforest Light (chosen)</option>
+    <option value="everforest-dark">Everforest Dark</option>
+    <option value="catppuccin-mocha">Catppuccin Mocha</option>
+    <option value="kanagawa">Kanagawa Wave</option>
+  </select>
+  <span class="sp"></span>
+  <em>Runde 10 · ruhigerer Zoom, ein Takt · Klick auf den Hintergrund oder <kbd>Esc</kbd> beendet ihn · Klick auf ein Part vergrößert · <kbd>Esc</kbd> · <kbd>j</kbd></em>
+</div>
+
+<script type="module">
+const root = document.documentElement;
+
+/* the scale readout tells the truth about what you are looking at */
+const note = document.getElementById('scaleNote');
+const jcdim = document.querySelector('[data-jcdim]');
+const MM_WIDE = { jcard: 73.5, back: 69, label: 35 };
+const readScale = () => {
+  const part = root.dataset.focus || 'back';
+  const el = document.querySelector(`[data-part='${part}'] .spec__art`);
+  const mm = el.getBoundingClientRect().width / MM_WIDE[part];
+  note.textContent = root.dataset.scale === 'true'
+    ? `nominal 1:1 — ${mm.toFixed(2)} px/mm, life size only on a 96 dpi display`
+    : root.dataset.focus
+      ? `${root.dataset.focus} alone — ${mm.toFixed(2)} px/mm · click anywhere outside to return`
+      : root.dataset.condensed !== undefined
+        ? `condensed — ${mm.toFixed(2)} px/mm · scroll back up for full size`
+        : `all three at one scale — ${mm.toFixed(2)} px/mm · click a Part to enlarge it`;
+  jcdim.textContent = root.dataset.jcard === 'assembled'
+    ? '73.5 × 79 shown · 87.5 flat · flap 14 behind'
+    : '87.5 × 79 mm flat · 14 | 5.5 | 68';
+};
+new ResizeObserver(readScale).observe(document.body);
+
+for (const b of document.querySelectorAll('[data-jc]'))
+  b.addEventListener('click', () => {
+    root.dataset.jcard = b.dataset.jc;
+    for (const o of document.querySelectorAll('[data-jc]')) o.setAttribute('aria-pressed', String(o === b));
+    readScale();
+  });
+for (const b of document.querySelectorAll('[data-sc]'))
+  b.addEventListener('click', () => {
+    root.dataset.scale = b.dataset.sc;
+    for (const o of document.querySelectorAll('[data-sc]')) o.setAttribute('aria-pressed', String(o === b));
+    readScale();
+  });
+
+/* The band shrinks once it is holding the top of the window. A zero-area
+   IntersectionObserver sentinel was unreliable here; the band's own offset is
+   the thing being asked about, so ask it directly. */
+const band = document.querySelector('.band');
+/* A sticky element's own offsetTop moves with it once it sticks, so asking the
+   band where it is answers the wrong question. Watch a static 1 px sentinel in
+   front of it instead — and watch it with an observer rather than a scroll
+   handler, so this costs nothing per frame. */
+const mark = document.createElement('div');
+mark.style.height = '1px';
+band.before(mark);
+new IntersectionObserver(([entry]) => {
+  if (entry.isIntersecting) root.removeAttribute('data-stuck');
+  else root.dataset.stuck = '';
+  readScale();
+}, { threshold: 0 }).observe(mark);
+
+/* Two states with a transition between them. The trip point has hysteresis —
+   condensing shortens the document, which can pull the scroll position back up,
+   and a single threshold would then oscillate. Enter at 48 px past the mark,
+   leave at 10 px, so the two edges can never chase each other.
+   Measured against the sentinel above the band, never against the band itself:
+   a sticky element's own position moves once it sticks. */
+const ENTER = 48, LEAVE = 10;
+let condensed = false;
+let queued = false;
+const test = () => {
+  queued = false;
+  const past = -mark.getBoundingClientRect().top;
+  const next = condensed ? past >= LEAVE : past > ENTER;
+  if (next === condensed) return;
+  condensed = next;
+  if (next) root.dataset.condensed = ''; else root.removeAttribute('data-condensed');
+  readScale();
+};
+const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(test); } };
+addEventListener('scroll', schedule, { passive: true });
+addEventListener('resize', schedule);
+new IntersectionObserver(schedule, { threshold: [0, 1] }).observe(mark);
+window.__test = test;                                /* so the behaviour is testable */
+test();
+
+for (const fold of document.querySelectorAll('.fold')) {
+  const btn = fold.querySelector('.fold__btn');
+  btn.addEventListener('click', () => {
+    const open = fold.hasAttribute('data-open');
+    if (open) fold.removeAttribute('data-open'); else fold.dataset.open = '';
+    btn.setAttribute('aria-expanded', String(!open));
+  });
+}
+
+const hits = document.getElementById('hits');
+const openHits = (on) => { if (on) hits.dataset.open = ''; else hits.removeAttribute('data-open'); };
+document.getElementById('q').addEventListener('focus', () => openHits(true));
+document.getElementById('find').addEventListener('submit', () => openHits(true));
+document.getElementById('reopen').addEventListener('click', () => openHits(!hits.hasAttribute('data-open')));
+
+const setFocus = (part) => {
+  if (part) root.dataset.focus = part; else delete root.dataset.focus;
+  for (const spec of document.querySelectorAll('[data-part]'))
+    if (part && spec.dataset.part === part) spec.dataset.focused = '';
+    else spec.removeAttribute('data-focused');
+  readScale();
+};
+
+for (const art of document.querySelectorAll('.spec__art'))
+  art.addEventListener('click', (event) => {
+    event.stopPropagation();       /* so the background handler does not undo this */
+    const part = art.closest('[data-part]').dataset.part;
+    setFocus(root.dataset.focus === part ? null : part);
+  });
+
+/* Clicking away leaves the zoom — but a control is not "away", or hitting
+   Export while zoomed would throw the view away instead of exporting. */
+addEventListener('click', (event) => {
+  if (!root.dataset.focus) return;
+  if (event.target.closest('button, a, input, select, textarea, label, summary')) return;
+  setFocus(null);
+});
+
+for (const b of document.querySelectorAll('[data-go]'))
+  b.addEventListener('click', () => { b.dataset.busy = '1'; setTimeout(() => delete b.dataset.busy, 1150); });
+
+/* The list stays open after a pick: the first guess is often the wrong pressing,
+   and correcting it must not cost a second search. */
+for (const list of document.querySelectorAll('.rows'))
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.row'); if (!row) return;
+    for (const r of list.querySelectorAll('.row')) r.setAttribute('aria-current', 'false');
+    row.setAttribute('aria-current', 'true');
+  });
+
+/* How the one field is read — the same rule the batch paste already uses
+   (parseBatchLines in src/app/release-search.ts), so there is one convention,
+   not two. Only a *spaced* dash or a tab separates. */
+const SPLIT = /^(.*?)(?:\s+[—–‒−-]\s+|\t+)(.*)$/;
+const MBID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const parseOut = document.getElementById('parse');
+const showParse = () => {
+  const text = document.getElementById('q').value.trim();
+  if (!text) { parseOut.textContent = ''; return; }
+  const id = MBID.exec(text);
+  if (id) {
+    parseOut.innerHTML = '<b>MBID</b> → fetched directly, no search: <code>' + id[0] + '</code>';
+    return;
+  }
+  const pair = SPLIT.exec(text);
+  if (pair) {
+    parseOut.innerHTML = '<b>Artist — Album</b> → <code>artist:"' + pair[1].trim()
+      + '" AND release:"' + pair[2].trim() + '"</code>';
+    return;
+  }
+  parseOut.innerHTML = '<b>Title only</b> → <code>release:"' + text
+    + '"</code> · add <code> — </code> to pin the artist too';
+};
+document.getElementById('q').addEventListener('input', showParse);
+document.getElementById('closeHits').addEventListener('click', () => openHits(false));
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (root.dataset.focus) setFocus(null); else openHits(false);
+});
+showParse();
+
+const S = { f: ['jetbrains', 'fira', 'plex', 'system'],
+            p: ['everforest-light', 'everforest-dark', 'catppuccin-mocha', 'kanagawa'] };
+const K = { f: 'font', p: 'palette' };
+for (const k of Object.keys(S)) {
+  const el = document.getElementById(k);
+  el.value = root.dataset[K[k]];
+  el.onchange = (e) => { root.dataset[K[k]] = e.target.value; };
+}
+addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (e.key === 'j') {
+    const next = root.dataset.jcard === 'assembled' ? 'flat' : 'assembled';
+    document.querySelector(`[data-jc='${next}']`).click();
+  } else if (e.key === 'p') {
+    const i = S.p.indexOf(root.dataset.palette);
+    root.dataset.palette = S.p[(i + 1) % S.p.length];
+    document.getElementById('p').value = root.dataset.palette;
+  } else return;
+  e.preventDefault();
+});
+
+readScale();
+</script>
+</body>
+</html>
