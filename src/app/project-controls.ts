@@ -31,10 +31,10 @@ export function createProjectControls(
     attrs: { type: 'button' },
     on: {
       click: () => {
-        const { designs, sheet } = currentProject();
-        download(writeProjectFile(designs, sheet), fileNameFor(designs.length));
-        status.textContent = `Saved ${designs.length} ${
-          designs.length === 1 ? 'Release' : 'Releases'
+        const { entries, sheet } = currentProject();
+        download(writeProjectFile(entries, sheet), fileNameFor(entries.length));
+        status.textContent = `Saved ${entries.length} ${
+          entries.length === 1 ? 'Release' : 'Releases'
         } to a project file, artwork included.`;
       },
     },

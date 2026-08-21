@@ -12,22 +12,49 @@ import { clear, el } from './dom.ts';
  * end up on paper.
  */
 
-/** `Artist — Album` per line; an en or em dash, a hyphen, or a tab all separate. */
+/**
+ * `Artist — Album` per line; an en or em dash, a hyphen, or a tab all separate.
+ *
+ * Only the *first* separator splits the line: “F♯A♯∞ — Deluxe Edition” is one
+ * album title, and a spaced dash is the only kind that separates, so
+ * Jean-Michel Jarre keeps his name.
+ */
 export function parseBatchLines(text: string): BatchRequest[] {
   return text
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line, index) => {
-      const [artist = '', album = ''] = line.split(/\s+[—–-]\s+|\t+/, 2);
+      const [, artist = line, album = ''] = /^(.*?)(?:\s+[—–-]\s+|\t+)(.*)$/.exec(line) ?? [];
       return { id: `batch-${index}-${line}`, artist: artist.trim(), album: album.trim() };
     });
+}
+
+/**
+ * One sentence for what a batch actually did. The count that matters is what
+ * joined the queue, not what was looked up: two searches can find the same
+ * pressing, and the queue keeps one of it.
+ */
+export function describeBatch(added: number, duplicates: number, failed: number): string {
+  const clauses = [
+    added === 0 ? 'Nothing new to add' : `Added ${added} ${added === 1 ? 'Release' : 'Releases'}`,
+  ];
+  if (duplicates > 0) {
+    clauses.push(`${duplicates} ${duplicates === 1 ? 'was' : 'were'} already in the queue`);
+  }
+  if (failed > 0) {
+    clauses.push(
+      `${failed} could not be found and ${failed === 1 ? 'needs' : 'need'} completing by hand`,
+    );
+  }
+  return `${clauses.join('; ')}.`;
 }
 
 export function createReleaseSearch(
   adapter: MetadataAdapter,
   onResolved: (release: Release) => void,
-  onBatchResolved: (entries: readonly QueueEntry[]) => void,
+  /** Adds the entries to the queue and answers how many of them were new. */
+  onBatchResolved: (entries: readonly QueueEntry[]) => number,
 ): HTMLElement {
   const artist = el('input', {
     class: 'field__input',
@@ -149,14 +176,14 @@ export function createReleaseSearch(
           ? `Looking up ${progress.current} — ${progress.done} of ${progress.total} done…`
           : `Looked up ${progress.done} of ${progress.total}.`;
       });
-      onBatchResolved(entries);
-
-      const failed = entries.filter((entry) => entry.status === 'failed').length;
+      const added = onBatchResolved(entries);
       setBusy(
         false,
-        failed === 0
-          ? `Added ${entries.length} Releases to the queue.`
-          : `Added ${entries.length} Releases; ${failed} could not be found and need completing by hand.`,
+        describeBatch(
+          added,
+          entries.length - added,
+          entries.filter((entry) => entry.status === 'failed').length,
+        ),
       );
       batchInput.value = '';
     } catch (error) {

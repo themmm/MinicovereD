@@ -83,7 +83,7 @@ export function createWorkspace(): HTMLElement {
     parts: PART_KINDS,
   };
 
-  const project = (): Project => ({ designs: queueDesigns(queue), sheet: sheetConfig });
+  const project = (): Project => ({ entries: queue, sheet: sheetConfig });
   const selected = (): QueueEntry | undefined =>
     queue.find((entry) => entry.design.release.id === selectedId) ?? queue[0];
 
@@ -113,8 +113,8 @@ export function createWorkspace(): HTMLElement {
   const projectControls = createProjectControls(project, (imported) => {
     applyProject(imported);
     projectControls.report(
-      `Opened ${imported.designs.length} ${
-        imported.designs.length === 1 ? 'Release' : 'Releases'
+      `Opened ${imported.entries.length} ${
+        imported.entries.length === 1 ? 'Release' : 'Releases'
       }. Your previous work has been replaced.`,
     );
   });
@@ -189,7 +189,35 @@ export function createWorkspace(): HTMLElement {
     changed();
   }
 
-  /** Rebuilds the controls from the state, rather than teaching each one to be told. */
+  /**
+   * Searching is not a view of the selected Release, so it is built once and
+   * outlives every selection change. Rebuilding it would throw away the
+   * results on screen, the batch still being typed, and — because a lookup
+   * reports its outcome after handing the Releases over — the very sentence
+   * saying how the batch went.
+   */
+  const search = createReleaseSearch(
+    metadata,
+    (found) => {
+      // A looked-up Release joins the queue and becomes the one being edited,
+      // keeping the design settings of whichever Release was on screen.
+      const from = selected()?.design ?? exampleDesign();
+      queue = addToQueue(queue, readyEntry({ ...from, release: found }));
+      selectedId = found.id;
+      selectionChanged();
+    },
+    (entries) => {
+      const before = queue.length;
+      for (const resolvedEntry of entries) queue = addToQueue(queue, resolvedEntry);
+      const added = queue.length - before;
+      if (added > 0) selectedId = entries[0]?.design.release.id ?? selectedId;
+      selectionChanged();
+      // The search panel says how it went, in the panel the collector pressed.
+      return added;
+    },
+  );
+
+  /** Rebuilds the controls that *are* a view of the selected Release. */
   function renderControls(): void {
     const entry = selected();
     if (!entry) return;
@@ -199,28 +227,6 @@ export function createWorkspace(): HTMLElement {
     const form = createReleaseForm(design.release, (edit) => {
       updateSelected((current) => ({ ...current, release: edit(current.release) }));
     });
-
-    const search = createReleaseSearch(
-      metadata,
-      (found) => {
-        // A looked-up Release joins the queue and becomes the one being edited.
-        queue = addToQueue(queue, readyEntry({ ...design, release: found }));
-        selectedId = found.id;
-        selectionChanged();
-      },
-      (entries) => {
-        const before = queue.length;
-        for (const resolvedEntry of entries) queue = addToQueue(queue, resolvedEntry);
-        const added = queue.length - before;
-        if (added > 0) selectedId = entries[0]?.design.release.id ?? selectedId;
-        if (added < entries.length) {
-          projectControls.report(
-            `${entries.length - added} of those Releases were already in the queue.`,
-          );
-        }
-        selectionChanged();
-      },
-    );
 
     const designControls = createDesignControls(
       { templateId: design.templateId, params: design.params },
@@ -259,8 +265,11 @@ export function createWorkspace(): HTMLElement {
   }
 
   function applyProject(next: Project): void {
-    if (next.designs.length > 0) {
-      queue = next.designs.map(readyEntry);
+    if (next.entries.length > 0) {
+      // Entries, not designs: an entry that still needs completing by hand
+      // comes back still flagged, because that flag is the collector's to-do
+      // list and a reload should not quietly tick it off.
+      queue = [...next.entries];
       selectedId = queue[0]?.design.release.id ?? '';
     }
     sheetConfig = next.sheet;
@@ -284,15 +293,16 @@ export function createWorkspace(): HTMLElement {
   void store
     .load()
     .then((saved) => {
-      if (!saved || saved.designs.length === 0) return;
+      if (!saved || saved.entries.length === 0) return;
       // Reading the store is asynchronous, and a fast typist can be mid-word
       // before it answers. Their edit wins; the saved copy is already theirs.
       if (edited) return;
       applyProject(saved);
+      const needing = saved.entries.filter((entry) => entry.status === 'failed').length;
       projectControls.report(
-        `Restored ${saved.designs.length} ${
-          saved.designs.length === 1 ? 'Release' : 'Releases'
-        } from this browser.`,
+        `Restored ${saved.entries.length} ${
+          saved.entries.length === 1 ? 'Release' : 'Releases'
+        } from this browser${needing > 0 ? `, ${needing} still needing a hand` : ''}.`,
       );
     })
     .catch((error: unknown) => {

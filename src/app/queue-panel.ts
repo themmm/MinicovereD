@@ -46,7 +46,9 @@ export function createQueuePanel(actions: QueueActions): QueuePanel {
         class: 'queue__facts',
         text:
           entry.status === 'failed'
-            ? `Needs completing by hand — ${entry.error ?? 'lookup failed'}`
+            ? // A restored entry has no reason to give: the failure was true of
+              // one moment on one network, and is not written down.
+              `Needs completing by hand${entry.error ? ` — ${entry.error}` : '.'}`
             : `${release.tracks.length} ${release.tracks.length === 1 ? 'track' : 'tracks'}${
                 release.artwork ? ' · artwork' : ''
               }`,

@@ -17,12 +17,29 @@ export type QueueStatus = 'ready' | 'failed';
 export interface QueueEntry {
   readonly status: QueueStatus;
   readonly design: ReleaseDesign;
-  /** Why the lookup failed, for the collector to judge whether to retry. */
+  /**
+   * Why the lookup failed, for the collector to judge whether to retry.
+   *
+   * Present only for the session the failure happened in. A saved project
+   * records *that* an entry still needs a hand — that is the collector’s to-do
+   * list, and losing it to a reload would lose the point of keeping the entry
+   * at all — but not the reason, which is a statement about one moment on one
+   * network. “Nothing on MusicBrainz matched” may be untrue by tomorrow, and a
+   * stale cause presented as a current one is worse than no cause.
+   */
   readonly error?: string;
 }
 
 export function readyEntry(design: ReleaseDesign): QueueEntry {
   return { status: 'ready', design };
+}
+
+/**
+ * An entry restored from a saved project that was still waiting to be filled
+ * in. It carries no `error`: see the note on {@link QueueEntry.error}.
+ */
+export function unfinishedEntry(design: ReleaseDesign): QueueEntry {
+  return { status: 'failed', design };
 }
 
 /** An entry for a Release the lookup could not find, holding what was typed. */

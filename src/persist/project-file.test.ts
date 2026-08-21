@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
 import { PROJECT_FORMAT, PROJECT_VERSION, readProjectFile, writeProjectFile } from './project-file.ts';
+import type { Project } from './project-file.ts';
 
 const design: ReleaseDesign = {
   release: {
@@ -29,23 +31,35 @@ const design: ReleaseDesign = {
 
 const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['jcard', 'label'] };
 
+/** A Release the lookup never found: what was typed, and nothing else. */
+const design2: ReleaseDesign = {
+  release: { id: 'r2', artist: 'Zzzqqxx Nonexistent', album: 'No Such Album', tracks: [] },
+  templateId: 'classic',
+  params: DEFAULT_TEMPLATE_PARAMS,
+  dimensions: DEFAULT_PART_DIMENSIONS,
+};
+
+/** Most of these tests care about the designs, not which entry carries them. */
+const designsOf = (project: Project): ReleaseDesign[] =>
+  project.entries.map((entry) => entry.design);
+
 const roundTrip = (designs = [design], config = sheet) => {
-  const text = writeProjectFile(designs, config);
+  const text = writeProjectFile(designs.map(readyEntry), config);
   const result = readProjectFile(text);
   if (!result.ok) throw new Error(`expected a valid project file, got: ${result.error}`);
-  return result.project;
+  return { ...result.project, designs: designsOf(result.project) };
 };
 
 describe('writing a project file', () => {
   it('is JSON that says what it is and which version it is', () => {
-    const parsed = JSON.parse(writeProjectFile([design], sheet)) as Record<string, unknown>;
+    const parsed = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as Record<string, unknown>;
 
     expect(parsed['format']).toBe(PROJECT_FORMAT);
     expect(parsed['version']).toBe(PROJECT_VERSION);
   });
 
   it('carries the artwork inside it, so the file is the whole design', () => {
-    expect(writeProjectFile([design], sheet)).toContain('data:image/png;base64,AAAA');
+    expect(writeProjectFile([readyEntry(design)], sheet)).toContain('data:image/png;base64,AAAA');
   });
 });
 
@@ -91,6 +105,45 @@ describe('reading a project file back', () => {
     }));
 
     expect(roundTrip(queue).designs.map((entry) => entry.release.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('an entry that still needs completing by hand', () => {
+  it('comes back still flagged, because that flag is the collector’s to-do list', () => {
+    const text = writeProjectFile([readyEntry(design), unfinishedEntry(design2)], sheet);
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.entries.map((entry) => entry.status)).toEqual(['ready', 'failed']);
+  });
+
+  it('does not carry the reason across, which was true of one moment only', () => {
+    const failed = { ...unfinishedEntry(design2), error: 'Nothing on MusicBrainz matched.' };
+    const result = readProjectFile(writeProjectFile([failed], sheet));
+
+    if (!result.ok) throw new Error(result.error);
+    // Tomorrow the network is fine and the album may well be there. A stale
+    // cause shown as a current one is worse than none.
+    expect(result.project.entries[0]?.status).toBe('failed');
+    expect(result.project.entries[0]?.error).toBeUndefined();
+    expect(writeProjectFile([failed], sheet)).not.toContain('MusicBrainz');
+  });
+
+  it('writes nothing extra for an ordinary Release', () => {
+    expect(writeProjectFile([readyEntry(design)], sheet)).not.toContain('needsCompleting');
+  });
+
+  it('reads a project written before the flag existed as work that is finished', () => {
+    const older = JSON.stringify({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [{ release: { id: 'r1', artist: 'Someone', album: 'Untitled', tracks: [] } }],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+    const result = readProjectFile(older);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.entries[0]?.status).toBe('ready');
   });
 });
 
@@ -152,11 +205,11 @@ describe('reading a project file that is not one', () => {
     const result = readProjectFile(empty);
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.designs[0]?.release.tracks).toEqual([]);
+    expect(designsOf(result.project)[0]?.release.tracks).toEqual([]);
   });
 
   it('says so when the file is truncated mid-write', () => {
-    const whole = writeProjectFile([design], sheet);
+    const whole = writeProjectFile([readyEntry(design)], sheet);
 
     expect(failure(whole.slice(0, Math.floor(whole.length / 2)))).toMatch(/could not be read|json/i);
   });
@@ -175,7 +228,7 @@ describe('reading a project file that is not one', () => {
 
 describe('reading a project file with values that would break a render', () => {
   const project = (patch: (base: Record<string, unknown>) => void): string => {
-    const base = JSON.parse(writeProjectFile([design], sheet)) as Record<string, unknown>;
+    const base = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as Record<string, unknown>;
     patch(base);
     return JSON.stringify(base);
   };
@@ -189,7 +242,7 @@ describe('reading a project file with values that would break a render', () => {
     const result = readProjectFile(text);
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.designs[0]?.params.inkColor).not.toContain('<script');
+    expect(designsOf(result.project)[0]?.params.inkColor).not.toContain('<script');
   });
 
   it('clamps a margin that would leave no printable area', () => {
@@ -254,7 +307,7 @@ describe('reading a project file built to break things', () => {
 
     expect(result.ok).toBe(true);
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
-    if (result.ok) expect(Object.hasOwn(result.project.designs[0]!.release, 'polluted')).toBe(false);
+    if (result.ok) expect(Object.hasOwn(designsOf(result.project)[0]!.release, 'polluted')).toBe(false);
   });
 
   it('ignores numbers that are not numbers', () => {
@@ -271,7 +324,7 @@ describe('reading a project file built to break things', () => {
     });
 
     if (!result.ok) throw new Error(result.error);
-    const [first] = result.project.designs;
+    const [first] = designsOf(result.project);
     expect(first?.release.tracks[0]?.position).toBe(1);
     expect(first?.dimensions.label.width).toBe(35);
     expect(first?.dimensions.label.notchSize).toBe(0);
@@ -296,7 +349,7 @@ describe('reading a project file built to break things', () => {
     });
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.designs[0]?.release.artwork).toBeUndefined();
+    expect(designsOf(result.project)[0]?.release.artwork).toBeUndefined();
   });
 
   it('drops artwork claiming no pixels, which would divide by zero on a Part', () => {
@@ -316,6 +369,6 @@ describe('reading a project file built to break things', () => {
     });
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.designs[0]?.release.artwork).toBeUndefined();
+    expect(designsOf(result.project)[0]?.release.artwork).toBeUndefined();
   });
 });
