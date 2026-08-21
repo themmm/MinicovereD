@@ -84,6 +84,19 @@ describe('laying out a tracklist', () => {
     }
   });
 
+  it('shrinks until the list actually fits, however absurd the list', () => {
+    // Past a certain length the type used to stop shrinking and the tail ran
+    // off the bottom of the box — where the Part clip eats it, which is
+    // truncation wearing a different hat.
+    for (const count of [130, 500, 2000]) {
+      const { lines, sizeMm } = layout(count);
+
+      expect(lines, `${count} tracks`).toHaveLength(count);
+      const lowest = Math.max(...lines.map((line) => line.at.y + sizeMm));
+      expect(lowest, `${count} tracks stay in the box`).toBeLessThanOrEqual(BOX.y + BOX.height + 0.001);
+    }
+  });
+
   it('says when the type has gone below what a printer can hold', () => {
     // Sony's own artwork spec puts the floor at 5 pt; below it, ink spreads.
     expect(layout(25).belowPrintFloor).toBe(false);

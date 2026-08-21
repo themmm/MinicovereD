@@ -20,8 +20,13 @@ const COLUMN_GAP: Mm = 3;
 /** Each shrink step. Small enough to stop close to the largest size that fits. */
 const SHRINK_STEP = 0.96;
 
-/** Nothing smaller than this is worth calling type. */
-const ABSOLUTE_MIN_MM: Mm = 0.4;
+/**
+ * A bound on the search, not on the type. Shrinking is what stops a track from
+ * being dropped, so the loop may not give up while tracks are still outside the
+ * box — this only guarantees it terminates. 400 steps of 4% reaches 2.4 mm ->
+ * 0.0002 mm, far past any list a MiniDisc could hold.
+ */
+const MAX_SHRINK_STEPS = 400;
 
 /**
  * Sony's own artwork spec puts the minimum character size at 5 pt for this
@@ -61,7 +66,7 @@ function chooseFit(
   if (fits(count, 2, box.height, baseSizeMm)) return { columns: 2, sizeMm: baseSizeMm };
 
   let sizeMm = baseSizeMm;
-  while (sizeMm > ABSOLUTE_MIN_MM && !fits(count, 2, box.height, sizeMm)) {
+  for (let step = 0; step < MAX_SHRINK_STEPS && !fits(count, 2, box.height, sizeMm); step++) {
     sizeMm *= SHRINK_STEP;
   }
   return { columns: 2, sizeMm };
