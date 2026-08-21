@@ -4,11 +4,12 @@ import {
   JCARD_PANEL_ORDER,
   PART_KINDS,
   jCardSize,
+  partShape,
   partSize,
 } from '../domain/parts.ts';
 import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
-import type { Mm, Point, Rect, Size } from '../domain/units.ts';
+import type { Mm, Rect, Size } from '../domain/units.ts';
 import { printableArea } from './layout.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
@@ -62,64 +63,25 @@ function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Re
   };
 }
 
-function rectOutline(size: Size): Point[] {
-  return [
-    { x: 0, y: 0 },
-    { x: size.width, y: 0 },
-    { x: size.width, y: size.height },
-    { x: 0, y: size.height },
-  ];
-}
-
-function labelOutline(size: Size, notch: Mm): Point[] {
-  if (notch <= 0) return rectOutline(size);
-  return [
-    { x: 0, y: 0 },
-    { x: size.width - notch, y: 0 },
-    { x: size.width, y: notch },
-    { x: size.width, y: size.height },
-    { x: 0, y: size.height },
-  ];
-}
-
-/**
- * How far a fold guide's tick marks reach past the cut line. The dashed line
- * itself runs along a panel edge, where a dark Spine can swallow it; the ticks
- * sit on the bare paper of the gap between Parts, so they are always findable
- * with a ruler.
- */
-const FOLD_TICK_MM: Mm = 1.8;
-
 /**
  * Cut guides trace what has to be cut out — including the Label's diagonal
  * corner. Fold guides mark where the J-Card folds into its three panels.
  */
 function guidesFor(part: PartKind, dimensions: PartDimensions, size: Size): Guide[] {
-  const cut: Guide = {
-    kind: 'cut',
-    points:
-      part === 'label'
-        ? labelOutline(size, dimensions.label.notch ? dimensions.label.notchSize : 0)
-        : rectOutline(size),
-    closed: true,
-  };
+  const cut: Guide = { kind: 'cut', points: partShape(part, dimensions).outline, closed: true };
   if (part !== 'jcard') return [cut];
 
   const panels = jCardPanels(dimensions);
-  const folds: Guide[] = [panels['inner-flap'], panels.spine].flatMap((panel) => {
+  const folds: Guide[] = [panels['inner-flap'], panels.spine].map((panel) => {
     const x = panel.x + panel.width;
-    return [
-      { kind: 'fold' as const, points: [{ x, y: 0 }, { x, y: size.height }], closed: false },
-      { kind: 'fold' as const, points: [{ x, y: -FOLD_TICK_MM }, { x, y: 0 }], closed: false },
-      {
-        kind: 'fold' as const,
-        points: [
-          { x, y: size.height },
-          { x, y: size.height + FOLD_TICK_MM },
-        ],
-        closed: false,
-      },
-    ];
+    return {
+      kind: 'fold' as const,
+      points: [
+        { x, y: 0 },
+        { x, y: size.height },
+      ],
+      closed: false,
+    };
   });
   return [cut, ...folds];
 }
@@ -158,7 +120,8 @@ function drawPart(
  * Shelf arrangement inside the printable area: Parts are laid in rows, a new
  * row starting when the current one runs out of width. Ticket 03 replaces this
  * with SheetPacker, which packs several Releases across as few Sheets as
- * possible; here it only has to put one Release's three Parts on one Sheet.
+ * possible; here it only has to put one Release's three Parts on one Sheet —
+ * and say so loudly rather than place a Part where the printer will clip it.
  */
 function arrange(sizes: readonly Size[], area: Rect): Rect[] {
   const placed: Rect[] = [];
@@ -167,10 +130,19 @@ function arrange(sizes: readonly Size[], area: Rect): Rect[] {
   let rowHeight = 0;
 
   for (const size of sizes) {
+    if (size.width > area.width || size.height > area.height) {
+      throw new Error(
+        `mdcovergen: a ${size.width} × ${size.height} mm Part does not fit the ` +
+          `${area.width} × ${area.height} mm printable area`,
+      );
+    }
     if (cursorX > area.x && cursorX + size.width > area.x + area.width) {
       cursorX = area.x;
       cursorY += rowHeight + PART_GAP_MM;
       rowHeight = 0;
+    }
+    if (cursorY + size.height > area.y + area.height) {
+      throw new Error('mdcovergen: this Release does not fit on one Sheet');
     }
     placed.push({ x: cursorX, y: cursorY, width: size.width, height: size.height });
     cursorX += size.width + PART_GAP_MM;

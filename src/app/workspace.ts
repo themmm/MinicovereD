@@ -243,9 +243,15 @@ function fileNameFor(release: Release): string {
   return `${stem.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
 }
 
+/** Seconds to keep the blob alive after the click; Firefox and Safari need the
+ *  anchor in the document and the URL still valid when the download starts. */
+const DOWNLOAD_URL_LIFETIME_MS = 30_000;
+
 function downloadPdf(bytes: Uint8Array, fileName: string): void {
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
-  const link = el('a', { attrs: { href: url, download: fileName } });
+  const link = el('a', { class: 'visually-hidden', attrs: { href: url, download: fileName } });
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
 }

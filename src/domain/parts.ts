@@ -1,4 +1,4 @@
-import type { Mm, Size } from './units.ts';
+import type { Mm, Point, Size } from './units.ts';
 
 /**
  * A Release has three printable Parts (ADR-0005): the three-panel J-Card that
@@ -12,12 +12,6 @@ import type { Mm, Size } from './units.ts';
 export type PartKind = 'jcard' | 'back-card' | 'label';
 
 export const PART_KINDS: readonly PartKind[] = ['jcard', 'back-card', 'label'];
-
-export const PART_LABELS: Readonly<Record<PartKind, string>> = {
-  jcard: 'J-Card',
-  'back-card': 'Back Card',
-  label: 'Label',
-};
 
 /** The J-Card panels, in the order they sit on the Sheet from left to right. */
 export type JCardPanel = 'inner-flap' | 'spine' | 'front-panel';
@@ -37,9 +31,7 @@ export interface JCardDimensions {
 export interface BackCardDimensions extends Size {}
 
 export interface LabelDimensions extends Size {
-  /** The diagonally cut corner that matches the cartridge. */
-  readonly notch: boolean;
-  /** Length of the notch along each of the two edges it cuts. */
+  /** Length of the cartridge's diagonally cut corner along each edge it cuts. */
   readonly notchSize: Mm;
 }
 
@@ -52,7 +44,7 @@ export interface PartDimensions {
 export const DEFAULT_PART_DIMENSIONS: PartDimensions = {
   jcard: { innerFlapWidth: 14, spineWidth: 5.5, frontPanelWidth: 68, height: 79 },
   backCard: { width: 69, height: 79 },
-  label: { width: 35, height: 52.5, notch: true, notchSize: 6 },
+  label: { width: 35, height: 52.5, notchSize: 6 },
 };
 
 export function jCardSize(dimensions: JCardDimensions): Size {
@@ -62,14 +54,55 @@ export function jCardSize(dimensions: JCardDimensions): Size {
   };
 }
 
-/** Unfolded size of a Part on the Sheet — what has to be cut out. */
-export function partSize(part: PartKind, dimensions: PartDimensions): Size {
+/**
+ * The physical shape of a Part: how much Sheet it takes, and the outline it is
+ * cut along. One definition, because the cut guide and the Part's own
+ * background have to agree — a Label filled as a rectangle but cut along a
+ * notched outline prints a corner that is not there.
+ */
+export interface PartShape {
+  readonly size: Size;
+  /** Closed outline in Part-local coordinates, starting at the top-left corner. */
+  readonly outline: readonly Point[];
+}
+
+function rectangle(size: Size): PartShape {
+  return {
+    size,
+    outline: [
+      { x: 0, y: 0 },
+      { x: size.width, y: 0 },
+      { x: size.width, y: size.height },
+      { x: 0, y: size.height },
+    ],
+  };
+}
+
+export function partShape(part: PartKind, dimensions: PartDimensions): PartShape {
   switch (part) {
     case 'jcard':
-      return jCardSize(dimensions.jcard);
+      return rectangle(jCardSize(dimensions.jcard));
     case 'back-card':
-      return { width: dimensions.backCard.width, height: dimensions.backCard.height };
-    case 'label':
-      return { width: dimensions.label.width, height: dimensions.label.height };
+      return rectangle({ width: dimensions.backCard.width, height: dimensions.backCard.height });
+    case 'label': {
+      const { width, height, notchSize } = dimensions.label;
+      if (notchSize <= 0) return rectangle({ width, height });
+      // The cartridge's diagonally cut corner (CONTEXT.md: Label).
+      return {
+        size: { width, height },
+        outline: [
+          { x: 0, y: 0 },
+          { x: width - notchSize, y: 0 },
+          { x: width, y: notchSize },
+          { x: width, y: height },
+          { x: 0, y: height },
+        ],
+      };
+    }
   }
+}
+
+/** Unfolded size of a Part on the Sheet — what has to be cut out. */
+export function partSize(part: PartKind, dimensions: PartDimensions): Size {
+  return partShape(part, dimensions).size;
 }

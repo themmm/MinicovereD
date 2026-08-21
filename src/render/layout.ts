@@ -19,8 +19,6 @@ export interface TextStyle {
   readonly baseline: 'top' | 'middle';
   /** Rotation about `at`, clockwise. Used for the Spine, which reads along the case edge. */
   readonly rotationDeg?: -90 | 0 | 90;
-  /** Squeeze the glyphs horizontally to this width rather than overflow. */
-  readonly maxWidthMm?: Mm;
 }
 
 export type DrawOp =

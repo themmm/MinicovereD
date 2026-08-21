@@ -1,9 +1,8 @@
-import { formatDuration, totalDurationMs } from '../../domain/release.ts';
+import { partShape } from '../../domain/parts.ts';
 import type { Release } from '../../domain/release.ts';
 import type { Mm, Point, Rect } from '../../domain/units.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
 import { ellipsise } from '../text.ts';
-import type { TextMeasurer } from '../text.ts';
 import type { JCardContext, PartContext, Template } from './template.ts';
 
 /**
@@ -41,13 +40,10 @@ function spineLine(release: Release): string {
   return [release.artist, release.album].filter(Boolean).join(' — ');
 }
 
-function fit(content: string, style: TextStyle, maxWidthMm: Mm, measure: TextMeasurer): string {
-  return ellipsise(content, style, maxWidthMm, measure);
-}
-
 function drawFrontPanel({ release, measure }: PartContext, panel: Rect): DrawOp[] {
   const artSide = panel.width - 2 * PAD;
-  const artBottom = PAD + artSide;
+  const artTop = panel.y + PAD;
+  const artBottom = artTop + artSide;
   const centreX = panel.x + panel.width / 2;
 
   const artistStyle: TextStyle = { sizeMm: 4, weight: 700, color: PALETTE.ink, align: 'center', baseline: 'top' };
@@ -56,9 +52,9 @@ function drawFrontPanel({ release, measure }: PartContext, panel: Rect): DrawOp[
 
   return [
     { op: 'fill-rect', rect: panel, color: PALETTE.paper },
-    artworkOrPlaceholder(release, { x: panel.x + PAD, y: PAD, width: artSide, height: artSide }),
-    text(fit(release.artist, artistStyle, textWidth, measure), { x: centreX, y: artBottom + 2.4 }, artistStyle),
-    text(fit(release.album, albumStyle, textWidth, measure), { x: centreX, y: artBottom + 7.2 }, albumStyle),
+    artworkOrPlaceholder(release, { x: panel.x + PAD, y: artTop, width: artSide, height: artSide }),
+    text(ellipsise(release.artist, artistStyle, textWidth, measure), { x: centreX, y: artBottom + 2.4 }, artistStyle),
+    text(ellipsise(release.album, albumStyle, textWidth, measure), { x: centreX, y: artBottom + 7.2 }, albumStyle),
   ];
 }
 
@@ -74,7 +70,7 @@ function drawSpine({ release, measure }: PartContext, panel: Rect): DrawOp[] {
   return [
     { op: 'fill-rect', rect: panel, color: PALETTE.accent },
     text(
-      fit(spineLine(release), style, panel.height - 2 * PAD, measure),
+      ellipsise(spineLine(release), style, panel.height - 2 * PAD, measure),
       { x: panel.x + panel.width / 2, y: panel.y + panel.height / 2 },
       style,
     ),
@@ -96,7 +92,7 @@ function drawInnerFlap({ release, measure }: PartContext, panel: Rect): DrawOp[]
     ...(caption
       ? [
           text(
-            fit(caption, style, panel.height - 2 * PAD, measure),
+            ellipsise(caption, style, panel.height - 2 * PAD, measure),
             { x: panel.x + panel.width / 2, y: panel.y + panel.height / 2 },
             style,
           ),
@@ -114,8 +110,8 @@ function drawBackCard({ release, size, measure }: PartContext): DrawOp[] {
   const ruleY = PAD + 8.6;
   const ops: DrawOp[] = [
     { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: PALETTE.paper },
-    text(fit(release.album, albumStyle, contentWidth, measure), { x: PAD, y: PAD }, albumStyle),
-    text(fit(release.artist, artistStyle, contentWidth, measure), { x: PAD, y: PAD + 4.2 }, artistStyle),
+    text(ellipsise(release.album, albumStyle, contentWidth, measure), { x: PAD, y: PAD }, albumStyle),
+    text(ellipsise(release.artist, artistStyle, contentWidth, measure), { x: PAD, y: PAD + 4.2 }, artistStyle),
     {
       op: 'line',
       from: { x: PAD, y: ruleY },
@@ -129,55 +125,36 @@ function drawBackCard({ release, size, measure }: PartContext): DrawOp[] {
   release.tracks.forEach((track, index) => {
     const line = `${track.position}. ${track.title}`;
     ops.push(
-      text(fit(line, trackStyle, contentWidth, measure), { x: PAD, y: ruleY + 2 + index * lineHeight }, trackStyle),
+      text(ellipsise(line, trackStyle, contentWidth, measure), { x: PAD, y: ruleY + 2 + index * lineHeight }, trackStyle),
     );
   });
 
-  const total = totalDurationMs(release);
-  if (total !== undefined) {
-    const totalStyle: TextStyle = { sizeMm: 2.3, weight: 400, color: PALETTE.muted, align: 'right', baseline: 'top' };
-    ops.push(text(formatDuration(total), { x: size.width - PAD, y: size.height - PAD - 2.3 }, totalStyle));
-  }
   return ops;
-}
-
-function labelOutline(size: { width: Mm; height: Mm }, notch: Mm): Point[] {
-  return notch > 0
-    ? [
-        { x: 0, y: 0 },
-        { x: size.width - notch, y: 0 },
-        { x: size.width, y: notch },
-        { x: size.width, y: size.height },
-        { x: 0, y: size.height },
-      ]
-    : [
-        { x: 0, y: 0 },
-        { x: size.width, y: 0 },
-        { x: size.width, y: size.height },
-        { x: 0, y: size.height },
-      ];
 }
 
 function drawLabel({ release, size, dimensions, measure }: PartContext): DrawOp[] {
   const pad: Mm = 2.5;
-  const artSide = size.width - 2 * pad;
+  // The diagonal runs x = (width - notch) + y, so a square inset by `pad` on
+  // every side would poke through it at the top right. Clipping would hide the
+  // overhang; sizing the square to clear the diagonal keeps the artwork whole.
+  const { notchSize } = dimensions.label;
+  const artSide = Math.min(size.width - 2 * pad, size.width - notchSize - pad);
+  const artLeft = (size.width - artSide) / 2;
   const artistStyle: TextStyle = { sizeMm: 2.8, weight: 700, color: PALETTE.ink, align: 'center', baseline: 'top' };
   const albumStyle: TextStyle = { sizeMm: 2.4, weight: 400, color: PALETTE.muted, align: 'center', baseline: 'top' };
   const centreX = size.width / 2;
   const textWidth = size.width - 2 * pad;
-  const notch = dimensions.label.notch ? dimensions.label.notchSize : 0;
-
   // Centre the caption in whatever room the artwork leaves, so the Label reads
   // as one block instead of drifting to the top edge.
   const captionHeight = artistStyle.sizeMm + 1 + albumStyle.sizeMm;
   const captionTop = pad + artSide + (size.height - pad - (pad + artSide) - captionHeight) / 2;
 
   return [
-    { op: 'fill-polygon', points: labelOutline(size, notch), color: PALETTE.paper },
-    artworkOrPlaceholder(release, { x: pad, y: pad, width: artSide, height: artSide }),
-    text(fit(release.artist, artistStyle, textWidth, measure), { x: centreX, y: captionTop }, artistStyle),
+    { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: PALETTE.paper },
+    artworkOrPlaceholder(release, { x: artLeft, y: pad, width: artSide, height: artSide }),
+    text(ellipsise(release.artist, artistStyle, textWidth, measure), { x: centreX, y: captionTop }, artistStyle),
     text(
-      fit(release.album, albumStyle, textWidth, measure),
+      ellipsise(release.album, albumStyle, textWidth, measure),
       { x: centreX, y: captionTop + artistStyle.sizeMm + 1 },
       albumStyle,
     ),

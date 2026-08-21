@@ -8,7 +8,6 @@ export interface Track {
   /** 1-based position on the Release, as printed on the Back Card. */
   readonly position: number;
   readonly title: string;
-  readonly durationMs?: number;
 }
 
 /** Cover image, held as a data URL so a Release stays a single self-contained value. */
@@ -28,21 +27,4 @@ export interface Release {
   readonly notes?: string;
   readonly tracks: readonly Track[];
   readonly artwork?: Artwork;
-}
-
-/** Total running time in ms, or undefined when any track is missing a duration. */
-export function totalDurationMs(release: Release): number | undefined {
-  let total = 0;
-  for (const track of release.tracks) {
-    if (track.durationMs === undefined) return undefined;
-    total += track.durationMs;
-  }
-  return total;
-}
-
-export function formatDuration(durationMs: number): string {
-  const totalSeconds = Math.round(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }

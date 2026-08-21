@@ -215,6 +215,7 @@ body {
   line-height: 1.45;
 }
 
+.visually-hidden,
 .field__file {
   position: absolute;
   width: 1px;

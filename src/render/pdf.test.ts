@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { A4, LETTER } from '../domain/paper.ts';
+import { A4 } from '../domain/paper.ts';
 import { ptToMm, pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { buildPdf } from './pdf.ts';
 
@@ -29,22 +29,22 @@ describe('PDF export', () => {
     expect(size.height).toBeCloseTo(297, 4);
   });
 
-  it('writes a Letter page at its own size', async () => {
-    const bytes = await buildPdf([{ size: LETTER, png: PNG_2X2 }]);
+  it('writes a page at whatever millimetre size it is given', async () => {
+    const bytes = await buildPdf([{ size: { width: 148, height: 210 }, png: PNG_2X2 }]);
     const size = await pageSizeMm(bytes, 0);
 
-    expect(size.width).toBeCloseTo(215.9, 4);
-    expect(size.height).toBeCloseTo(279.4, 4);
+    expect(size.width).toBeCloseTo(148, 4);
+    expect(size.height).toBeCloseTo(210, 4);
   });
 
   it('writes one page per Sheet, in order', async () => {
     const bytes = await buildPdf([
       { size: A4, png: PNG_2X2 },
-      { size: LETTER, png: PNG_2X2 },
+      { size: { width: 148, height: 210 }, png: PNG_2X2 },
     ]);
 
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(2);
-    expect((await pageSizeMm(bytes, 1)).width).toBeCloseTo(215.9, 4);
+    expect((await pageSizeMm(bytes, 1)).width).toBeCloseTo(148, 4);
   });
 
   it('refuses to write a PDF with no pages rather than emitting an unopenable file', async () => {

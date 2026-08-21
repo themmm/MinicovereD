@@ -1,5 +1,5 @@
 import type { Artwork } from '../domain/release.ts';
-import type { Mm, Point } from '../domain/units.ts';
+import type { Mm, Point, Rect } from '../domain/units.ts';
 import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
 import type { DrawOp, Guide, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
@@ -16,34 +16,72 @@ export const EXPORT_DPI = 300;
 
 /** Cut and fold marks, thin but above Sony's 0.15 mm printable-line floor. */
 const GUIDE_WIDTH_MM: Mm = 0.15;
-const GUIDE_COLOR = '#9a9a9a';
+const GUIDE_COLOR = '#8a8a8a';
+/**
+ * A fold guide runs along a panel boundary, where a dark Spine would swallow a
+ * grey hairline. Laying the mark over a wider light stroke keeps it readable on
+ * any background — and unlike ticks reaching past the Part, it stays inside the
+ * printable margin.
+ */
+const GUIDE_HALO_COLOR = '#ffffff';
+const GUIDE_HALO_WIDTH_MM: Mm = 0.5;
 const FOLD_DASH_MM: readonly [Mm, Mm] = [1.6, 1.2];
 
 export const FONT_STACK = "'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif";
 
-export function fontFor(style: TextStyle, pxPerMm: number): string {
-  return `${style.weight} ${style.sizeMm * pxPerMm}px ${FONT_STACK}`;
+export function fontFor(style: TextStyle, scale: number): string {
+  return `${style.weight} ${style.sizeMm * scale}px ${FONT_STACK}`;
 }
 
-async function decodeArtwork(dataUrl: string): Promise<HTMLImageElement> {
-  const image = new Image();
-  image.src = dataUrl;
-  await image.decode();
-  return image;
+/**
+ * The part of the browser's 2D context this module uses. Naming the boundary
+ * keeps the mm-to-pixel arithmetic testable without a canvas — a real
+ * `CanvasRenderingContext2D` satisfies it structurally.
+ */
+export interface Canvas2D {
+  fillStyle: string | CanvasGradient | CanvasPattern;
+  strokeStyle: string | CanvasGradient | CanvasPattern;
+  lineWidth: number;
+  font: string;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
+  save(): void;
+  restore(): void;
+  translate(x: number, y: number): void;
+  rotate(angle: number): void;
+  beginPath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  closePath(): void;
+  fill(): void;
+  stroke(): void;
+  clip(): void;
+  fillRect(x: number, y: number, width: number, height: number): void;
+  fillText(text: string, x: number, y: number): void;
+  setLineDash(segments: readonly number[]): void;
+  drawImage(
+    image: CanvasImageSource,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void;
 }
 
-async function decodeAll(layout: SheetLayout): Promise<Map<string, HTMLImageElement>> {
-  const urls = new Set<string>();
-  for (const placement of layout.placements) {
-    for (const op of placement.ops) if (op.op === 'image') urls.add(op.artwork.dataUrl);
-  }
-  const entries = await Promise.all(
-    [...urls].map(async (url) => [url, await decodeArtwork(url)] as const),
-  );
-  return new Map(entries);
+/** Everything drawing needs beyond the ops themselves. */
+interface Surface {
+  readonly context: Canvas2D;
+  /** Raster pixels per millimetre. */
+  readonly scale: number;
+  readonly images: ReadonlyMap<string, CanvasImageSource>;
 }
 
-function tracePath(context: CanvasRenderingContext2D, points: readonly Point[], scale: number, closed: boolean): void {
+function tracePath(surface: Surface, points: readonly Point[], closed: boolean): void {
+  const { context, scale } = surface;
   context.beginPath();
   points.forEach((point, index) => {
     const x = point.x * scale;
@@ -54,7 +92,8 @@ function tracePath(context: CanvasRenderingContext2D, points: readonly Point[], 
   if (closed) context.closePath();
 }
 
-function drawText(context: CanvasRenderingContext2D, op: Extract<DrawOp, { op: 'text' }>, scale: number): void {
+function drawText(surface: Surface, op: Extract<DrawOp, { op: 'text' }>): void {
+  const { context, scale } = surface;
   const { style } = op;
   context.save();
   context.translate(op.at.x * scale, op.at.y * scale);
@@ -63,17 +102,29 @@ function drawText(context: CanvasRenderingContext2D, op: Extract<DrawOp, { op: '
   context.fillStyle = style.color;
   context.textAlign = style.align;
   context.textBaseline = style.baseline === 'top' ? 'top' : 'middle';
-  if (style.maxWidthMm !== undefined) context.fillText(op.text, 0, 0, style.maxWidthMm * scale);
-  else context.fillText(op.text, 0, 0);
+  context.fillText(op.text, 0, 0);
   context.restore();
 }
 
-function drawOp(
-  context: CanvasRenderingContext2D,
-  op: DrawOp,
-  scale: number,
-  images: ReadonlyMap<string, HTMLImageElement>,
-): void {
+function drawArtwork(surface: Surface, rect: Rect, artwork: Artwork, fit: 'cover' | 'contain'): void {
+  const image = surface.images.get(artwork.dataUrl);
+  if (!image) return;
+  const { source, dest } = fitImage(artwork, rect, fit);
+  surface.context.drawImage(
+    image,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    dest.x * surface.scale,
+    dest.y * surface.scale,
+    dest.width * surface.scale,
+    dest.height * surface.scale,
+  );
+}
+
+function drawOp(surface: Surface, op: DrawOp): void {
+  const { context, scale } = surface;
   switch (op.op) {
     case 'fill-rect':
       context.fillStyle = op.color;
@@ -81,69 +132,95 @@ function drawOp(
       return;
     case 'fill-polygon':
       context.fillStyle = op.color;
-      tracePath(context, op.points, scale, true);
+      tracePath(surface, op.points, true);
       context.fill();
       return;
     case 'line':
       context.strokeStyle = op.color;
       context.lineWidth = Math.max(1, op.widthMm * scale);
-      tracePath(context, [op.from, op.to], scale, false);
+      tracePath(surface, [op.from, op.to], false);
       context.stroke();
       return;
     case 'image':
-      drawArtwork(context, op.rect, op.artwork, op.fit, scale, images);
+      drawArtwork(surface, op.rect, op.artwork, op.fit);
       return;
     case 'text':
-      drawText(context, op, scale);
+      drawText(surface, op);
       return;
   }
 }
 
-function drawArtwork(
-  context: CanvasRenderingContext2D,
-  rect: { x: Mm; y: Mm; width: Mm; height: Mm },
-  artwork: Artwork,
-  fit: 'cover' | 'contain',
-  scale: number,
-  images: ReadonlyMap<string, HTMLImageElement>,
-): void {
-  const image = images.get(artwork.dataUrl);
-  if (!image) return;
-  const { source, dest } = fitImage(artwork, rect, fit);
-  context.drawImage(
-    image,
-    source.x,
-    source.y,
-    source.width,
-    source.height,
-    dest.x * scale,
-    dest.y * scale,
-    dest.width * scale,
-    dest.height * scale,
-  );
-}
-
-function drawGuide(context: CanvasRenderingContext2D, guide: Guide, scale: number): void {
+function drawGuide(surface: Surface, guide: Guide): void {
+  const { context, scale } = surface;
   context.save();
+  // Hairlines below one device pixel would disappear entirely, so they are
+  // clamped: a guide that cannot be seen cannot be cut along.
+  if (guide.kind === 'fold') {
+    context.strokeStyle = GUIDE_HALO_COLOR;
+    context.lineWidth = Math.max(1, GUIDE_HALO_WIDTH_MM * scale);
+    context.setLineDash([]);
+    tracePath(surface, guide.points, guide.closed);
+    context.stroke();
+  }
   context.strokeStyle = GUIDE_COLOR;
   context.lineWidth = Math.max(1, GUIDE_WIDTH_MM * scale);
   context.setLineDash(guide.kind === 'fold' ? FOLD_DASH_MM.map((mm) => mm * scale) : []);
-  tracePath(context, guide.points, scale, guide.closed);
+  tracePath(surface, guide.points, guide.closed);
   context.stroke();
   context.restore();
 }
 
-function drawPlacement(
-  context: CanvasRenderingContext2D,
-  placement: PartPlacement,
-  scale: number,
-  images: ReadonlyMap<string, HTMLImageElement>,
-): void {
+function drawPlacement(surface: Surface, placement: PartPlacement): void {
+  const { context, scale } = surface;
   context.save();
   context.translate(placement.bounds.x * scale, placement.bounds.y * scale);
-  for (const op of placement.ops) drawOp(context, op, scale, images);
-  for (const guide of placement.guides) drawGuide(context, guide, scale);
+
+  // Nothing a Template draws may leave the Part: an overlong tracklist has to
+  // spill inside the Back Card, not onto the Sheet around it.
+  const outline = placement.guides.find((guide) => guide.kind === 'cut');
+  context.save();
+  if (outline) {
+    tracePath(surface, outline.points, true);
+    context.clip();
+  }
+  for (const op of placement.ops) drawOp(surface, op);
   context.restore();
+
+  for (const guide of placement.guides) drawGuide(surface, guide);
+  context.restore();
+}
+
+/** Draws every Part of `layout` onto `context`, in millimetres scaled to `dpi`. */
+export function drawSheet(
+  context: Canvas2D,
+  layout: SheetLayout,
+  dpi: number,
+  images: ReadonlyMap<string, CanvasImageSource> = new Map(),
+): void {
+  const surface: Surface = { context, scale: pxPerMm(dpi), images };
+  const { width, height } = rasterSizePx(layout.paper, dpi);
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  for (const placement of layout.placements) drawPlacement(surface, placement);
+}
+
+async function decodeArtwork(dataUrl: string): Promise<HTMLImageElement> {
+  const image = new Image();
+  image.src = dataUrl;
+  await image.decode();
+  return image;
+}
+
+async function decodeAll(layout: SheetLayout): Promise<Map<string, CanvasImageSource>> {
+  const urls = new Set<string>();
+  for (const placement of layout.placements) {
+    for (const op of placement.ops) if (op.op === 'image') urls.add(op.artwork.dataUrl);
+  }
+  const entries = await Promise.all(
+    [...urls].map(async (url) => [url, await decodeArtwork(url)] as const),
+  );
+  return new Map(entries);
 }
 
 /** Renders `layout` onto a fresh canvas sized for `dpi`. */
@@ -156,13 +233,7 @@ export async function rasterizeSheet(layout: SheetLayout, dpi: number): Promise<
   const context = canvas.getContext('2d');
   if (!context) throw new Error('mdcovergen: this browser has no 2D canvas context');
 
-  context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, width, height);
-
-  const images = await decodeAll(layout);
-  const scale = pxPerMm(dpi);
-  for (const placement of layout.placements) drawPlacement(context, placement, scale, images);
-
+  drawSheet(context, layout, dpi, await decodeAll(layout));
   return canvas;
 }
 

@@ -149,25 +149,29 @@ describe('SheetRenderer — J-Card panels and guides', () => {
     expect(foldsByPart.get('label')).toEqual([]);
 
     const folds = foldsByPart.get('jcard') ?? [];
-    expect(folds.every((fold) => !fold.closed)).toBe(true);
-
-    // Folds run vertically, and only at the two panel boundaries.
-    const foldXs = [...new Set(folds.flatMap((fold) => fold.points.map((point) => point.x)))].sort(
-      (a, b) => a - b,
-    );
-    expect(foldXs).toHaveLength(2);
+    expect(folds).toHaveLength(2);
+    const foldXs = folds.map((fold) => fold.points[0]?.x ?? -1).sort((a, b) => a - b);
     expectMm(foldXs[0] ?? -1, 14, 'first fold');
     expectMm(foldXs[1] ?? -1, 19.5, 'second fold');
 
-    // Each boundary is marked across the whole Part height, and ticked outside
-    // the cut line so a dark panel cannot swallow the mark.
-    for (const x of foldXs) {
-      const atX = folds.filter((fold) => fold.points.every((point) => point.x === x));
-      const ys = atX.flatMap((fold) => fold.points.map((point) => point.y));
-      expect(ys, `fold at ${x} spans the Part`).toContain(0);
-      expect(ys, `fold at ${x} spans the Part`).toContain(79);
-      expect(Math.min(...ys), `fold at ${x} ticks above`).toBeLessThan(0);
-      expect(Math.max(...ys), `fold at ${x} ticks below`).toBeGreaterThan(79);
+    for (const fold of folds) {
+      expect(fold.closed).toBe(false);
+      expectMm(fold.points[0]?.y ?? -1, 0, 'fold start');
+      expectMm(fold.points[1]?.y ?? -1, 79, 'fold end');
+    }
+  });
+
+  it('keeps every mark inside the printable area, guides included', () => {
+    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+
+    for (const placement of sheet?.placements ?? []) {
+      const points = placement.guides.flatMap((guide) => guide.points);
+      for (const point of points) {
+        expect(placement.bounds.x + point.x, `${placement.part} guide left`).toBeGreaterThanOrEqual(5);
+        expect(placement.bounds.y + point.y, `${placement.part} guide top`).toBeGreaterThanOrEqual(5);
+        expect(placement.bounds.x + point.x, `${placement.part} guide right`).toBeLessThanOrEqual(A4.width - 5);
+        expect(placement.bounds.y + point.y, `${placement.part} guide bottom`).toBeLessThanOrEqual(A4.height - 5);
+      }
     }
   });
 
