@@ -129,6 +129,7 @@ export function createWorkspace(): HTMLElement {
     select: (releaseId) => {
       selectedId = releaseId;
       renderControls();
+      refresh();
     },
     move: (releaseId, offset) => {
       queue = moveInQueue(queue, releaseId, offset);
@@ -137,8 +138,11 @@ export function createWorkspace(): HTMLElement {
     remove: (releaseId) => {
       queue = removeFromQueue(queue, releaseId);
       if (queue.length === 0) queue = [readyEntry(exampleDesign())];
+      // Removing what was selected moves the form to whatever is left.
       if (!queue.some((entry) => entry.design.release.id === selectedId)) {
         selectedId = queue[0]?.design.release.id ?? '';
+        selectionChanged();
+        return;
       }
       changed();
     },
@@ -158,10 +162,21 @@ export function createWorkspace(): HTMLElement {
     }
   }
 
+  /**
+   * A change to the design being edited. Deliberately does *not* rebuild the
+   * controls: they already show what the collector just typed, and replacing
+   * the field they are typing into takes the caret with it.
+   */
   function changed(): void {
     edited = true;
-    renderControls();
+    refresh();
     saveSoon(project());
+  }
+
+  /** A change to *which* Release is being edited, which the controls must follow. */
+  function selectionChanged(): void {
+    renderControls();
+    changed();
   }
 
   /** Replaces the selected entry, leaving the rest of the queue alone. */
@@ -191,7 +206,7 @@ export function createWorkspace(): HTMLElement {
         // A looked-up Release joins the queue and becomes the one being edited.
         queue = addToQueue(queue, readyEntry({ ...design, release: found }));
         selectedId = found.id;
-        changed();
+        selectionChanged();
       },
       (entries) => {
         const before = queue.length;
@@ -203,7 +218,7 @@ export function createWorkspace(): HTMLElement {
             `${entries.length - added} of those Releases were already in the queue.`,
           );
         }
-        changed();
+        selectionChanged();
       },
     );
 
@@ -249,7 +264,7 @@ export function createWorkspace(): HTMLElement {
       selectedId = queue[0]?.design.release.id ?? '';
     }
     sheetConfig = next.sheet;
-    changed();
+    selectionChanged();
   }
 
   // A reload leaves at most one debounce window of work unwritten; asking for
