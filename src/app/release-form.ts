@@ -18,10 +18,17 @@ const FIELDS: readonly Field[] = [
   { label: 'Notes', key: 'notes', placeholder: 'Capitol · ST-103' },
 ];
 
+export interface ReleaseForm {
+  readonly element: HTMLElement;
+  /** Replace what the fields show — used when a metadata lookup fills them in. */
+  setRelease(release: Release): void;
+}
+
 export function createReleaseForm(
   release: Release,
   onChange: (changes: Partial<Release>) => void,
-): HTMLElement {
+): ReleaseForm {
+  const inputs = new Map<Field['key'], HTMLInputElement>();
   const form = el(
     'section',
     { class: 'panel' },
@@ -43,6 +50,7 @@ export function createReleaseForm(
       },
       on: { input: (event) => onChange({ [field.key]: (event.target as HTMLInputElement).value }) },
     });
+    inputs.set(field.key, input);
     form.appendChild(
       el(
         'label',
@@ -75,11 +83,32 @@ export function createReleaseForm(
     ),
   );
 
-  form.appendChild(artworkField(onChange));
-  return form;
+  const artwork = artworkField(onChange);
+  form.appendChild(artwork.element);
+
+  return {
+    element: form,
+    setRelease(next) {
+      for (const field of FIELDS) {
+        const input = inputs.get(field.key);
+        if (input) input.value = next[field.key] ?? '';
+      }
+      tracklist.value = formatTracklist(next.tracks);
+      artwork.describe(
+        next.artwork
+          ? `From the Cover Art Archive · ${next.artwork.widthPx}×${next.artwork.heightPx}`
+          : 'No artwork chosen',
+      );
+    },
+  };
 }
 
-function artworkField(onChange: (changes: Partial<Release>) => void): HTMLElement {
+interface ArtworkField {
+  readonly element: HTMLElement;
+  describe(text: string): void;
+}
+
+function artworkField(onChange: (changes: Partial<Release>) => void): ArtworkField {
   const note = el('span', { class: 'field__note', text: 'No artwork chosen' });
   const input = el('input', {
     class: 'field__file',
@@ -103,13 +132,18 @@ function artworkField(onChange: (changes: Partial<Release>) => void): HTMLElemen
     },
   });
 
-  return el(
-    'div',
-    { class: 'field' },
-    el('span', { class: 'field__label', text: 'Artwork' }),
-    // The native control renders its own text in the browser's locale, so it is
-    // hidden behind a label that says what this app wants it to say.
-    el('label', { class: 'button', attrs: { for: 'field-artwork' } }, 'Choose image…', input),
-    note,
-  );
+  return {
+    element: el(
+      'div',
+      { class: 'field' },
+      el('span', { class: 'field__label', text: 'Artwork' }),
+      // The native control renders its own text in the browser's locale, so it
+      // is hidden behind a label that says what this app wants it to say.
+      el('label', { class: 'button', attrs: { for: 'field-artwork' } }, 'Choose image…', input),
+      note,
+    ),
+    describe(text) {
+      note.textContent = text;
+    },
+  };
 }

@@ -2,11 +2,14 @@ import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import { parseTracklist } from '../domain/tracklist.ts';
+import { createFetchHttpClient } from '../metadata/http.ts';
+import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
 import { createCanvasTextMeasurer, fontsReady } from '../render/canvas-text-measurer.ts';
 import { renderSheets } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
 import { el } from './dom.ts';
 import { createReleaseForm } from './release-form.ts';
+import { createReleaseSearch } from './release-search.ts';
 import { createSheetControls } from './sheet-controls.ts';
 import { createSheetPreview } from './sheet-preview.ts';
 
@@ -53,6 +56,7 @@ export function createWorkspace(): HTMLElement {
 
   const measure = createCanvasTextMeasurer();
   const preview = createSheetPreview();
+  const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
 
   const design = (): ReleaseDesign => ({
     release,
@@ -73,6 +77,13 @@ export function createWorkspace(): HTMLElement {
     refresh();
   });
 
+  // A looked-up Release replaces what the fields show, and stays editable.
+  const search = createReleaseSearch(metadata, (found) => {
+    release = { ...found, id: release.id };
+    form.setRelease(release);
+    refresh();
+  });
+
   const controls = createSheetControls(sheetConfig, (changes) => {
     sheetConfig = { ...sheetConfig, ...changes };
     refresh();
@@ -85,7 +96,7 @@ export function createWorkspace(): HTMLElement {
   return el(
     'div',
     { class: 'workspace' },
-    el('div', { class: 'workspace__column' }, form, controls),
+    el('div', { class: 'workspace__column' }, search, form.element, controls),
     preview.element,
   );
 }
