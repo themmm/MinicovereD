@@ -1,9 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { ATTRIBUTIONS, DATA_SOURCES, licenseTextFor, PERMISSIVE_LICENSES } from './attributions.ts';
+import {
+  ATTRIBUTIONS,
+  DATA_SOURCES,
+  licenseTextFor,
+  OWN_ARTWORK,
+  PERMISSIVE_LICENSES,
+} from './attributions.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -15,6 +21,21 @@ interface PackageManifest {
 
 const readManifest = (packageName: string): PackageManifest =>
   JSON.parse(readFileSync(join(repoRoot, 'node_modules', packageName, 'package.json'), 'utf8'));
+
+/**
+ * Packages that reach the browser without being runtime dependencies.
+ *
+ * vite-plugin-pwa compiles workbox into the client bundle to register the
+ * service worker, so it ships from a devDependency — `dist/pwa/assets/` holds
+ * `workbox-window.prod.es5-*.js` and the generated `sw.js` pulls workbox
+ * runtime chunks. ADR-0003 is a promise about what reaches the user, not about
+ * which section of package.json a name sits in.
+ *
+ * Named rather than walked: their manifests depend on `@types/*` packages,
+ * which are declaration files and ship nothing, and demanding attribution for
+ * those would be a claim about the build that is not true.
+ */
+const SHIPPED_VIA_BUILD = ['workbox-window', 'workbox-core'];
 
 /** Every npm package that ships to the user, resolved from disk (no network, no npm CLI). */
 function shippedPackages(): string[] {
@@ -30,8 +51,36 @@ function shippedPackages(): string[] {
 
   const root = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as PackageManifest;
   walk(root.dependencies);
+  for (const name of SHIPPED_VIA_BUILD) seen.add(name);
   return [...seen].sort();
 }
+
+/**
+ * Directories whose every file ships — copied into the build as-is, or
+ * imported by the app and compiled in.
+ */
+const ASSET_DIRECTORIES = ['assets', 'public'];
+
+/** Every shipped file that is not code, repo-relative and slash-separated. */
+function shippedAssets(): string[] {
+  const found: string[] = [];
+
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      // Dotfiles are the operating system's business, not the build's.
+      if (entry.name.startsWith('.')) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else found.push(relative(repoRoot, path).split(sep).join('/'));
+    }
+  };
+
+  for (const directory of ASSET_DIRECTORIES) walk(join(repoRoot, directory));
+  return found.sort();
+}
+
+/** Files some attribution entry says it covers. */
+const attributedFiles = (): string[] => ATTRIBUTIONS.flatMap((entry) => entry.files ?? []);
 
 const claimedPackages = (): string[] =>
   ATTRIBUTIONS.map((entry) => entry.packageName).filter((name): name is string => !!name);
@@ -129,6 +178,29 @@ describe('attribution manifest (ADR-0003)', () => {
       expect(source.url, source.name).toMatch(/^https:\/\//);
       expect(source.terms.length, source.name).toBeGreaterThan(40);
     }
+  });
+
+  it('accounts for every shipped asset, as our own work or as someone else’s', () => {
+    // The point is not that everything is credited — the Mark is ours and
+    // needs no credit — but that nothing reaches a user unexamined.
+    const accounted = new Set([...OWN_ARTWORK, ...attributedFiles()]);
+
+    expect(shippedAssets().filter((file) => !accounted.has(file))).toEqual([]);
+  });
+
+  it('claims no asset that is not in the build', () => {
+    const present = new Set(shippedAssets());
+
+    expect([...OWN_ARTWORK, ...attributedFiles()].filter((file) => !present.has(file))).toEqual([]);
+  });
+
+  it('attributes the workbox that vite-plugin-pwa compiles into the bundle', () => {
+    // It ships from a devDependency, which is exactly the shape of gap this
+    // check exists to close.
+    const workbox = ATTRIBUTIONS.filter((entry) => entry.packageName?.startsWith('workbox-'));
+
+    expect(workbox.map((entry) => entry.packageName).sort()).toEqual(['workbox-core', 'workbox-window']);
+    expect(workbox.every((entry) => entry.license === 'MIT')).toBe(true);
   });
 
   it('lists no entry twice', () => {

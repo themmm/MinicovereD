@@ -28,3 +28,29 @@ export interface Release {
   readonly tracks: readonly Track[];
   readonly artwork?: Artwork;
 }
+
+/**
+ * Counts the Releases this session has started by hand, so two started in the
+ * same millisecond are still two Releases. It resets on reload, which is why
+ * the clock is in the id as well: a fresh count cannot collide with an id
+ * already sitting in a saved project.
+ */
+let startedByHand = 0;
+
+/**
+ * An id for a Release nobody looked up.
+ *
+ * A looked-up Release is identified by its MusicBrainz id. One typed in from a
+ * shelf — a mixtape, a promo, anything the database has never heard of — has
+ * nothing to be identified by, so it is given something that cannot be
+ * mistaken for an MBID.
+ */
+export function newReleaseId(): string {
+  startedByHand += 1;
+  return `hand-${Date.now().toString(36)}-${startedByHand}`;
+}
+
+/** A Release with nothing in it yet: the first thing an empty workspace makes. */
+export function blankRelease(): Release {
+  return { id: newReleaseId(), artist: '', album: '', tracks: [] };
+}

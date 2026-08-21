@@ -181,6 +181,12 @@ body {
   min-width: 0;
 }
 
+/* The panels that show the selected Release: one replaceable block in the
+   column, laid out as if they were still direct children of it. */
+.workspace__panels {
+  display: contents;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

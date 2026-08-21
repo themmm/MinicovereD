@@ -40,9 +40,30 @@ export interface Attribution {
   readonly url: string;
   /** The npm package this entry covers, when it covers one. */
   readonly packageName?: string;
+  /**
+   * Repo-relative files this entry covers, for anything that is not an npm
+   * package. The completeness check reads these, so an asset added to the
+   * build without a line here fails the suite rather than shipping unexamined.
+   */
+  readonly files?: readonly string[];
   /** Anything a reader needs to know beyond the license — a trademark, say. */
   readonly note?: string;
 }
+
+/**
+ * Files that ship and that this project drew itself.
+ *
+ * Nobody has to be credited for them, but they still have to be *accounted
+ * for*: ADR-0003 is a promise about everything that reaches a user, and the
+ * only way to keep it is for every shipped file to be either attributed or
+ * claimed. Adding an icon without adding it here fails the compliance test.
+ */
+export const OWN_ARTWORK: readonly string[] = [
+  'assets/logo.svg',
+  'public/icons/icon-192.png',
+  'public/icons/icon-512.png',
+  'public/icons/icon-maskable-512.png',
+];
 
 const LICENSE_TEXTS: Readonly<Record<string, string>> = {
   MIT: mit,
@@ -122,6 +143,7 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     license: 'LicenseRef-PD-textlogo',
     copyright: 'Sony Corporation',
     url: 'https://commons.wikimedia.org/wiki/File:MiniDisc-Logo.svg',
+    files: ['assets/minidisc-logo.svg'],
     note:
       'MiniDisc is a trademark of Sony. The mark is below the threshold of originality for ' +
       'copyright and is bundled as an optional asset that any design can switch off (ADR-0004).',
@@ -161,6 +183,28 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     copyright: 'Copyright (C) 2014-2017 by Vitaly Puzrin and Andrei Tuputcyn',
     url: 'https://github.com/nodeca/pako',
     packageName: 'pako',
+  },
+  {
+    // Not a dependency of this project — vite-plugin-pwa compiles it into the
+    // client bundle to register the service worker. It still ships, so it is
+    // still attributed; ADR-0003 is about what reaches the user, not about
+    // which section of package.json a name sits in.
+    name: 'workbox-window',
+    kind: 'library',
+    version: '7.4.1',
+    license: 'MIT',
+    copyright: 'Copyright 2018 Google LLC',
+    url: 'https://github.com/GoogleChrome/workbox',
+    packageName: 'workbox-window',
+  },
+  {
+    name: 'workbox-core',
+    kind: 'library',
+    version: '7.4.1',
+    license: 'MIT',
+    copyright: 'Copyright 2018 Google LLC',
+    url: 'https://github.com/GoogleChrome/workbox',
+    packageName: 'workbox-core',
   },
   {
     name: 'tslib',
