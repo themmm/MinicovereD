@@ -2,6 +2,7 @@ import mit from './licenses/MIT.txt?raw';
 import ofl from './licenses/OFL-1.1.txt?raw';
 import zeroBsd from './licenses/0BSD.txt?raw';
 import zlib from './licenses/Zlib.txt?raw';
+import publicDomainTextLogo from './licenses/PD-textlogo.txt?raw';
 
 /**
  * ADR-0003: everything that ships must be free/open source under a permissive
@@ -11,14 +12,23 @@ import zlib from './licenses/Zlib.txt?raw';
  */
 
 /**
- * The licenses mdcovergen is allowed to ship under. An id may only appear here
- * once its text is bundled, so the dialog can always show it offline.
+ * The licenses mdcovergen is allowed to ship under. SPDX ids, plus SPDX's own
+ * `LicenseRef-` form for terms that have no id — the MiniDisc mark is public
+ * domain for copyright purposes but is nobody's standard license. An id may
+ * only appear here once its text is bundled, so the dialog can always show it
+ * offline.
  */
-export const PERMISSIVE_LICENSES = ['MIT', 'MIT AND Zlib', 'OFL-1.1', '0BSD'] as const;
+export const PERMISSIVE_LICENSES = [
+  'MIT',
+  'MIT AND Zlib',
+  'OFL-1.1',
+  '0BSD',
+  'LicenseRef-PD-textlogo',
+] as const;
 
 export type LicenseId = (typeof PERMISSIVE_LICENSES)[number];
 
-export type AttributionKind = 'font' | 'library';
+export type AttributionKind = 'font' | 'library' | 'asset';
 
 export interface Attribution {
   /** Human-readable name, as shown in the dialog. */
@@ -30,6 +40,8 @@ export interface Attribution {
   readonly url: string;
   /** The npm package this entry covers, when it covers one. */
   readonly packageName?: string;
+  /** Anything a reader needs to know beyond the license — a trademark, say. */
+  readonly note?: string;
 }
 
 const LICENSE_TEXTS: Readonly<Record<string, string>> = {
@@ -37,6 +49,7 @@ const LICENSE_TEXTS: Readonly<Record<string, string>> = {
   'OFL-1.1': ofl,
   '0BSD': zeroBsd,
   Zlib: zlib,
+  'LicenseRef-PD-textlogo': publicDomainTextLogo,
 };
 
 /**
@@ -101,6 +114,17 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     copyright: 'Copyright Google Inc.',
     url: 'https://fontsource.org/fonts/noto-sans-jp',
     packageName: '@fontsource/noto-sans-jp',
+  },
+  {
+    name: 'MiniDisc logo',
+    kind: 'asset',
+    version: 'Commons revision',
+    license: 'LicenseRef-PD-textlogo',
+    copyright: 'Sony Corporation',
+    url: 'https://commons.wikimedia.org/wiki/File:MiniDisc-Logo.svg',
+    note:
+      'MiniDisc is a trademark of Sony. The mark is below the threshold of originality for ' +
+      'copyright and is bundled as an optional asset that any design can switch off (ADR-0004).',
   },
   {
     name: 'pdf-lib',

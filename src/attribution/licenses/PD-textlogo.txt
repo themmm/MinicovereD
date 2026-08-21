@@ -1,0 +1,21 @@
+Public domain — below the threshold of originality (PD-textlogo)
+
+This mark consists only of simple geometric shapes and text. It does not meet
+the threshold of originality required for copyright protection, and is
+therefore in the public domain as far as copyright is concerned.
+
+TRADEMARK NOTICE
+
+Copyright is not the only right that can apply to a logo. This mark is a
+registered trademark of its owner. Trademark law restricts use that could
+confuse the public about the origin of goods or services, or that implies an
+endorsement or affiliation that does not exist. Being free of copyright does
+not make a mark free of those restrictions.
+
+mdcovergen bundles this mark as an optional asset for personal use, matching
+the look of original inserts, and every design can switch it off without
+breaking. It does not claim any association with, sponsorship by, or
+endorsement from the trademark owner. Anyone redistributing or building on
+mdcovergen should satisfy themselves that their own use is lawful in their
+jurisdiction; see docs/adr/0004-bundle-official-minidisc-logo.md for the
+decision and the risk it consciously accepts.

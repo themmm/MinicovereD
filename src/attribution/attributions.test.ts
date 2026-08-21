@@ -42,6 +42,7 @@ const LICENSE_MARKERS: Readonly<Record<string, string>> = {
   'OFL-1.1': 'SIL OPEN FONT LICENSE',
   '0BSD': 'Permission to use, copy, modify, and/or distribute',
   Zlib: 'zlib License',
+  'LicenseRef-PD-textlogo': 'below the threshold of originality',
 };
 
 /** SPDX expressions are compared normalised, since `(MIT AND Zlib)` and `MIT AND Zlib` are one license. */
@@ -63,6 +64,15 @@ describe('attribution manifest (ADR-0003)', () => {
       (entry) => entry.packageName && readManifest(entry.packageName).version !== entry.version,
     );
     expect(wrong.map((entry) => entry.name)).toEqual([]);
+  });
+
+  it('attributes the bundled MiniDisc logo with its trademark note (ADR-0004)', () => {
+    const logo = ATTRIBUTIONS.find((entry) => entry.name === 'MiniDisc logo');
+
+    expect(logo?.kind).toBe('asset');
+    expect(logo?.note).toMatch(/trademark/i);
+    // The license text has to say what "public domain" does not cover.
+    expect(licenseTextFor('LicenseRef-PD-textlogo')).toMatch(/trademark/i);
   });
 
   it('states the license the installed package actually declares', () => {

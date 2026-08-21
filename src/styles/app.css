@@ -193,6 +193,35 @@ body {
   gap: 8px 14px;
 }
 
+.toggles--stacked {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.swatches {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.swatch__input {
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -496,6 +525,12 @@ label.button {
 .credit__copyright {
   font-size: 12.5px;
   color: var(--ink-soft);
+  margin: 4px 0 0;
+}
+
+.credit__note {
+  font-size: 12.5px;
+  color: var(--accent);
   margin: 4px 0 0;
 }
 

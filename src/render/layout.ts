@@ -1,4 +1,3 @@
-import type { Artwork } from '../domain/release.ts';
 import type { JCardPanel, PartKind } from '../domain/parts.ts';
 import type { PaperSize } from '../domain/paper.ts';
 import type { Mm, Point, Rect } from '../domain/units.ts';
@@ -21,6 +20,16 @@ export interface TextStyle {
   readonly rotationDeg?: -90 | 0 | 90;
 }
 
+/**
+ * Anything drawable from a data URL at a known intrinsic size — cover art, or
+ * the bundled MiniDisc logo. `Artwork` satisfies it structurally.
+ */
+export interface ImageSource {
+  readonly dataUrl: string;
+  readonly widthPx: number;
+  readonly heightPx: number;
+}
+
 export type DrawOp =
   | { readonly op: 'fill-rect'; readonly rect: Rect; readonly color: string }
   | { readonly op: 'fill-polygon'; readonly points: readonly Point[]; readonly color: string }
@@ -28,9 +37,13 @@ export type DrawOp =
   | {
       readonly op: 'image';
       readonly rect: Rect;
-      readonly artwork: Artwork;
+      readonly source: ImageSource;
       /** `cover` fills the rect and crops; `contain` fits inside it. */
       readonly fit: 'cover' | 'contain';
+      /** What this image is, so a Sheet can be inspected without decoding it. */
+      readonly role: 'artwork' | 'logo';
+      /** Rotation about the rect's centre, clockwise. The Spine reads sideways. */
+      readonly rotationDeg?: -90 | 0 | 90;
     }
   | { readonly op: 'text'; readonly text: string; readonly at: Point; readonly style: TextStyle };
 

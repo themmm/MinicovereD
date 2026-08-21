@@ -11,6 +11,7 @@ import { el } from './dom.ts';
 const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
   { kind: 'font', title: 'Bundled fonts' },
   { kind: 'library', title: 'Bundled libraries' },
+  { kind: 'asset', title: 'Bundled assets' },
 ];
 
 /** Lines that only render completely from the bundled fonts — the offline typography proof. */
@@ -52,6 +53,7 @@ function creditEntry(attribution: Attribution): HTMLElement {
       el('span', { class: 'credit__license', text: attribution.license }),
     ),
     el('p', { class: 'credit__copyright', text: attribution.copyright }),
+    ...(attribution.note ? [el('p', { class: 'credit__note', text: attribution.note })] : []),
     el(
       'details',
       {},

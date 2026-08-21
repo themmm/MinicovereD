@@ -5,9 +5,15 @@ import { parseTracklist } from '../domain/tracklist.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
 import { createCanvasTextMeasurer, fontsReady } from '../render/canvas-text-measurer.ts';
-import { renderSheets } from '../render/sheet-renderer.ts';
-import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
+import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
+import type {
+  ReleaseDesign,
+  SheetConfig,
+  TemplateId,
+  TemplateParams,
+} from '../render/sheet-renderer.ts';
 import { errorMessage } from '../errors.ts';
+import { createDesignControls } from './design-controls.ts';
 import { el } from './dom.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
@@ -54,6 +60,8 @@ export function createWorkspace(): HTMLElement {
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
     parts: PART_KINDS,
   };
+  let templateId: TemplateId = 'classic';
+  let params: TemplateParams = DEFAULT_TEMPLATE_PARAMS;
 
   const measure = createCanvasTextMeasurer();
   const preview = createSheetPreview();
@@ -61,7 +69,8 @@ export function createWorkspace(): HTMLElement {
 
   const design = (): ReleaseDesign => ({
     release,
-    templateId: 'classic',
+    templateId,
+    params,
     dimensions: DEFAULT_PART_DIMENSIONS,
   });
 
@@ -86,6 +95,12 @@ export function createWorkspace(): HTMLElement {
     refresh();
   });
 
+  const designControls = createDesignControls({ templateId, params }, (change) => {
+    templateId = change.templateId ?? templateId;
+    params = change.params ?? params;
+    refresh();
+  });
+
   const controls = createSheetControls(sheetConfig, (changes) => {
     sheetConfig = { ...sheetConfig, ...changes };
     refresh();
@@ -98,7 +113,7 @@ export function createWorkspace(): HTMLElement {
   return el(
     'div',
     { class: 'workspace' },
-    el('div', { class: 'workspace__column' }, search, form.element, controls),
+    el('div', { class: 'workspace__column' }, search, form.element, designControls, controls),
     preview.element,
   );
 }

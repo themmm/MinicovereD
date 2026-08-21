@@ -2,12 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
 import { rectsOverlap } from '../domain/units.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, jCardSize, PART_KINDS } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
-import { renderSheets } from './sheet-renderer.ts';
-import type { ReleaseDesign, SheetConfig, SheetLayout, TextMeasurer } from './sheet-renderer.ts';
+import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from './sheet-renderer.ts';
+import type {
+  ReleaseDesign,
+  SheetConfig,
+  SheetLayout,
+  TemplateId,
+  TemplateParams,
+  TextMeasurer,
+} from './sheet-renderer.ts';
 
 /**
  * A deterministic stand-in for the browser's text metrics: half an em per Latin
@@ -33,9 +40,13 @@ const aRelease = (overrides: Partial<Release> = {}): Release => ({
   ...overrides,
 });
 
-const aDesign = (release: Release = aRelease()): ReleaseDesign => ({
+const aDesign = (
+  release: Release = aRelease(),
+  overrides: { templateId?: TemplateId; params?: Partial<TemplateParams> } = {},
+): ReleaseDesign => ({
   release,
-  templateId: 'classic',
+  templateId: overrides.templateId ?? 'classic',
+  params: { ...DEFAULT_TEMPLATE_PARAMS, ...overrides.params },
   dimensions: DEFAULT_PART_DIMENSIONS,
 });
 
@@ -225,7 +236,7 @@ describe('SheetRenderer — Release content', () => {
 
     for (const part of ['jcard', 'label'] as const) {
       const placement = sheet?.placements.find((candidate) => candidate.part === part);
-      const images = (placement?.ops ?? []).filter((op) => op.op === 'image');
+      const images = (placement?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'artwork');
       expect(images, `${part} artwork`).toHaveLength(1);
     }
   });
@@ -288,5 +299,197 @@ describe('SheetRenderer — Sheet configuration', () => {
 
     expect(placements).toHaveLength(24);
     expect(sheets.length).toBeGreaterThan(1);
+  });
+});
+
+describe('SheetRenderer — Template parameters', () => {
+  const opsFor = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label') => {
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    return sheet?.placements.find((placement) => placement.part === part)?.ops ?? [];
+  };
+
+  const textsOn = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label'): string[] =>
+    opsFor(design, part).flatMap((op) => (op.op === 'text' ? [op.text] : []));
+
+  const logosOn = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label') =>
+    opsFor(design, part).filter((op) => op.op === 'image' && op.role === 'logo');
+
+  it('lets each Release choose its own Template', () => {
+    const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
+    const classic = aDesign(aRelease({ id: 'a', artwork }), { templateId: 'classic' });
+    const fullbleed = aDesign(aRelease({ id: 'b', artwork }), { templateId: 'fullbleed' });
+
+    const artworkRect = (design: ReleaseDesign): Rect => {
+      const op = opsFor(design, 'jcard').find((candidate) => candidate.op === 'image' && candidate.role === 'artwork');
+      if (op?.op !== 'image') throw new Error('no artwork drawn');
+      return op.rect;
+    };
+
+    // Classic insets the artwork as a square inside the Front Panel;
+    // Full-bleed runs it to the panel's edges. Same Release, same Sheet.
+    const inset = artworkRect(classic);
+    const bleed = artworkRect(fullbleed);
+
+    expectMm(inset.width, 62, 'Classic artwork width');
+    expectMm(inset.height, 62, 'Classic artwork height');
+    expectMm(bleed.width, 68, 'Full-bleed artwork width');
+    expectMm(bleed.height, 79, 'Full-bleed artwork height');
+  });
+
+  it('paints with the colours the Release was given', () => {
+    const green = aDesign(aRelease(), {
+      params: { paperColor: '#eaffea', inkColor: '#003300', accentColor: '#007700' },
+    });
+
+    const colours = new Set(
+      opsFor(green, 'back-card').flatMap((op) =>
+        op.op === 'fill-rect' ? [op.color] : op.op === 'text' ? [op.style.color] : op.op === 'line' ? [op.color] : [],
+      ),
+    );
+
+    expect(colours).toContain('#eaffea');
+    expect(colours).toContain('#003300');
+    expect(colours).toContain('#007700');
+  });
+
+  it('leaves the artwork clean when overlay text is switched off', () => {
+    const withText = aDesign(aRelease(), { templateId: 'fullbleed' });
+    const withoutText = aDesign(aRelease(), {
+      templateId: 'fullbleed',
+      params: { showOverlayText: false },
+    });
+
+    expect(textsOn(withText, 'jcard')).toContain('Glen Campbell');
+    expect(textsOn(withoutText, 'jcard')).not.toContain('Glen Campbell');
+    // The Spine still carries artist and album: it is not "over the cover".
+    expect(textsOn(withoutText, 'jcard')).toContain('Glen Campbell — Wichita Lineman');
+    // And the Back Card is untouched, or the tracklist would vanish with it:
+    // album, artist and one line per track.
+    expect(textsOn(withoutText, 'back-card')).toHaveLength(2 + aRelease().tracks.length);
+  });
+
+  it('puts the MiniDisc logo on Front Panel and Spine when it is enabled', () => {
+    const design = aDesign(aRelease(), { params: { showLogo: true } });
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const panels = Object.fromEntries((jcard?.panels ?? []).map((p) => [p.panel, p.rect]));
+    const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
+
+    expect(logos).toHaveLength(2);
+    const within = (rect: { x: number; width: number }, x: number): boolean =>
+      x >= rect.x && x <= rect.x + rect.width;
+    const spine = panels['spine'];
+    const front = panels['front-panel'];
+    if (!spine || !front) throw new Error('J-Card has no panels');
+
+    expect(logos.some((op) => op.op === 'image' && within(spine, op.rect.x))).toBe(true);
+    expect(logos.some((op) => op.op === 'image' && within(front, op.rect.x))).toBe(true);
+  });
+
+  it('leaves the logo off entirely when it is disabled', () => {
+    const design = aDesign(aRelease(), { params: { showLogo: false } });
+
+    expect(logosOn(design, 'jcard')).toEqual([]);
+  });
+
+  it('keeps the logo inside the Part it sits on', () => {
+    const design = aDesign(aRelease(), { params: { showLogo: true } });
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const { width, height } = jCardSize(DEFAULT_PART_DIMENSIONS.jcard);
+    const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
+
+    expect(logos, 'there are logos to check').toHaveLength(2);
+    for (const op of logos) {
+      if (op.op !== 'image') continue;
+      expect(op.rect.x, 'logo left').toBeGreaterThanOrEqual(0);
+      expect(op.rect.y, 'logo top').toBeGreaterThanOrEqual(0);
+      expect(op.rect.x + op.rect.width, 'logo right').toBeLessThanOrEqual(width);
+      expect(op.rect.y + op.rect.height, 'logo bottom').toBeLessThanOrEqual(height);
+    }
+  });
+
+  it('never runs the Front Panel type through the logo, however long the name', () => {
+    // The failure this guards: a wide artist, ellipsised to the full panel
+    // width and centred, crossing a logo anchored in the bottom-right corner.
+    const wordy = aRelease({
+      artist: 'Godspeed You! Black Emperor',
+      album: 'Lift Your Skinny Fists Like Antennas to Heaven',
+    });
+    const design = aDesign(wordy, { params: { showLogo: true, showOverlayText: true } });
+    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const ops = jcard?.ops ?? [];
+
+    const logo = ops.find((op) => op.op === 'image' && op.role === 'logo' && !op.rotationDeg);
+    if (logo?.op !== 'image') throw new Error('no upright logo on the Front Panel');
+
+    const frontPanel = jcard?.panels?.find((panel) => panel.panel === 'front-panel')?.rect;
+    if (!frontPanel) throw new Error('J-Card has no Front Panel');
+
+    for (const op of ops) {
+      if (op.op !== 'text' || op.style.rotationDeg) continue;
+      if (op.at.x < frontPanel.x) continue;
+
+      const width = testMeasurer.widthMm(op.text, op.style);
+      const left = op.style.align === 'center' ? op.at.x - width / 2 : op.at.x;
+      const right = left + width;
+      const overlapsHorizontally = right > logo.rect.x && left < logo.rect.x + logo.rect.width;
+      const overlapsVertically =
+        op.at.y + op.style.sizeMm > logo.rect.y && op.at.y < logo.rect.y + logo.rect.height;
+
+      expect(
+        overlapsHorizontally && overlapsVertically,
+        `"${op.text}" runs into the logo`,
+      ).toBe(false);
+    }
+  });
+
+  it('turns the Spine logo with the Spine type, so both read the same way', () => {
+    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
+    if (!spine) throw new Error('J-Card has no Spine');
+
+    const onSpine = (x: number): boolean => x >= spine.x && x <= spine.x + spine.width;
+    const spineLogo = (jcard?.ops ?? []).find(
+      (op) => op.op === 'image' && op.role === 'logo' && onSpine(op.rect.x),
+    );
+    const spineText = (jcard?.ops ?? []).find((op) => op.op === 'text' && onSpine(op.at.x));
+
+    expect(spineLogo?.op === 'image' && spineLogo.rotationDeg).toBe(-90);
+    expect(spineText?.op === 'text' && spineText.style.rotationDeg).toBe(-90);
+  });
+
+  it('keeps Spine type readable however dark the accent colour is', () => {
+    const dark = aDesign(aRelease(), {
+      params: { accentColor: '#101418', paperColor: '#0b0b0b', inkColor: '#0b0b0b' },
+    });
+    const [sheet] = renderSheets([dark], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
+    if (!spine) throw new Error('J-Card has no Spine');
+
+    const spineText = (jcard?.ops ?? []).find(
+      (op) => op.op === 'text' && op.at.x >= spine.x && op.at.x <= spine.x + spine.width,
+    );
+
+    // Dark paper on a dark accent would print the Spine as a solid block.
+    expect(spineText?.op === 'text' && spineText.style.color).toBe('#ffffff');
+  });
+
+  it('reads the Spine bottom-to-top, the way a shelved case is read', () => {
+    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
+    if (!spine) throw new Error('J-Card has no Spine');
+
+    const spineText = (jcard?.ops ?? []).find(
+      (op) => op.op === 'text' && op.at.x >= spine.x && op.at.x <= spine.x + spine.width,
+    );
+
+    expect(spineText?.op).toBe('text');
+    expect(spineText?.op === 'text' && spineText.style.rotationDeg).toBe(-90);
+    expect(spineText?.op === 'text' && spineText.text).toBe('Glen Campbell — Wichita Lineman');
   });
 });

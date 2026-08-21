@@ -21,7 +21,7 @@ The 68 mm face of the J-Card visible through the case front.
 _Avoid_: Cover, Vorderseite
 
 **Spine**:
-The 5.5 mm edge of the J-Card visible when the case is shelved. Carries artist, album, and the logo.
+The 5.5 mm edge of the J-Card visible when the case is shelved. Carries artist, album, and the logo. Everything on it reads **bottom-to-top**, so a case standing on a shelf is read by tilting the head to the right; the logo turns with the type rather than sitting upright against it.
 _Avoid_: Edge
 
 **Back Card**:
