@@ -1,10 +1,12 @@
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import { parseTracklist } from '../domain/tracklist.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
 import { createCanvasTextMeasurer, fontsReady } from '../render/canvas-text-measurer.ts';
+import { renderCalibrationSheet } from '../render/calibration.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
 import type {
   ReleaseDesign,
@@ -14,6 +16,7 @@ import type {
 } from '../render/sheet-renderer.ts';
 import { errorMessage } from '../errors.ts';
 import { createDesignControls } from './design-controls.ts';
+import { createLabelControls } from './label-controls.ts';
 import { el } from './dom.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
@@ -62,17 +65,13 @@ export function createWorkspace(): HTMLElement {
   };
   let templateId: TemplateId = 'classic';
   let params: TemplateParams = DEFAULT_TEMPLATE_PARAMS;
+  let dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS;
 
   const measure = createCanvasTextMeasurer();
   const preview = createSheetPreview();
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
 
-  const design = (): ReleaseDesign => ({
-    release,
-    templateId,
-    params,
-    dimensions: DEFAULT_PART_DIMENSIONS,
-  });
+  const design = (): ReleaseDesign => ({ release, templateId, params, dimensions });
 
   function refresh(): void {
     try {
@@ -101,9 +100,25 @@ export function createWorkspace(): HTMLElement {
     refresh();
   });
 
+  const labelControls = createLabelControls(dimensions.label, (label: LabelDimensions) => {
+    dimensions = { ...dimensions, label };
+    refresh();
+  });
+
   const controls = createSheetControls(sheetConfig, (changes) => {
     sheetConfig = { ...sheetConfig, ...changes };
     refresh();
+  });
+
+  // The calibration sheet is not a Release: it is the ruler you check the
+  // printer against before trusting anything else this app produced.
+  preview.addAction('Calibration sheet', () => {
+    const { layout } = renderCalibrationSheet(
+      { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
+      dimensions,
+      measure,
+    );
+    preview.show([layout], 'mdcovergen-calibration.pdf');
   });
 
   // Fonts are bundled but still load asynchronously; measuring before they are
@@ -113,7 +128,15 @@ export function createWorkspace(): HTMLElement {
   return el(
     'div',
     { class: 'workspace' },
-    el('div', { class: 'workspace__column' }, search, form.element, designControls, controls),
+    el(
+      'div',
+      { class: 'workspace__column' },
+      search,
+      form.element,
+      designControls,
+      labelControls,
+      controls,
+    ),
     preview.element,
   );
 }

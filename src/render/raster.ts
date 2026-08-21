@@ -214,6 +214,10 @@ export function drawSheet(
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, width, height);
   for (const placement of layout.placements) drawPlacement(surface, placement);
+
+  // Sheet-level marks are drawn in paper coordinates, on top of any Parts.
+  for (const op of layout.ops ?? []) drawOp(surface, op);
+  for (const guide of layout.guides ?? []) drawGuide(surface, guide);
 }
 
 async function decodeArtwork(dataUrl: string): Promise<HTMLImageElement> {

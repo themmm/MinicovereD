@@ -31,9 +31,52 @@ export interface JCardDimensions {
 export interface BackCardDimensions extends Size {}
 
 export interface LabelDimensions extends Size {
-  /** Length of the cartridge's diagonally cut corner along each edge it cuts. */
+  /** The diagonally cut corner that matches the cartridge (CONTEXT.md: Label). */
+  readonly notch: boolean;
+  /** Length of the notch along each of the two edges it cuts. */
   readonly notchSize: Mm;
 }
+
+/**
+ * Named starting points for the Label. The sources disagree by a millimetre or
+ * two — Sony's blank-label template says ~35.75 × 52.75, measured originals
+ * ~34.5 × 52.5, and the jkap generator uses 38 × 54 — which is why these are
+ * presets to adjust from rather than constants, and why the calibration sheet
+ * exists to settle the argument with a ruler.
+ */
+export type LabelPresetId = 'classic' | 'full';
+
+export interface LabelPreset {
+  readonly id: LabelPresetId;
+  readonly name: string;
+  /** Where the numbers come from, so a collector can judge which to trust. */
+  readonly provenance: string;
+  readonly dimensions: LabelDimensions;
+}
+
+export const LABEL_PRESETS: readonly LabelPreset[] = [
+  {
+    id: 'classic',
+    name: 'Classic',
+    provenance: 'Close to measured original stickers; leaves the cartridge’s cut corner clear.',
+    dimensions: { width: 35, height: 52.5, notch: true, notchSize: 6 },
+  },
+  {
+    id: 'full',
+    name: 'Full',
+    provenance: 'Covers the whole cartridge face, corner included, as the jkap generator does.',
+    dimensions: { width: 38, height: 54, notch: false, notchSize: 6 },
+  },
+];
+
+export function labelPreset(id: LabelPresetId): LabelPreset {
+  const preset = LABEL_PRESETS.find((candidate) => candidate.id === id);
+  if (!preset) throw new Error(`mdcovergen: unknown Label preset "${id}"`);
+  return preset;
+}
+
+/** How far the Label may be nudged from a preset, and in what steps. */
+export const LABEL_SIZE_RANGE = { min: 20, max: 60, stepMm: 0.1 } as const;
 
 export interface PartDimensions {
   readonly jcard: JCardDimensions;
@@ -44,7 +87,7 @@ export interface PartDimensions {
 export const DEFAULT_PART_DIMENSIONS: PartDimensions = {
   jcard: { innerFlapWidth: 14, spineWidth: 5.5, frontPanelWidth: 68, height: 79 },
   backCard: { width: 69, height: 79 },
-  label: { width: 35, height: 52.5, notchSize: 6 },
+  label: { width: 35, height: 52.5, notch: true, notchSize: 6 },
 };
 
 export function jCardSize(dimensions: JCardDimensions): Size {
@@ -85,8 +128,8 @@ export function partShape(part: PartKind, dimensions: PartDimensions): PartShape
     case 'back-card':
       return rectangle({ width: dimensions.backCard.width, height: dimensions.backCard.height });
     case 'label': {
-      const { width, height, notchSize } = dimensions.label;
-      if (notchSize <= 0) return rectangle({ width, height });
+      const { width, height, notch, notchSize } = dimensions.label;
+      if (!notch || notchSize <= 0) return rectangle({ width, height });
       // The cartridge's diagonally cut corner (CONTEXT.md: Label).
       return {
         size: { width, height },
