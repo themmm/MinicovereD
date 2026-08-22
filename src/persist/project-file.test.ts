@@ -16,7 +16,7 @@ const design: ReleaseDesign = {
     year: '1968',
     notes: 'Capitol · ST-103',
     tracks: [
-      { position: 1, title: 'Wichita Lineman' },
+      { position: 1, title: 'Wichita Lineman', lengthMs: 187_000 },
       { position: 2, title: '東京は夜の七時' },
     ],
     artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 400 },
@@ -74,6 +74,49 @@ describe('reading a project file back', () => {
     const { designs } = roundTrip();
 
     expect(designs[0]?.release.tracks[1]?.title).toBe('東京は夜の七時');
+  });
+
+  it('carries each track’s playing time, and the absence of one', () => {
+    // A saved project has to reproduce its own design (ADR-0001), and from v1.1
+    // the Back Card sets a duration column — a reader that dropped the times
+    // would reopen the file as a different Part.
+    const { designs } = roundTrip();
+
+    expect(designs[0]?.release.tracks[0]?.lengthMs).toBe(187_000);
+    expect(designs[0]?.release.tracks[1]).not.toHaveProperty('lengthMs');
+  });
+
+  it('refuses a playing time that is not one', () => {
+    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
+      designs: Array<{ release: { tracks: Array<Record<string, unknown>> } }>;
+    };
+    const tracks = written.designs[0]?.release.tracks ?? [];
+    if (tracks[0]) tracks[0]['lengthMs'] = 'four minutes';
+    if (tracks[1]) tracks[1]['lengthMs'] = -5;
+
+    const result = readProjectFile(JSON.stringify(written));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    const restored = designsOf(result.project)[0]?.release.tracks ?? [];
+    expect(restored[0]).not.toHaveProperty('lengthMs');
+    expect(restored[1]).not.toHaveProperty('lengthMs');
+  });
+
+  it('reads a design saved before the artwork could bleed', () => {
+    // v1 files carry version 1 and so do v1.1 files, so there is nothing in the
+    // format to tell them apart: an old project reopens with the new Front
+    // Panel, and the square is a toggle away.
+    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
+      designs: Array<{ params: Record<string, unknown> }>;
+    };
+    delete written.designs[0]?.params['insetArtwork'];
+
+    const result = readProjectFile(JSON.stringify(written));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(false);
   });
 
   it('restores the Sheet configuration, paper and all', () => {

@@ -11,7 +11,15 @@ export interface MbArtistCredit {
 
 export interface MbTrack {
   readonly title?: string;
-  readonly recording?: { readonly title?: string };
+  /**
+   * Playing time in milliseconds, as this pressing has it.
+   *
+   * Separate from the recording's own length, and different from it on real
+   * data: a recording is shared between releases, a track belongs to one of
+   * them, and Discovery's "Aerodynamic" is 207533 here against 207626 there.
+   */
+  readonly length?: number;
+  readonly recording?: { readonly title?: string; readonly length?: number };
 }
 
 export interface MbMedium {

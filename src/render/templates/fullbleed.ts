@@ -3,14 +3,14 @@ import { readableInkFor, withAlpha } from '../colors.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
 import {
   artworkOrPlaceholder,
-  drawBackCard,
   drawJCard,
+  drawTracklist,
   FRONT_LOGO_WIDTH,
   logoOp,
   PAD,
   text,
 } from './shared.ts';
-import type { JCardContext, PartContext, Template, TemplateParams } from './template.ts';
+import type { JCardContext, PartContext, PartDrawing, Template, TemplateParams } from './template.ts';
 
 /**
  * Full-bleed: the artwork runs to the edges of the Front Panel and the type
@@ -21,6 +21,10 @@ import type { JCardContext, PartContext, Template, TemplateParams } from './temp
  * The scrim takes the Release's ink colour, and the type on it is whichever of
  * black or white can be read against that: the collector picks the mood, the
  * Template guarantees it stays legible.
+ *
+ * Its Back Card is the same argument on paper with no picture in it: the ink as
+ * a ground rather than as type, the scrim grown into a solid accent band, and
+ * the tracklist reversed out.
  */
 
 /** How much of the ink colour the scrim keeps — enough to darken artwork under type. */
@@ -113,10 +117,83 @@ function drawLabel(context: PartContext): DrawOp[] {
   ];
 }
 
+/**
+ * The Back Card's masthead: the band it sits in, and the two lines in it.
+ *
+ * The band is 15 mm because the artist starts at `PAD` and is 2.6 mm, the album
+ * starts 1 mm after it and is 4.6 mm, and 3.8 mm of colour below the album is
+ * what stops the bar reading as a caption box cropped too tight.
+ */
+const BACK_BAND_HEIGHT: Mm = 15;
+const BACK_ARTIST_SIZE: Mm = 2.6;
+const BACK_ALBUM_SIZE: Mm = 4.6;
+/** Where the list starts, 3 mm under the band. */
+const BACK_LIST_TOP: Mm = 18;
+
+/**
+ * The Back Card: the Release's ink as a full-bleed ground, a solid accent band
+ * across the top carrying the masthead, and the tracklist reversed out of the
+ * ink below it.
+ *
+ * The band is the Front Panel's device brought round the back. There it is a
+ * scrim — the ink at 62 %, darkening artwork so overlaid type survives it; here
+ * there is no artwork to darken, so it is a solid bar and takes the accent,
+ * which is otherwise spent nowhere on this Template but the Spine.
+ *
+ * Ranged left and artist above album, which is the opposite of Classic on both
+ * counts: a poster leads with the name and hangs everything off one left edge.
+ * The 0.2 mm rule is gone from here too; the band does that job with weight.
+ */
+function drawBackCard(context: PartContext): PartDrawing {
+  const { release, params, size, faces, measure } = context;
+  const bandInk = readableInkFor(params.accentColor);
+  const listInk = readableInkFor(params.inkColor);
+  const contentWidth = size.width - 2 * PAD;
+
+  const artistStyle: TextStyle = {
+    sizeMm: BACK_ARTIST_SIZE,
+    weight: 400,
+    face: faces.display,
+    color: bandInk,
+    align: 'left',
+    baseline: 'top',
+  };
+  const albumStyle: TextStyle = {
+    sizeMm: BACK_ALBUM_SIZE,
+    weight: 700,
+    face: faces.display,
+    color: bandInk,
+    align: 'left',
+    baseline: 'top',
+  };
+
+  const tracklist = drawTracklist(
+    context,
+    {
+      x: PAD,
+      y: BACK_LIST_TOP,
+      width: contentWidth,
+      height: size.height - BACK_LIST_TOP - PAD,
+    },
+    listInk,
+  );
+
+  return {
+    ops: [
+      { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: params.inkColor },
+      { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: BACK_BAND_HEIGHT }, color: params.accentColor },
+      text(release.artist, { x: PAD, y: PAD }, artistStyle, contentWidth, measure),
+      text(release.album, { x: PAD, y: PAD + BACK_ARTIST_SIZE + 1 }, albumStyle, contentWidth, measure),
+      ...tracklist.ops,
+    ],
+    ...(tracklist.warnings ? { warnings: tracklist.warnings } : {}),
+  };
+}
+
 export const FULLBLEED_TEMPLATE: Template = {
   id: 'fullbleed',
   name: 'Full-bleed',
-  description: 'Artwork edge to edge, type as an overlay.',
+  description: 'Artwork edge to edge, type as an overlay, tracklist on colour.',
   /**
    * A poster: a squared grotesque over the artwork and on the Spine, a slab for
    * the reading.

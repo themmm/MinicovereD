@@ -15,7 +15,7 @@ const DISCOVERY_MBID = '5ad66522-edce-3a77-b5fa-7956ee879239';
 
 /**
  * Recorded responses, replayed by URL. Anything the adapter asks for that is
- * not recorded fails the test loudly — that is what makes "never touches the
+ * not recorded fails the test loudly â that is what makes "never touches the
  * live network" a property of the suite rather than a promise.
  */
 interface Recording {
@@ -84,7 +84,7 @@ const adapterOver = (recordings: readonly Recording[] = ALL) => {
   return { adapter: createMetadataAdapter({ http, clock }), http, clock };
 };
 
-describe('MetadataAdapter — search', () => {
+describe('MetadataAdapter â search', () => {
   it('normalises a search hit into Release summaries', async () => {
     const { adapter } = adapterOver();
 
@@ -134,7 +134,7 @@ describe('MetadataAdapter — search', () => {
    * The query these build, read off the URL.
    *
    * The fixtures answer only recorded URLs, so a query nothing was recorded for
-   * is refused — which is the point of the harness. The URL is captured before
+   * is refused â which is the point of the harness. The URL is captured before
    * the refusal, so it is still the thing under test; `sent` throws away the
    * outcome and keeps the request.
    */
@@ -172,7 +172,7 @@ describe('MetadataAdapter — search', () => {
   });
 });
 
-describe('MetadataAdapter — release and tracklist', () => {
+describe('MetadataAdapter â release and tracklist', () => {
   it('normalises a release into the Release domain type', async () => {
     const { adapter } = adapterOver();
 
@@ -183,8 +183,56 @@ describe('MetadataAdapter — release and tracklist', () => {
     expect(release.album).toBe('Discovery');
     expect(release.year).toBe('2001');
     expect(release.tracks).toHaveLength(14);
-    expect(release.tracks[0]).toEqual({ position: 1, title: 'One More Time' });
-    expect(release.tracks[13]).toEqual({ position: 14, title: 'Too Long' });
+    expect(release.tracks[0]).toEqual({ position: 1, title: 'One More Time', lengthMs: 320840 });
+    expect(release.tracks[13]).toEqual({ position: 14, title: 'Too Long', lengthMs: 600293 });
+  });
+
+  it('carries every track’s playing time off the recorded release', async () => {
+    // The Back Card sets a duration column when there is something to put in
+    // it, and this is the only place the numbers can come from: the adapter
+    // dropped everything but position and title until now.
+    const { adapter } = adapterOver();
+
+    const release = await adapter.fetchRelease(DISCOVERY_MBID);
+
+    expect(release.tracks.every((track) => (track.lengthMs ?? 0) > 0)).toBe(true);
+    expect(release.tracks.map((track) => track.lengthMs).slice(0, 3)).toEqual([
+      320840, 207533, 298333,
+    ]);
+  });
+
+  it('prefers the pressing’s own length to the recording’s', async () => {
+    // A recording is shared between releases and a track belongs to one of
+    // them, so the two disagree by a second or so on real data â track 2 of
+    // Discovery is 207533 on this pressing and 207626 on the recording. What
+    // goes on the card is what is on the disc in the collector's hand.
+    const { adapter } = adapterOver();
+
+    const release = await adapter.fetchRelease(DISCOVERY_MBID);
+
+    expect(release.tracks[1]?.lengthMs).toBe(207533);
+  });
+
+  it('falls back to the recording’s length, and then to no length at all', async () => {
+    const payload = JSON.stringify({
+      title: 'Handmade',
+      media: [
+        {
+          tracks: [
+            { title: 'Only the recording knows', recording: { length: 90_000 } },
+            { title: 'Nobody knows' },
+            { title: 'A length that is not one', length: 0 },
+          ],
+        },
+      ],
+    });
+    const { adapter } = adapterOver([
+      { match: (url) => url.includes('/ws/2/release/'), body: payload },
+    ]);
+
+    const release = await adapter.fetchRelease('handmade');
+
+    expect(release.tracks.map((track) => track.lengthMs)).toEqual([90_000, undefined, undefined]);
   });
 
   it('numbers tracks consecutively so the Back Card reads 1..n', async () => {
@@ -204,7 +252,7 @@ describe('MetadataAdapter — release and tracklist', () => {
   });
 });
 
-describe('MetadataAdapter — cover art', () => {
+describe('MetadataAdapter â cover art', () => {
   it('fetches the front cover and sizes it from the image itself', async () => {
     const { adapter } = adapterOver();
 
@@ -228,7 +276,7 @@ describe('MetadataAdapter — cover art', () => {
     const { adapter } = adapterOver([
       releaseLookup,
       // The Archive answers a release with no front cover with a server error,
-      // not a 404 — either way there is simply nothing to print.
+      // not a 404 â either way there is simply nothing to print.
       { match: (url) => url.includes('coverartarchive.org'), status: 500, body: 'no cover' },
     ]);
 
@@ -285,7 +333,7 @@ describe('MetadataAdapter — cover art', () => {
   });
 });
 
-describe('MetadataAdapter — rate limiting', () => {
+describe('MetadataAdapter â rate limiting', () => {
   it('waits out a 503 and tries again rather than reporting a missing album', async () => {
     let attempts = 0;
     const http: HttpClient = {
@@ -320,7 +368,7 @@ describe('MetadataAdapter — rate limiting', () => {
   });
 });
 
-describe('MetadataAdapter — throttled queue', () => {
+describe('MetadataAdapter â throttled queue', () => {
   it('processes the whole queue, reporting progress as it goes', async () => {
     const { adapter } = adapterOver();
     const progress: Array<{ done: number; total: number }> = [];

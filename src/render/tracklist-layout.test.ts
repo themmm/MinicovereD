@@ -39,6 +39,10 @@ const STYLE: TextStyle = {
 const tracks = (count: number, title = 'Track'): Track[] =>
   Array.from({ length: count }, (_, index) => ({ position: index + 1, title: `${title} ${index + 1}` }));
 
+/** The same list, with a playing time on every track. */
+const timed = (count: number, lengthMs = 200_000): Track[] =>
+  tracks(count).map((track) => ({ ...track, lengthMs }));
+
 const layout = (count: number, title?: string) =>
   layOutTracklist(tracks(count, title), BOX, STYLE, measurer);
 
@@ -185,5 +189,115 @@ describe('laying out a tracklist in other scripts', () => {
     expect(text.endsWith('…'), 'the line was actually trimmed').toBe(true);
     expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(text), 'lone high surrogate').toBe(false);
     expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text), 'lone low surrogate').toBe(false);
+  });
+});
+
+describe('a tracklist with playing times', () => {
+  /** Half an em per character at 2.4 mm, so "3:20" is four of them. */
+  const DURATION_MM = 4 * 0.5 * BASE_SIZE;
+  const timedLayout = (list: Track[]) => layOutTracklist(list, BOX, STYLE, measurer);
+
+  it('sets each time flush against the right edge of its column', () => {
+    const { lines, durationStyle } = timedLayout(timed(10));
+
+    expect(durationStyle.align).toBe('right');
+    for (const line of lines) {
+      expect(line.duration?.text).toBe('3:20');
+      // One column, so the right edge is the box's own.
+      expect(line.duration?.at.x).toBeCloseTo(BOX.x + BOX.width, 6);
+      expect(line.duration?.at.y).toBeCloseTo(line.at.y, 6);
+    }
+  });
+
+  it('puts the times of each column against that column, not against the box', () => {
+    const { lines, columns } = timedLayout(timed(25));
+    expect(columns).toBe(2);
+
+    // (63 - 3) / 2 = 30 per column, so the two right edges are 33 and 66.
+    const edges = [...new Set(lines.map((line) => line.duration?.at.x))].sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(edges).toEqual([BOX.x + 30, BOX.x + 33 + 30]);
+    for (const line of lines) {
+      const columnLeft = line.at.x;
+      expect(line.duration?.at.x).toBeCloseTo(columnLeft + 30, 6);
+    }
+  });
+
+  it('gives the title only the room the time column leaves it', () => {
+    // The whole point of a table: a title that runs under its own duration is
+    // not a longer title, it is an unreadable one.
+    const long = 'A title far too long for thirty millimetres of column';
+    const withTime = layOutTracklist(
+      [{ position: 1, title: long, lengthMs: 200_000 }],
+      BOX,
+      STYLE,
+      measurer,
+    );
+    const withoutTime = layOutTracklist([{ position: 1, title: long }], BOX, STYLE, measurer);
+
+    const width = (text: string): number => measurer.widthMm(text, STYLE);
+    expect(width(withTime.lines[0]?.text ?? '')).toBeLessThanOrEqual(BOX.width - DURATION_MM - 2);
+    expect(width(withTime.lines[0]?.text ?? '')).toBeLessThan(width(withoutTime.lines[0]?.text ?? ''));
+  });
+
+  it('reserves one width for the whole list, so the times line up', () => {
+    // A ragged right edge is what "not a table" looks like: the reserve is the
+    // widest time in the list, not each row's own.
+    const mixed: Track[] = [
+      { position: 1, title: 'Short', lengthMs: 65_000 },
+      { position: 2, title: 'Long', lengthMs: 4_265_000 },
+    ];
+
+    const { lines } = layOutTracklist(mixed, BOX, STYLE, measurer);
+
+    expect(lines.map((line) => line.duration?.text)).toEqual(['1:05', '1:11:05']);
+    expect(new Set(lines.map((line) => line.duration?.at.x)).size).toBe(1);
+  });
+
+  it('leaves a track with no time without a cell to draw', () => {
+    const { lines } = layOutTracklist(
+      [
+        { position: 1, title: 'Timed', lengthMs: 200_000 },
+        { position: 2, title: 'Untimed' },
+      ],
+      BOX,
+      STYLE,
+      measurer,
+    );
+
+    expect(lines[0]?.duration).toBeDefined();
+    expect(lines[1]?.duration).toBeUndefined();
+  });
+
+  it('gives the titles the whole column back when no track has a time', () => {
+    const long = 'A title far too long for sixty-three millimetres of column, honestly';
+    const untimed = layOutTracklist([{ position: 1, title: long }], BOX, STYLE, measurer);
+
+    // No reserve and no gap: nothing is going to sit in them.
+    expect(measurer.widthMm(untimed.lines[0]?.text ?? '', STYLE)).toBeGreaterThan(
+      BOX.width - DURATION_MM - 2,
+    );
+  });
+
+  it('hands back a duration style that differs from the fitted one only in its alignment', () => {
+    // The same rule `style` follows: a caller that spelled out
+    // `{ ...layout.style, align: 'right' }` is one edit away from spelling out
+    // a size, and then the times are measured against a list that shrank.
+    const { style, durationStyle } = timedLayout(timed(60));
+
+    expect(style.sizeMm).toBeLessThan(BASE_SIZE);
+    expect(durationStyle).toEqual({ ...style, align: 'right' });
+  });
+
+  it('keeps every time inside the box the list was given', () => {
+    for (const count of [10, 25, 60]) {
+      const { lines, style } = timedLayout(timed(count));
+
+      for (const line of lines) {
+        expect(line.duration?.at.x, `${count}: right`).toBeLessThanOrEqual(BOX.x + BOX.width + 0.001);
+        expect((line.duration?.at.y ?? 0) + style.sizeMm, `${count}: bottom`).toBeLessThanOrEqual(
+          BOX.y + BOX.height + 0.001,
+        );
+      }
+    }
   });
 });

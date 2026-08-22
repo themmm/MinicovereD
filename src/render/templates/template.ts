@@ -59,6 +59,19 @@ export interface TemplateParams {
   readonly showOverlayText: boolean;
   /** The MiniDisc logo on Front Panel and Spine (ADR-0004). */
   readonly showLogo: boolean;
+  /**
+   * Classic's Front Panel artwork as an inset square with paper all round it,
+   * which is how v1 drew every Front Panel, instead of bleeding to the panel's
+   * top, left and right edges.
+   *
+   * A parameter rather than a deleted design: the square is a real choice —
+   * it keeps a whole sleeve visible where the bleed crops one — and the
+   * collector who liked it should not have to keep v1 installed to have it.
+   * Full-bleed's artwork covers the Part by definition and ignores this, and so
+   * does the Classic Label, whose square is sized around the cartridge's cut
+   * corner rather than around taste.
+   */
+  readonly insetArtwork: boolean;
 }
 
 export const DEFAULT_TEMPLATE_PARAMS: TemplateParams = {
@@ -67,6 +80,8 @@ export const DEFAULT_TEMPLATE_PARAMS: TemplateParams = {
   accentColor: '#1f2933',
   showOverlayText: true,
   showLogo: true,
+  // The bleed is what ticket 03 makes Classic, so it is what a new design gets.
+  insetArtwork: false,
 };
 
 export interface PartContext {

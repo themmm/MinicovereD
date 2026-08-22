@@ -86,10 +86,19 @@ const clamp = (value: number, min: number, max: number): number =>
 
 function readTracks(value: unknown): Track[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((track, index) => ({
-    position: Math.max(1, Math.round(asNumber(track['position'], index + 1))),
-    title: asString(track['title']),
-  }));
+  return value.filter(isRecord).map((track, index) => {
+    // A saved project has to reproduce its own design, and from v1.1 the Back
+    // Card sets a duration column — a reader that dropped the times would
+    // reopen the file as a different Part. Anything that is not a positive
+    // number of milliseconds is no time at all rather than a `0:00`, exactly as
+    // the adapter treats it; a project file is not trusted to be sane.
+    const lengthMs = asNumber(track['lengthMs'], 0);
+    return {
+      position: Math.max(1, Math.round(asNumber(track['position'], index + 1))),
+      title: asString(track['title']),
+      ...(lengthMs > 0 ? { lengthMs } : {}),
+    };
+  });
 }
 
 function readArtwork(value: unknown): Artwork | undefined {
@@ -144,6 +153,12 @@ function readParams(value: unknown): TemplateParams {
     accentColor: colour('accentColor', DEFAULT_TEMPLATE_PARAMS.accentColor),
     showOverlayText: asBoolean(source['showOverlayText'], DEFAULT_TEMPLATE_PARAMS.showOverlayText),
     showLogo: asBoolean(source['showLogo'], DEFAULT_TEMPLATE_PARAMS.showLogo),
+    // A project written before this parameter existed has no such key, and every
+    // Front Panel in it was drawn as an inset square — which is why the fallback
+    // here is the default rather than `true`: v1 files carry `PROJECT_VERSION`
+    // 1, exactly as v1.1 files do, so there is nothing to tell the two apart.
+    // The design changes for those Releases, and the toggle is beside it.
+    insetArtwork: asBoolean(source['insetArtwork'], DEFAULT_TEMPLATE_PARAMS.insetArtwork),
   };
 }
 
