@@ -17,7 +17,7 @@ export interface ProjectStore {
   clear(): Promise<void>;
 }
 
-const DATABASE = 'mdcovergen';
+const DATABASE = 'minicovered';
 const STORE = 'project';
 const KEY = 'current';
 const VERSION = 1;
@@ -27,7 +27,7 @@ const VERSION = 1;
  * promise never settles and the app waits forever with nothing on screen.
  */
 const BLOCKED_MESSAGE =
-  'Another mdcovergen tab is holding this browser’s saved work open. Close it and reload.';
+  'Another MinicovereD tab is holding this browser’s saved work open. Close it and reload.';
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

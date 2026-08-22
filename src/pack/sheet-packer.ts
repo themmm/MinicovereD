@@ -157,7 +157,7 @@ export function packParts<T>(
     }
     if (oversize === 'throw') {
       throw new Error(
-        `mdcovergen: ${item.label} (${item.size.width} × ${item.size.height} mm) does not fit ` +
+        `minicovered: ${item.label} (${item.size.width} × ${item.size.height} mm) does not fit ` +
           `the ${area.width} × ${area.height} mm printable area`,
       );
     }
@@ -203,7 +203,7 @@ export function packParts<T>(
     // Every usable item was measured against the printable area above, so a
     // fresh Sheet always has room for one.
     if (!shelf) {
-      throw new Error(`mdcovergen: ${item.label} fits the paper but failed to open a Sheet`);
+      throw new Error(`minicovered: ${item.label} fits the paper but failed to open a Sheet`);
     }
     placeOnShelf(sheet, shelf, item, bed);
   }

@@ -1,5 +1,5 @@
 /**
- * The whole DOM layer. mdcovergen deliberately ships no UI framework, so this
+ * The whole DOM layer. MinicovereD deliberately ships no UI framework, so this
  * is the one place that knows how an element is made.
  */
 

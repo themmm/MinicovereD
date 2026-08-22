@@ -12,7 +12,7 @@ import publicDomainTextLogo from './licenses/PD-textlogo.txt?raw';
  */
 
 /**
- * The licenses mdcovergen is allowed to ship under. SPDX ids, plus SPDX's own
+ * The licenses MinicovereD is allowed to ship under. SPDX ids, plus SPDX's own
  * `LicenseRef-` form for terms that have no id — the MiniDisc mark is public
  * domain for copyright purposes but is nobody's standard license. An id may
  * only appear here once its text is bundled, so the dialog can always show it
@@ -89,7 +89,7 @@ export function licenseTextFor(license: LicenseId): string {
     .split(' AND ')
     .map((id) => {
       const text = LICENSE_TEXTS[id];
-      if (!text) throw new Error(`mdcovergen: no bundled license text for "${id}"`);
+      if (!text) throw new Error(`minicovered: no bundled license text for "${id}"`);
       return text;
     })
     .join('\n\n');
@@ -112,14 +112,14 @@ export const DATA_SOURCES: readonly DataSource[] = [
     url: 'https://musicbrainz.org',
     terms:
       'Release metadata and tracklists. MusicBrainz core data is in the public domain (CC0); ' +
-      'mdcovergen keeps to the one-request-per-second rate limit (ADR-0006).',
+      'MinicovereD keeps to the one-request-per-second rate limit (ADR-0006).',
   },
   {
     name: 'Cover Art Archive',
     url: 'https://coverartarchive.org',
     terms:
       'Cover art, fetched only for Releases you look up. The images belong to their respective ' +
-      'copyright holders — mdcovergen neither redistributes nor bundles any of them.',
+      'copyright holders — MinicovereD neither redistributes nor bundles any of them.',
   },
 ];
 

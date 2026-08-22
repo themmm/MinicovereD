@@ -97,7 +97,7 @@ export function createProjectControls(
 
 function fileNameFor(releaseCount: number): string {
   const stamp = new Date().toISOString().slice(0, 10);
-  return `mdcovergen-${releaseCount}-releases-${stamp}.json`;
+  return `minicovered-${releaseCount}-releases-${stamp}.json`;
 }
 
 function download(text: string, fileName: string): void {

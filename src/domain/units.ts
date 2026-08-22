@@ -1,5 +1,5 @@
 /**
- * Every length in mdcovergen is a millimetre. The physical Parts are specified
+ * Every length in MinicovereD is a millimetre. The physical Parts are specified
  * in mm (ADR-0005), the PDF is placed in mm, and the only conversions that
  * exist are the two below — to raster pixels and to PDF points.
  */

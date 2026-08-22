@@ -24,8 +24,8 @@ const COVER_ART_ARCHIVE = 'https://coverartarchive.org';
  * that parameter for submissions, not lookups — and honour the rate limit
  * strictly, which is what the policy is actually protecting.
  */
-const CLIENT_ID = `mdcovergen-${APP_VERSION}`;
-const USER_AGENT = `mdcovergen/${APP_VERSION} ( https://github.com/themmm/mdcovergen )`;
+const CLIENT_ID = `minicovered-${APP_VERSION}`;
+const USER_AGENT = `minicovered/${APP_VERSION} ( https://github.com/themmm/MinicovereD )`;
 
 /** How many search results to show at once. MusicBrainz reports the full count separately. */
 const SEARCH_PAGE_SIZE = 25;

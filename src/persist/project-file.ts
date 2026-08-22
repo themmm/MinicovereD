@@ -23,7 +23,7 @@ import type { ReleaseDesign, SheetConfig, TemplateId, TemplateParams } from '../
  * — because the alternative is destroying autosaved state with a bad file.
  */
 
-export const PROJECT_FORMAT = 'mdcovergen-project';
+export const PROJECT_FORMAT = 'minicovered-project';
 export const PROJECT_VERSION = 1;
 
 export interface Project {
@@ -225,14 +225,14 @@ export function readProjectFile(text: string): ProjectReadResult {
   }
 
   if (!isRecord(parsed) || parsed['format'] !== PROJECT_FORMAT) {
-    return { ok: false, error: 'That is not an mdcovergen project file.' };
+    return { ok: false, error: 'That is not a MinicovereD project file.' };
   }
 
   const version = asNumber(parsed['version'], 0);
   if (version > PROJECT_VERSION) {
     return {
       ok: false,
-      error: `That project was saved by a newer version of mdcovergen (file version ${version}, this one reads ${PROJECT_VERSION}).`,
+      error: `That project was saved by a newer version of MinicovereD (file version ${version}, this one reads ${PROJECT_VERSION}).`,
     };
   }
 

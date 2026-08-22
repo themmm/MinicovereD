@@ -148,7 +148,7 @@ export function renderSheets(
   // Parts find their way back to a Release by id, so two Releases sharing one
   // would silently print the same content twice.
   if (byRelease.size !== designs.length) {
-    throw new Error('mdcovergen: two Releases share an id, so their Parts cannot be told apart');
+    throw new Error('minicovered: two Releases share an id, so their Parts cannot be told apart');
   }
 
   const items: Array<PackItem<PartRef>> = designs.flatMap((design) =>
@@ -171,7 +171,7 @@ export function renderSheets(
     const placements = sheet.placements.map(({ item, rect }): PartPlacement => {
       const { releaseId, part } = item.ref;
       const design = byRelease.get(releaseId);
-      if (!design) throw new Error(`mdcovergen: no design for Release "${releaseId}"`);
+      if (!design) throw new Error(`minicovered: no design for Release "${releaseId}"`);
 
       const { ops, panels, warnings: partWarnings } = drawPart(part, design, item.size, measure);
       warnings.push(...(partWarnings ?? []));

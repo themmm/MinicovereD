@@ -142,7 +142,7 @@ export function renderCalibrationSheet(
   const area = printableArea(config.paper, config.marginMm);
 
   const instructions: DrawOp[] = [
-    heading('mdcovergen calibration sheet', { x: area.x, y: area.y }, 5, 700),
+    heading('MinicovereD calibration sheet', { x: area.x, y: area.y }, 5, 700),
     heading(
       'Print at 100% — no “fit to page”, no scaling. Then measure the square with a ruler.',
       { x: area.x, y: area.y + 6.5 },
@@ -244,7 +244,7 @@ export function renderCalibrationSheet(
       : [
           // Inside the printable area: LATER_PAGE_TOP is reserved for exactly this.
           heading(
-            `mdcovergen calibration sheet — page ${index + 1} of ${sheetCount}`,
+            `MinicovereD calibration sheet — page ${index + 1} of ${sheetCount}`,
             { x: area.x, y: area.y },
             3.2,
             700,

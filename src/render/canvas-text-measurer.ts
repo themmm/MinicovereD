@@ -12,7 +12,7 @@ const MEASURE_PX_PER_MM = 40;
 export function createCanvasTextMeasurer(): TextMeasurer {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
-  if (!context) throw new Error('mdcovergen: this browser has no 2D canvas context');
+  if (!context) throw new Error('minicovered: this browser has no 2D canvas context');
 
   const cache = new Map<string, number>();
 

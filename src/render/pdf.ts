@@ -17,12 +17,12 @@ export interface PdfPage {
 }
 
 export async function buildPdf(pages: readonly PdfPage[]): Promise<Uint8Array> {
-  if (pages.length === 0) throw new Error('mdcovergen: cannot export a PDF with no Sheets');
+  if (pages.length === 0) throw new Error('minicovered: cannot export a PDF with no Sheets');
 
   const document = await PDFDocument.create();
-  document.setTitle('mdcovergen');
-  document.setCreator('mdcovergen');
-  document.setProducer('mdcovergen');
+  document.setTitle('MinicovereD');
+  document.setCreator('MinicovereD');
+  document.setProducer('MinicovereD');
 
   for (const { size, png } of pages) {
     const widthPt = mmToPt(size.width);

@@ -16,7 +16,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
  * Both bundle the same OFL fonts, so neither needs the network.
  *
  * Hosting under a sub-path (GitHub Pages project sites, for instance) is a
- * matter of `MDCOVERGEN_BASE=/mdcovergen/ npm run build:pwa` — the manifest's
+ * matter of `MINICOVERED_BASE=/minicovered/ npm run build:pwa` — the manifest's
  * scope and start_url follow it, otherwise the installed app would leave its
  * own scope on the first navigation.
  */
@@ -25,7 +25,7 @@ const resolveFromRoot = (path: string): string => fileURLToPath(new URL(path, im
 
 export default defineConfig(({ mode }) => {
   const singleFile = mode === 'singlefile';
-  const base = singleFile ? './' : (process.env['MDCOVERGEN_BASE'] ?? '/');
+  const base = singleFile ? './' : (process.env['MINICOVERED_BASE'] ?? '/');
 
   const outDir = singleFile ? 'dist/singlefile' : 'dist/pwa';
 
@@ -60,8 +60,8 @@ export default defineConfig(({ mode }) => {
             registerType: 'autoUpdate',
             includeAssets: ['icons/*.png'],
             manifest: {
-              name: 'mdcovergen — MiniDisc cover generator',
-              short_name: 'mdcovergen',
+              name: 'MinicovereD — MiniDisc cover generator',
+              short_name: 'MinicovereD',
               description:
                 'Design and print MiniDisc J-Cards, Back Cards and cartridge Labels as print-accurate PDFs.',
               lang: 'en',
@@ -103,7 +103,7 @@ export default defineConfig(({ mode }) => {
  */
 function dropOperatingSystemJunk(outDir: string): Plugin {
   return {
-    name: 'mdcovergen:drop-os-junk',
+    name: 'minicovered:drop-os-junk',
     apply: 'build',
     // After the write, because public/ is copied outside the bundle and so is
     // invisible to generateBundle.

@@ -79,7 +79,7 @@ export function createWorkspace(): HTMLElement {
           selected()?.design.dimensions ?? DEFAULT_PART_DIMENSIONS,
           measure,
         );
-        preview.show(layouts, 'mdcovergen-calibration.pdf');
+        preview.show(layouts, 'minicovered-calibration.pdf');
       },
     },
   });
@@ -364,8 +364,8 @@ function fileNameFor(queue: readonly QueueEntry[]): string {
   const [first] = queue;
   if (queue.length === 1 && first) {
     const { artist, album } = first.design.release;
-    const stem = [artist, album].filter(Boolean).join(' - ') || 'mdcovergen';
+    const stem = [artist, album].filter(Boolean).join(' - ') || 'minicovered';
     return `${stem.replace(/[\\/:*?"<>|]/g, '_')}.pdf`;
   }
-  return `mdcovergen-${queue.length}-releases.pdf`;
+  return `minicovered-${queue.length}-releases.pdf`;
 }

@@ -44,7 +44,7 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   const sheetLabel = el('span', { class: 'pager__label', text: '' });
 
   let sheets: readonly SheetLayout[] = [];
-  let fileName = 'mdcovergen.pdf';
+  let fileName = 'minicovered.pdf';
   let sheetIndex = 0;
   let redrawToken = 0;
 
