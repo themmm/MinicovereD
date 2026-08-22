@@ -16,9 +16,10 @@ Written mid-run so a fresh session can pick this up without re-deriving anything
 | 08 autosave + project files | **merged** — [PR #8](https://github.com/themmm/mdcovergen/pull/8) |
 | 09 batch queue | **merged** — [PR #9](https://github.com/themmm/mdcovergen/pull/9) |
 | 10 release polish | **merged** — [PR #10](https://github.com/themmm/MinicovereD/pull/10) |
-| 11 register, rename, Part preview | **built, four PRs open and stacked** — see below |
+| 11 register, rename, Part preview | **merged** — PRs [#11](https://github.com/themmm/MinicovereD/pull/11), [#17](https://github.com/themmm/MinicovereD/pull/17), [#18](https://github.com/themmm/MinicovereD/pull/18) |
+| 12 the Mark, and the Spine that truncates | **merged** — PRs [#18](https://github.com/themmm/MinicovereD/pull/18) (part B), [#19](https://github.com/themmm/MinicovereD/pull/19) (part A) |
 
-269 tests, `tsc --noEmit` clean, both builds green.
+282 tests, `tsc --noEmit` clean, both builds green. v1 is `1.0.0`.
 
 ## Ticket 11, as built
 
@@ -155,8 +156,9 @@ Both new checks were confirmed by making them fail on purpose, not by trusting a
   Same user intent, two outcomes. Worth deciding deliberately rather than by accident.
 - **`CONTEXT.md` needs `Queue` and `Queue Entry`,** and a correction to `Label`. Blocked on another
   session's uncommitted edits to that file — see below.
-- **The version is still `0.1.0`,** which is what the app tells MusicBrainz it is (ADR-0006). That
-  is accurate today: ticket 11 exists, so v1 is not finished. Bump it when it is.
+- ~~**The version is still `0.1.0`.**~~ **Done.** v1 shipped as `1.0.0`, which is what the app now
+  tells MusicBrainz it is (`client=minicovered-1.0.0`, ADR-0006). `PROJECT_VERSION` for project files
+  is a separate number and deliberately unchanged.
 
 ## The workflow being followed
 
@@ -242,6 +244,6 @@ printing inside the margin in 02, and the unloaded CJK font in 07.
   edits to that file: `Queue` and `Queue Entry` glossary entries, and a correction — it defines
   Label as *"Rectangular, with one diagonally cut corner"*, but the Full preset ships
   `notch: false`.
-- **The `protect-main` ruleset is currently `disabled`** on GitHub, but the PR-only workflow is
-  being followed regardless, as instructed.
+- **The `protect-main` ruleset is `active`** on GitHub: PRs required, all three merge methods
+  allowed, zero approvals, no bypass actor. It was `disabled` when this line was first written.
 - ADR-0006 records why the MusicBrainz User-Agent requirement cannot be met client-side.
