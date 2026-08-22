@@ -71,7 +71,11 @@ export interface Attribution {
  * claimed. Adding an icon without adding it here fails the compliance test.
  */
 export const OWN_ARTWORK: readonly string[] = [
-  'assets/logo.svg',
+  // The Mark, and the Icon that places it on a ground (ADR-0011). The three
+  // PNGs below are rasterisations of the Icon at x12, x32 and x18.
+  'assets/mark.svg',
+  'assets/icon.svg',
+
   'public/icons/icon-192.png',
   'public/icons/icon-512.png',
   'public/icons/icon-maskable-512.png',

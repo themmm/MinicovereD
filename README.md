@@ -1,6 +1,6 @@
 # MinicovereD
 
-<p><img src="assets/logo.svg" width="96" alt="MinicovereD logo"></p>
+<p><img src="assets/mark.svg" width="96" alt="MinicovereD"></p>
 
 Design and print MiniDisc J-Cards, Back Cards and cartridge Labels — print-accurate PDFs at exact millimetre size, offline-capable, fully client-side. No account, no server, no manual tracklist typing: release data and cover art come from MusicBrainz and the Cover Art Archive.
 
