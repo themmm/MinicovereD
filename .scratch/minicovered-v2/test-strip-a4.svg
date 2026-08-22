@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="297mm" height="210mm" viewBox="0 0 297 210"
+     font-family="ui-monospace, Menlo, monospace">
+  <rect width="297" height="210" fill="#fff"/>
+  <!-- strip 282.5 x 79 mm, centred on A4 landscape -->
+  <g transform="translate(7.25,60)">
+    <!-- cut outline -->
+    <rect x="0" y="0" width="282.5" height="79" fill="none" stroke="#000" stroke-width="0.2"/>
+    <!-- J-Card folds -->
+    <line x1="14"    y1="0" x2="14"    y2="79" stroke="#000" stroke-width="0.15" stroke-dasharray="1 1.5"/>
+    <line x1="19.5"  y1="0" x2="19.5"  y2="79" stroke="#000" stroke-width="0.15" stroke-dasharray="1 1.5"/>
+    <!-- fore-edge folds -->
+    <line x1="87.5"  y1="0" x2="87.5"  y2="79" stroke="#000" stroke-width="0.25" stroke-dasharray="4 2"/>
+    <line x1="217.5" y1="0" x2="217.5" y2="79" stroke="#000" stroke-width="0.25" stroke-dasharray="4 2"/>
+    <!-- spine fold -->
+    <line x1="152.5" y1="0" x2="152.5" y2="79" stroke="#000" stroke-width="0.45"/>
+
+    <text x="7"     y="42" font-size="2.2" text-anchor="middle" transform="rotate(-90 7 42)">INNER FLAP 14</text>
+    <text x="16.7"  y="42" font-size="2"   text-anchor="middle" transform="rotate(-90 16.7 42)">SPINE 5.5</text>
+    <text x="53.5"  y="38" font-size="5"   text-anchor="middle">PAGE 1</text>
+    <text x="53.5"  y="44" font-size="2.4" text-anchor="middle">FRONT PANEL 68</text>
+    <text x="120"   y="38" font-size="5"   text-anchor="middle">PAGE 2</text>
+    <text x="120"   y="44" font-size="2.4" text-anchor="middle">65</text>
+    <text x="185"   y="38" font-size="5"   text-anchor="middle">PAGE 3</text>
+    <text x="185"   y="44" font-size="2.4" text-anchor="middle">65</text>
+    <text x="250"   y="38" font-size="5"   text-anchor="middle">PAGE 4</text>
+    <text x="250"   y="44" font-size="2.4" text-anchor="middle">65</text>
+
+    <text x="87.5"  y="-3"   font-size="2.4" text-anchor="middle">fore-edge · fold BACK (blank inside)</text>
+    <text x="152.5" y="-8"   font-size="3"   text-anchor="middle" font-weight="700">SPINE · fold FORWARD</text>
+    <text x="217.5" y="-3"   font-size="2.4" text-anchor="middle">fore-edge · fold BACK (blank inside)</text>
+    <text x="17"    y="-3"   font-size="2.4">J-Card folds, as today</text>
+    <text x="0"     y="86"   font-size="2.6">Cut the solid outline. Fold the two dashed lines away from you, the solid centre line toward you.</text>
+    <text x="0"     y="90.5" font-size="2.6">Every page should end up printed-side-out. Then check the J-Card end still seats in a real case.</text>
+  </g>
+  <!-- calibration: 100 mm, so a scaled print is caught before any conclusions are drawn -->
+  <g transform="translate(7.25,175)">
+    <line x1="0" y1="0" x2="100" y2="0" stroke="#000" stroke-width="0.3"/>
+    <line x1="0" y1="-2.5" x2="0" y2="2.5" stroke="#000" stroke-width="0.3"/>
+    <line x1="100" y1="-2.5" x2="100" y2="2.5" stroke="#000" stroke-width="0.3"/>
+    <line x1="50" y1="-1.5" x2="50" y2="1.5" stroke="#000" stroke-width="0.2"/>
+    <text x="50" y="-4" font-size="3" text-anchor="middle">100 mm — measure this first. Print at 100%, no "fit to page".</text>
+  </g>
+</svg>

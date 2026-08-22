@@ -7,7 +7,7 @@ A tool for designing and printing cover inlays and disc labels for MiniDiscs. Th
 ### From Release to Sheet
 
 **Release**:
-The metadata unit that serves as the source for a design: artist, album, tracklist, cover image, and supplementary info (e.g. year). Can be fetched automatically or created by hand (e.g. a mixtape).
+The metadata unit that serves as the source for a Design: artist, album, tracklist, cover image, and supplementary info (e.g. year). Can be fetched automatically or created by hand (e.g. a mixtape).
 _Avoid_: Album, Titel, Projekt
 
 **Part**:
@@ -35,7 +35,7 @@ The 14 mm end of the J-Card folded inside the case to hold it in place.
 _Avoid_: Flap
 
 **Label**:
-The sticker that gets applied to the top of the MiniDisc cartridge. Rectangular, with one diagonally cut corner.
+The sticker applied to the top of the MiniDisc cartridge. Rectangular; one corner may be cut diagonally to clear the cartridge's own cut corner, or left square to cover it. The notch is a choice, not part of the definition.
 _Avoid_: Aufkleber, Sticker
 
 **Sheet**:
@@ -47,13 +47,31 @@ A print-only mark on the Sheet that shows the boundaries of the Parts for cuttin
 _Avoid_: Schnittlinien
 
 **Template**:
-A named visual design that determines the layout, typography, and color logic of a Part. Parameterizable per Release.
-_Avoid_: Theme, Stil
+A named visual scheme that determines the layout, typography, and color logic of a Part. Parameterized per Design.
+_Avoid_: Theme, Stil, Design
+
+**Design**:
+A Release together with the choices that turn it into Parts: Template, its parameters, and the Part dimensions. The unit that autosaves, that a project file carries, and that the Queue holds. A Release is what the album *is*; a Design is what this collector decided to print.
+_Avoid_: Project, Layout, Entwurf
+
+### The Queue
+
+**Queue**:
+The Designs a collector is working through in one session, in the order they will be packed onto Sheets. One Queue, always; there is no second list.
+_Avoid_: List, Batch, Warteschlange
+
+**Queue Entry**:
+One Design in the Queue, together with whether it still needs completing by hand. A lookup that found nothing leaves an Entry holding what was typed, never a hole — one missing album must not block the other nine.
+_Avoid_: Item, Row, Eintrag
+
+**Batch**:
+One run of lookups that appends its Entries to the Queue. Failure is always per Entry, never per Batch.
+_Avoid_: Queue, Job, Import, Stapel
 
 ### Identity
 
 **Logo**:
-The official MiniDisc logo, bundled as an optional asset and toggleable per design. Belongs to Sony, not to this project.
+The official MiniDisc logo, bundled as an optional asset and toggleable per Design. Belongs to Sony, not to this project.
 _Avoid_: MD Logo, Sony Logo, Mark
 
 **Mark**:
