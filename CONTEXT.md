@@ -70,6 +70,17 @@ _Avoid_: Logo, Schriftzug, Lettering
 A rendered placement of the Mark at a fixed pixel size — favicon, app icon, maskable icon. Not the Mark itself.
 _Avoid_: Logo, Mark, Bildchen
 
+**Sheet check**:
+The collapsed verification of how the Parts packed onto Sheets — paper, printable margin, sheet count,
+cutting guides — beside Export. A print check, not a preview: the Parts are the preview (ADR-0010).
+_Avoid_: Preview, Vorschau, Sheet preview
+
+**Assembled / Flat**:
+The J-Card's two representations. _Assembled_ is how it sits in the case — Front Panel face-on, the
+5.5 mm Spine beside it, the Inner Flap folded behind — and is the default. _Flat_ is the 87.5 mm strip
+that actually prints. Orthographic in both cases; neither is a mockup of a case (ADR-0008 rule 3).
+_Avoid_: Folded, 3D, Mockup, Unfolded
+
 **Register**:
 The project's visual idiom: grid geometry in exactly one layer — the Mark — with contemporary technique everywhere else. Here "oldschool" means module grids, monospace typography, and one named 16-colour palette; it never means reproducing a historical interface.
 _Avoid_: Retro, Theme, Skin, Look, Vibe

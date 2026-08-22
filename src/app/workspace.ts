@@ -217,6 +217,10 @@ export function createWorkspace(): Workspace {
     const entry = selected();
     showHero(entry);
     showSummaries(entry);
+    // The result list stays open after a pick, so it has to say which of its
+    // rows is the Release on screen — otherwise picking again to correct a
+    // wrong pressing is a guess about what was picked the first time.
+    search.markInUse(entry?.design.release.id ?? '');
     try {
       const sheets = renderSheets(queueDesigns(queue), sheetConfig, measure);
       preview.show(

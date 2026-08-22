@@ -29,7 +29,6 @@ export interface Fold {
   /** The line on the closed header saying what is inside. */
   setSummary(text: string): void;
   setOpen(open: boolean): void;
-  readonly isOpen: boolean;
 }
 
 export interface FoldSpec {
@@ -83,8 +82,5 @@ export function createFold({ index, title, startOpen = false }: FoldSpec, ...chi
       summary.textContent = text;
     },
     setOpen,
-    get isOpen() {
-      return open;
-    },
   };
 }

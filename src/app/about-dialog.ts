@@ -14,13 +14,27 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
   { kind: 'asset', title: 'Bundled assets' },
 ];
 
-/** Lines that only render completely from the bundled fonts — the offline typography proof. */
-const FONT_SPECIMEN: ReadonlyArray<{ script: string; sample: string; weight?: 'bold' }> = [
-  { script: 'Latin', sample: 'Wichita Lineman — Glen Campbell' },
-  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak' },
-  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel' },
-  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ' },
-  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold' },
+/**
+ * Lines that only render completely from the bundled fonts — the offline
+ * typography proof, and now of both stacks rather than one.
+ *
+ * The boundary is the point (ADR-0008 rule 9): the chrome is set in JetBrains
+ * Mono and a Part is set in the Noto stack, and these two things are not the
+ * same typeface on purpose. Showing only the chrome would prove the half that
+ * never reaches paper.
+ */
+const FONT_SPECIMEN: ReadonlyArray<{
+  script: string;
+  sample: string;
+  weight?: 'bold';
+  stack: 'chrome' | 'print';
+}> = [
+  { script: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
+  { script: 'A Part', sample: 'Wichita Lineman — Glen Campbell', stack: 'print' },
+  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'print' },
+  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel', stack: 'print' },
+  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'print' },
+  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'print' },
 ];
 
 function fontSpecimen(): HTMLElement {
@@ -30,7 +44,7 @@ function fontSpecimen(): HTMLElement {
     list.appendChild(
       el('dd', {
         text: row.sample,
-        ...(row.weight ? { attrs: { 'data-weight': row.weight } } : {}),
+        attrs: { 'data-stack': row.stack, ...(row.weight ? { 'data-weight': row.weight } : {}) },
       }),
     );
   }

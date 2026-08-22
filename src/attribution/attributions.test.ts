@@ -149,6 +149,7 @@ const claimedPackages = (): string[] =>
 /** A distinctive phrase from each license, so "shows the text" means the right text. */
 const LICENSE_MARKERS: Readonly<Record<string, string>> = {
   MIT: 'MIT License',
+  ISC: 'ISC License',
   'OFL-1.1': 'SIL OPEN FONT LICENSE',
   '0BSD': 'Permission to use, copy, modify, and/or distribute',
   Zlib: 'zlib License',

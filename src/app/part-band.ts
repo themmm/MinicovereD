@@ -69,8 +69,6 @@ export interface PartBand {
    * on the design surface either.
    */
   show(sheets: readonly SheetLayout[], entry: QueueEntry | undefined): void;
-  /** Stop watching the scroll position. */
-  destroy(): void;
 }
 
 interface Specimen {
@@ -278,6 +276,11 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
     updateScaleNote();
   }
 
+  /*
+   * Never removed, and deliberately: the band is created once and lives as long
+   * as the page does, so a teardown method would be an API nothing calls. If a
+   * second band is ever built, these three have to come off with the first one.
+   */
   window.addEventListener('scroll', readScroll, { passive: true });
   window.addEventListener('resize', readScroll, { passive: true });
   window.addEventListener('resize', updateScaleNote, { passive: true });
@@ -438,11 +441,6 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
         .flatMap((sheet) => sheet.warnings ?? [])
         .filter((warning) => warning.releaseId === releaseId);
       redraw();
-    },
-    destroy() {
-      window.removeEventListener('scroll', readScroll);
-      window.removeEventListener('resize', readScroll);
-      window.removeEventListener('resize', updateScaleNote);
     },
   };
 }

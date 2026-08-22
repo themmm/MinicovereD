@@ -1,3 +1,4 @@
+import isc from './licenses/ISC.txt?raw';
 import mit from './licenses/MIT.txt?raw';
 import ofl from './licenses/OFL-1.1.txt?raw';
 import zeroBsd from './licenses/0BSD.txt?raw';
@@ -21,6 +22,11 @@ import publicDomainTextLogo from './licenses/PD-textlogo.txt?raw';
 export const PERMISSIVE_LICENSES = [
   'MIT',
   'MIT AND Zlib',
+  // Not plain ISC: the one Lucide glyph this project uses is `search`, which
+  // Lucide's own licence lists among the icons derived from Feather and
+  // relicensed MIT. Both notices apply to it, so both are shown. Plain `ISC`
+  // is deliberately absent until something actually ships under it alone.
+  'ISC AND MIT',
   'OFL-1.1',
   '0BSD',
   'LicenseRef-PD-textlogo',
@@ -73,6 +79,7 @@ export const OWN_ARTWORK: readonly string[] = [
 
 const LICENSE_TEXTS: Readonly<Record<string, string>> = {
   MIT: mit,
+  ISC: isc,
   'OFL-1.1': ofl,
   '0BSD': zeroBsd,
   Zlib: zlib,
@@ -168,6 +175,32 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     note:
       'The app surface only, never a Part (ADR-0008). Latin and Latin-ext, roman, one variable ' +
       'weight axis — the two subsets the chrome needs, out of the six the package ships.',
+  },
+  {
+    name: 'Lucide',
+    kind: 'asset',
+    version: '1.33.0',
+    license: 'ISC AND MIT',
+    copyright:
+      'Copyright (c) 2026 Lucide Icons and Contributors; the `search` glyph ' +
+      'derives from Feather, Copyright (c) 2013-present Cole Bemis',
+    url: 'https://lucide.dev',
+    note:
+      'A source of geometry, not a dependency (ADR-0008): the glyphs used are redrawn as inline ' +
+      'SVG, so nothing of Lucide ships as a file and there is no runtime library. Using a set ' +
+      'rather than drawing six icons is what keeps stroke weight, grid and terminals consistent.',
+  },
+  {
+    name: 'Everforest',
+    kind: 'asset',
+    version: 'palette.md, 2019',
+    license: 'MIT',
+    copyright: 'Copyright (c) 2019 sainnhe',
+    url: 'https://github.com/sainnhe/everforest',
+    note:
+      'The chrome palette (ADR-0008). A colour scheme rather than a file: the sixteen values end ' +
+      'up as tokens in app.css, so nothing of it ships separately and there is nothing for the ' +
+      'completeness check to find. Credited anyway, because the choice was somebody else’s work.',
   },
   {
     name: 'MiniDisc logo',

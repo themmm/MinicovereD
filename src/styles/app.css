@@ -1574,6 +1574,15 @@ label.button {
   font-weight: 700;
 }
 
+/* Each line set in the stack it is proving. */
+.specimen dd[data-stack='chrome'] {
+  font-family: var(--font-chrome);
+}
+
+.specimen dd[data-stack='print'] {
+  font-family: var(--font-print);
+}
+
 /* ------------------------------------------------------------- licenses -- */
 
 .about {
