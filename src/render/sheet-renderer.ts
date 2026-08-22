@@ -13,6 +13,7 @@ import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout, SheetWarning } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
+import { MINIMAL_TEMPLATE } from './templates/minimal.ts';
 import type {
   JCardContext,
   PartContext,
@@ -70,6 +71,7 @@ const PART_LABELS: Readonly<Record<PartKind, string>> = {
 const TEMPLATES: Readonly<Record<TemplateId, Template>> = {
   classic: CLASSIC_TEMPLATE,
   fullbleed: FULLBLEED_TEMPLATE,
+  minimal: MINIMAL_TEMPLATE,
 };
 
 export function templateFor(id: TemplateId): Template {

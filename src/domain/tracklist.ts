@@ -73,3 +73,24 @@ export function formatTrackLength(lengthMs: number | undefined): string | undefi
 
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
+
+/**
+ * How long the whole Release runs, in milliseconds, or nothing when it cannot
+ * be known — which is most of the time, because a Release typed in from a shelf
+ * has no times at all.
+ *
+ * All the tracks or none of them. A sum over only the tracks that happen to
+ * carry a length is a smaller number wearing the name of the running time, and
+ * nothing printed beside it could say which of the two it was; a Part that says
+ * nothing is honest, and a Part that says 41:12 about a 58-minute disc is not.
+ */
+export function totalTrackLength(tracks: readonly Track[]): number | undefined {
+  if (tracks.length === 0) return undefined;
+
+  let total = 0;
+  for (const track of tracks) {
+    if (track.lengthMs === undefined || !Number.isFinite(track.lengthMs)) return undefined;
+    total += track.lengthMs;
+  }
+  return total;
+}

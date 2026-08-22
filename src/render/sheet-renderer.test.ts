@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
 import { rectsOverlap } from '../domain/units.ts';
-import { DEFAULT_PART_DIMENSIONS, jCardSize, PART_KINDS } from '../domain/parts.ts';
-import type { PartKind } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, jCardSize, partShape, PART_KINDS } from '../domain/parts.ts';
+import type { JCardPanel, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets, TEMPLATES } from './sheet-renderer.ts';
 import type {
+  PartPlacement,
   PrintFace,
   ReleaseDesign,
   TextOp,
@@ -1169,6 +1170,10 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     for (const [templateId, colour] of [
       ['classic', DARK.accentColor],
       ['fullbleed', DARK.inkColor],
+      // Minimal grounds in the ink, as Full-bleed does, but for the opposite
+      // reason: there is no artwork here for the ink to have been a scrim over,
+      // so the card is simply the Front Panel with paper and ink exchanged.
+      ['minimal', DARK.inkColor],
     ] as const) {
       const { ops, placement } = backCard(templateId);
       const ground = ops[0];
@@ -1196,14 +1201,18 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
-  it('bands Full-bleed’s heading and leaves Classic’s bare', () => {
+  it('bands Full-bleed’s heading and leaves Classic’s and Minimal’s bare', () => {
     // The structural half of the difference, which colour alone would not
-    // catch: Classic is one flat ground, Full-bleed is a ground plus a bar.
+    // catch: Classic is one flat ground, Full-bleed is a ground plus a bar, and
+    // Minimal — which grounds in the same colour Full-bleed does — is the flat
+    // one, so this is also what tells those two cards apart.
     const classicFills = backCard('classic').ops.filter((op) => op.op === 'fill-rect');
+    const minimalFills = backCard('minimal').ops.filter((op) => op.op === 'fill-rect');
     const { ops, placement } = backCard('fullbleed');
     const fullbleedFills = ops.filter((op) => op.op === 'fill-rect');
 
     expect(classicFills, 'Classic grounds the card and stops').toHaveLength(1);
+    expect(minimalFills, 'Minimal grounds the card and stops').toHaveLength(1);
     expect(fullbleedFills, 'Full-bleed grounds it and bands the top').toHaveLength(2);
 
     const band = fullbleedFills[1];
@@ -1249,21 +1258,41 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
-  it('draws two visibly different cards for one Release', () => {
+  it('draws three visibly different cards for one Release', () => {
     const classic = backCard('classic');
     const fullbleed = backCard('fullbleed');
+    const minimal = backCard('minimal');
 
-    // Different ground, so the two cards are not the same colour.
+    // No two of the three draw the same card, which is the whole claim; the
+    // assertions after it are what each pair actually differs *in*, so a
+    // failure says which difference was lost rather than only that one was.
+    expect(classic.ops).not.toEqual(fullbleed.ops);
+    expect(classic.ops).not.toEqual(minimal.ops);
+    expect(fullbleed.ops).not.toEqual(minimal.ops);
+
+    // Different ground, so Classic is not the colour the other two are.
     expect(classic.ops[0]).not.toEqual(fullbleed.ops[0]);
+    expect(classic.ops[0]).not.toEqual(minimal.ops[0]);
     // Different alignment: a title page centres its heading, a poster ranges it left.
     const alignments = (card: { texts: TextOp[] }) => [
       ...new Set(card.texts.filter((op) => !/^\d+\./.test(op.text)).map((op) => op.style.align)),
     ];
     expect(alignments(classic)).toEqual(['center']);
     expect(alignments(fullbleed)).toEqual(['left']);
-    // And different type, which is what ticket 02 bought.
+    expect(alignments(minimal)).toEqual(['left']);
+    // And different type, which is what ticket 02 bought. Minimal against the
+    // other two is the strong case: it shares no face with either of them.
     const faces = (card: { texts: TextOp[] }) => new Set(card.texts.map((op) => op.style.face));
     expect([...faces(classic)].some((face) => !faces(fullbleed).has(face))).toBe(true);
+    expect([...faces(minimal)].filter((face) => faces(classic).has(face))).toEqual([]);
+    expect([...faces(minimal)].filter((face) => faces(fullbleed).has(face))).toEqual([]);
+
+    // Full-bleed and Minimal share a ground, so the thing that separates them
+    // is the heading: Full-bleed names the artist first, Minimal the record.
+    const headings = (card: { texts: TextOp[] }) =>
+      card.texts.filter((op) => !isListLine(op)).map((op) => op.text);
+    expect(headings(fullbleed)).toEqual(['Glen Campbell', 'Wichita Lineman']);
+    expect(headings(minimal)).toEqual(['Wichita Lineman', 'Glen Campbell']);
   });
 
   it('sets each card only in the faces its own Template names', () => {
@@ -1398,5 +1427,397 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
         expect(op.at.x, `${templateId}: ${op.text}`).toBeLessThanOrEqual(placement.bounds.width);
       }
     }
+  });
+});
+
+describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
+  /** What Minimal holds clear at the edges of a Part (`PAD` in templates/shared.ts). */
+  const PAD_MM = 3;
+  /** The Label's own margin, which is tighter than a J-Card's. */
+  const LABEL_PAD_MM = 2.5;
+
+  const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
+
+  const sheetOf = (
+    release: Release = aRelease(),
+    params: Partial<TemplateParams> = {},
+    dimensions = DEFAULT_PART_DIMENSIONS,
+  ): SheetLayout => {
+    const [sheet] = renderSheets(
+      [{ ...aDesign(release, { templateId: 'minimal', params }), dimensions }],
+      A4_SHEET,
+      testMeasurer,
+    );
+    if (!sheet) throw new Error('no Sheet');
+    return sheet;
+  };
+
+  const partOf = (sheet: SheetLayout, part: PartKind): PartPlacement => {
+    const placement = sheet.placements.find((each) => each.part === part);
+    if (!placement) throw new Error(`no ${part}`);
+    return placement;
+  };
+
+  const textsOf = (sheet: SheetLayout, part: PartKind): TextOp[] =>
+    partOf(sheet, part).ops.flatMap((op) => (op.op === 'text' ? [op] : []));
+
+  /**
+   * The Front Panel's type, which is the J-Card's upright type: the Spine's one
+   * line and the Inner Flap's caption both read sideways.
+   */
+  const frontTexts = (sheet: SheetLayout): TextOp[] =>
+    textsOf(sheet, 'jcard').filter((op) => !op.style.rotationDeg);
+
+  const panelOf = (sheet: SheetLayout, panel: JCardPanel): Rect => {
+    const rect = partOf(sheet, 'jcard').panels?.find((each) => each.panel === panel)?.rect;
+    if (!rect) throw new Error(`no ${panel}`);
+    return rect;
+  };
+
+  /** The title block, which is the only type on the Front Panel set at 700. */
+  const headlineFor = (album: string): TextOp[] =>
+    frontTexts(sheetOf(aRelease({ album }))).filter((op) => op.style.weight === 700);
+
+  /** The one line at the foot of the Front Panel and of the Label. */
+  const footerOf = (sheet: SheetLayout, part: PartKind): string | undefined =>
+    (part === 'jcard' ? frontTexts(sheet) : textsOf(sheet, part)).find((op) =>
+      /^\d+ tracks?\b/.test(op.text),
+    )?.text;
+
+  it('draws no artwork on any Part, and nothing standing in for it', () => {
+    // The ticket's first line: no placeholder tint where a sleeve would go.
+    // `artworkOrPlaceholder` is the only thing that draws either, and Minimal
+    // simply must not call it — there is no flag that turns it off.
+    const sheet = sheetOf();
+
+    for (const part of PART_KINDS) {
+      const images = partOf(sheet, part).ops.filter((op) => op.op === 'image');
+      expect(
+        images.filter((op) => op.op === 'image' && op.role === 'artwork'),
+        `${part} draws artwork`,
+      ).toEqual([]);
+    }
+    // And no image at all on the two Parts that have no Spine to carry a logo.
+    expect(partOf(sheet, 'back-card').ops.filter((op) => op.op === 'image')).toEqual([]);
+    expect(partOf(sheet, 'label').ops.filter((op) => op.op === 'image')).toEqual([]);
+  });
+
+  it('paints only in the three colours the design chose', () => {
+    // This is what "no placeholder" comes to in pixels. A tint standing in for
+    // artwork is `withAlpha(ink, 0.1)` and Full-bleed's scrim is
+    // `withAlpha(ink, 0.62)`; both are a fourth colour that no swatch names, so
+    // a Template that paints only in the three cannot be drawing either.
+    const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
+    const chosen = new Set(Object.values(params));
+    const sheet = sheetOf(aRelease(), params);
+
+    for (const part of PART_KINDS) {
+      const fills = partOf(sheet, part).ops.flatMap((op) =>
+        op.op === 'fill-rect' || op.op === 'fill-polygon' ? [op.color] : [],
+      );
+      expect(fills.length, `${part} is painted at all`).toBeGreaterThan(0);
+      expect(fills.filter((color) => !chosen.has(color)), part).toEqual([]);
+    }
+  });
+
+  it('ignores artwork a Release happens to have', () => {
+    // The Template is chosen per Release, so a looked-up Release with a sleeve
+    // can be put into Minimal. Half-using the picture would be the worst of
+    // both; the design is that it is not used.
+    const without = sheetOf(aRelease());
+    const with_ = sheetOf(aRelease({ artwork }));
+
+    for (const part of PART_KINDS) {
+      expect(partOf(with_, part).ops, part).toEqual(partOf(without, part).ops);
+    }
+  });
+
+  it('keeps the MiniDisc logo on the Spine and off the Front Panel', () => {
+    // "Type and nothing else" cannot mean dropping the Spine's logo: a shelved
+    // case has to be identifiable and ADR-0004 puts the mark there. It can and
+    // does mean dropping the second placement, which is the only mark on this
+    // Template that is not type.
+    const jcard = partOf(sheetOf(), 'jcard');
+    const images = jcard.ops.flatMap((op) => (op.op === 'image' ? [op] : []));
+    const spine = panelOf(sheetOf(), 'spine');
+
+    expect(images, 'one logo, on the Spine').toHaveLength(1);
+    expect(images[0]?.role).toBe('logo');
+    expect(images[0]?.rect.x).toBeGreaterThanOrEqual(spine.x);
+    expect((images[0]?.rect.x ?? 0) + (images[0]?.rect.width ?? 0)).toBeLessThanOrEqual(
+      spine.x + spine.width,
+    );
+
+    // And the toggle still switches off the one that is left.
+    expect(
+      partOf(sheetOf(aRelease(), { showLogo: false }), 'jcard').ops.filter(
+        (op) => op.op === 'image',
+      ),
+    ).toEqual([]);
+  });
+
+  it('captions every Part when type over the artwork is switched off', () => {
+    // `showOverlayText` governs type drawn *over* artwork, and this Template has
+    // no artwork for type to be over — so none of its type is gated on it. The
+    // same reasoning ticket 03 applied to Classic's Front Panel caption.
+    const sheet = sheetOf(aRelease(), { showOverlayText: false });
+
+    for (const [part, texts] of [
+      ['jcard', frontTexts(sheet)],
+      ['back-card', textsOf(sheet, 'back-card')],
+      ['label', textsOf(sheet, 'label')],
+    ] as const) {
+      const printed = texts.map((op) => op.text).join(' ');
+      expect(printed, `${part} names the record`).toContain('Wichita Lineman');
+      expect(printed, `${part} names the artist`).toContain('Glen Campbell');
+    }
+  });
+
+  it('draws the same Parts whether or not the inset square is asked for', () => {
+    // `insetArtwork` is Classic's artwork as a square. There is no artwork here
+    // to inset, so the toggle has nothing to reach — and the Design panel shows
+    // it for every Template, so "nothing to reach" has to mean "changes
+    // nothing" rather than "changes something unintended".
+    for (const part of PART_KINDS) {
+      expect(partOf(sheetOf(aRelease(), { insetArtwork: true }), part).ops, part).toEqual(
+        partOf(sheetOf(aRelease(), { insetArtwork: false }), part).ops,
+      );
+    }
+  });
+
+  it('names the record first on every Part', () => {
+    // The Template's one ordering, and the thing that separates its Back Card
+    // from Full-bleed's, which grounds in the same colour and ranges left too.
+    const sheet = sheetOf();
+
+    for (const [part, texts] of [
+      ['jcard', frontTexts(sheet)],
+      ['back-card', textsOf(sheet, 'back-card')],
+      ['label', textsOf(sheet, 'label')],
+    ] as const) {
+      const artistAt = texts.findIndex((op) => op.text === 'Glen Campbell');
+      expect(texts[0]?.text.startsWith('Wichita'), `${part} opens with the album`).toBe(true);
+      expect(artistAt, `${part} names the artist after it`).toBeGreaterThan(0);
+    }
+  });
+
+  it('sets the title as large as it fits, and smaller when it will not', () => {
+    // The whole answer to "no artwork": the space a sleeve would have taken is
+    // spent on the title rather than left empty.
+    const short = headlineFor('Home');
+    const long = headlineFor('The Rise and Fall of Ziggy Stardust and the Spiders from Mars');
+
+    expect(short.map((op) => op.text), 'a short title needs no wrap').toEqual(['Home']);
+    expect(short[0]?.style.sizeMm, 'and gets the largest size there is').toBe(11);
+    expect(long[0]?.style.sizeMm, 'a long one gives up size').toBeLessThan(11);
+    expect(long[0]?.style.sizeMm, 'but never past the floor').toBeGreaterThanOrEqual(4.5);
+    expect(long.length, 'and takes no more than three lines').toBeLessThanOrEqual(3);
+  });
+
+  it('wraps the title rather than cutting it', () => {
+    const lines = headlineFor('Selected Ambient Works 85–92').map((op) => op.text);
+
+    expect(lines.length, 'it wrapped').toBeGreaterThan(1);
+    expect(lines.join(' '), 'and lost nothing doing it').toBe('Selected Ambient Works 85–92');
+    expect(lines.some((line) => line.includes('…'))).toBe(false);
+  });
+
+  it('ellipsises the title only once shrinking has run out', () => {
+    // Every line of one size, so what is on the Part is a title that gave up
+    // size first and words last — and says so, because a line that simply stops
+    // is a cut the collector has no way of seeing.
+    const lines = headlineFor(Array.from({ length: 60 }, (_, index) => `Word${index}`).join(' '));
+
+    expect(lines).toHaveLength(3);
+    expect(lines[0]?.style.sizeMm, 'it went all the way to the floor').toBe(4.5);
+    expect(lines[2]?.text, 'and said what it could not fit').toMatch(/…$/);
+  });
+
+  it('brings a single word too wide for the panel back inside it', () => {
+    // `wrapText` will not break inside a word, so the fit cannot be a line
+    // count alone: one long word is one line and still off the Part.
+    const [line, ...rest] = headlineFor('Anticonstitutionnellementsupercalifragilistic');
+    const room = panelOf(sheetOf(), 'front-panel').width - 2 * PAD_MM;
+
+    if (!line) throw new Error('no title line');
+    expect(rest, 'one word is one line').toEqual([]);
+    expect(line.text).toMatch(/…$/);
+    expect(testMeasurer.widthMm(line.text, line.style)).toBeLessThanOrEqual(room + 0.001);
+  });
+
+  it('keeps every mark of the Front Panel on the Front Panel', () => {
+    const album = 'The Rise and Fall of Ziggy Stardust and the Spiders from Mars';
+    const sheet = sheetOf(aRelease({ album }));
+    const panel = panelOf(sheet, 'front-panel');
+    const texts = frontTexts(sheet);
+
+    expect(texts.length, 'the panel is set at all').toBeGreaterThan(0);
+    for (const op of texts) {
+      expect(op.at.x, op.text).toBeGreaterThanOrEqual(panel.x);
+      expect(op.at.y, op.text).toBeGreaterThanOrEqual(panel.y);
+      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(panel.y + panel.height);
+      expect(testMeasurer.widthMm(op.text, op.style), op.text).toBeLessThanOrEqual(
+        panel.width - 2 * PAD_MM + 0.001,
+      );
+    }
+  });
+
+  it('keeps the title clear of the artist under it, however many lines it takes', () => {
+    // The Front Panel's version of the Back Card invariant: the artist hangs off
+    // the title's last line, so a wrap that grew by one line and a gap that did
+    // not would print the two through each other.
+    for (const album of ['Home', 'Selected Ambient Works 85–92', 'A B C D E F G H I J K L M N']) {
+      const texts = frontTexts(sheetOf(aRelease({ album })));
+      const title = texts.filter((op) => op.style.weight === 700);
+      const artist = texts.find((op) => op.text === 'Glen Campbell');
+
+      const lowest = Math.max(...title.map((op) => op.at.y + op.style.sizeMm));
+      expect(artist, album).toBeDefined();
+      expect(lowest, album).toBeLessThanOrEqual(artist?.at.y ?? 0);
+    }
+  });
+
+  it('says how many tracks there are, and how long they run when every one says', () => {
+    const timed = aRelease({
+      tracks: [
+        { position: 1, title: 'One More Time', lengthMs: 320840 },
+        { position: 2, title: 'Aerodynamic', lengthMs: 207533 },
+      ],
+    });
+    const sheet = sheetOf(timed);
+
+    // On the Front Panel and on the Label: the two Parts that would otherwise
+    // be a name on an empty field.
+    expect(footerOf(sheet, 'jcard')).toBe('2 tracks · 8:48');
+    expect(footerOf(sheet, 'label')).toBe('2 tracks · 8:48');
+  });
+
+  it('says nothing about a running time when one track is missing its own', () => {
+    const partly = aRelease({
+      tracks: [
+        { position: 1, title: 'One More Time', lengthMs: 320840 },
+        { position: 2, title: 'Aerodynamic' },
+      ],
+    });
+
+    expect(footerOf(sheetOf(partly), 'jcard')).toBe('2 tracks');
+  });
+
+  it('still looks finished for a Release with no times at all, which is the mixtape', () => {
+    // The Template exists for Releases nobody looked up, and those have no
+    // durations. The footer has to be worth drawing without them.
+    expect(footerOf(sheetOf(), 'jcard')).toBe('3 tracks');
+    expect(footerOf(sheetOf(aRelease({ tracks: [{ position: 1, title: 'Only' }] })), 'jcard')).toBe(
+      '1 track',
+    );
+  });
+
+  it('says nothing at all about a Release with no tracks, rather than “0 tracks”', () => {
+    // A zero would be a claim about a record instead of the absence of one —
+    // the same reason `formatTrackLength` refuses to print 0:00.
+    const empty = sheetOf(aRelease({ tracks: [] }));
+
+    expect(footerOf(empty, 'jcard')).toBeUndefined();
+    expect(footerOf(empty, 'label')).toBeUndefined();
+    // And the Part is still a Part: the name is on it.
+    expect(frontTexts(empty).map((op) => op.text).join(' ')).toContain('Wichita');
+  });
+
+  it('grounds the Back Card in the ink the Front Panel sets its type in', () => {
+    // Minimal's one gesture: the two faces of the case are the same page, the
+    // second one printed the other way round.
+    const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
+    const sheet = sheetOf(aRelease(), params);
+
+    const front = partOf(sheet, 'jcard').ops.find((op) => op.op === 'fill-rect');
+    expect(front?.op === 'fill-rect' ? front.color : undefined, 'the J-Card is paper').toBe(
+      params.paperColor,
+    );
+    expect([...new Set(frontTexts(sheet).map((op) => op.style.color))], 'set in the ink').toEqual([
+      params.inkColor,
+    ]);
+
+    const back = partOf(sheet, 'back-card').ops[0];
+    expect(back?.op === 'fill-rect' ? back.color : undefined, 'the Back Card is that ink').toBe(
+      params.inkColor,
+    );
+    expect([...new Set(textsOf(sheet, 'back-card').map((op) => op.style.color))]).toEqual([
+      '#ffffff',
+    ]);
+  });
+
+  it('makes the Label a chip of the accent, cut to the corner the cartridge needs', () => {
+    const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
+    const label = partOf(sheetOf(aRelease(), params), 'label');
+    const chip = label.ops[0];
+
+    expect(chip?.op, 'the chip is the Part’s own outline').toBe('fill-polygon');
+    if (chip?.op !== 'fill-polygon') throw new Error('no chip');
+    expect(chip.color).toBe(params.accentColor);
+    expect(chip.points).toEqual(partShape('label', DEFAULT_PART_DIMENSIONS).outline);
+
+    // Reversed out of it, chosen rather than configured: a light accent would
+    // otherwise take the same white type a dark one does.
+    expect([...new Set(textsOf(sheetOf(aRelease(), params), 'label').map((op) => op.style.color))])
+      .toEqual(['#ffffff']);
+    expect([
+      ...new Set(
+        textsOf(sheetOf(aRelease(), { ...params, accentColor: '#ffd966' }), 'label').map(
+          (op) => op.style.color,
+        ),
+      ),
+    ]).toEqual(['#111111']);
+  });
+
+  it('holds the Label’s heading clear of the diagonal the notch cuts', () => {
+    // The cut runs x = (width − notch) + y from the top edge down to y = notch,
+    // and the heading starts inside that band. A line set to the full measure
+    // would have its last characters on the corner that is not there.
+    const { width, notchSize } = DEFAULT_PART_DIMENSIONS.label;
+    const long = aRelease({ artist: 'A Band With A Very Long Name Indeed', album: 'And An Album Longer Still' });
+    const heading = textsOf(sheetOf(long), 'label').filter((op) => !/^\d+ tracks?\b/.test(op.text));
+
+    expect(heading, 'the album and the artist').toHaveLength(2);
+    for (const op of heading) {
+      expect(op.at.x + testMeasurer.widthMm(op.text, op.style), op.text).toBeLessThanOrEqual(
+        width - notchSize,
+      );
+    }
+
+    // The footer is at the other end of the Label and gets the full measure,
+    // which is what says the reserve above is about the notch and not a margin.
+    const [line] = textsOf(sheetOf(long), 'label').filter((op) => /^\d+ tracks?\b/.test(op.text));
+    expect(line?.at.x).toBe(LABEL_PAD_MM);
+    expect((line?.at.y ?? 0) + (line?.style.sizeMm ?? 0)).toBeLessThanOrEqual(
+      DEFAULT_PART_DIMENSIONS.label.height,
+    );
+  });
+
+  it('spends one face on all three roles, which is a decision and not an omission', () => {
+    // The roles exist so a Template's voice is more than a single choice; this
+    // is the Template that declines to spend them, and the other two are what
+    // say the collapse was chosen rather than forgotten.
+    expect(new Set(Object.values(TEMPLATES.minimal.faces)).size, 'Minimal').toBe(1);
+    expect(TEMPLATES.minimal.faces.display, 'and it is the universal one').toBe('sans');
+    expect(new Set(Object.values(TEMPLATES.classic.faces)).size, 'Classic').toBe(3);
+    expect(new Set(Object.values(TEMPLATES.fullbleed.faces)).size, 'Full-bleed').toBe(2);
+  });
+
+  it('draws no negative rectangle on the smallest J-Card a project file may carry', () => {
+    // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. The title fit
+    // shrinks against the room it has, and this is also what says that loop
+    // terminates when there is none: an unbounded one would hang the suite here
+    // rather than fail it.
+    const sheet = sheetOf(aRelease(), {}, {
+      ...DEFAULT_PART_DIMENSIONS,
+      jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+    });
+
+    for (const op of partOf(sheet, 'jcard').ops) {
+      if (op.op !== 'fill-rect') continue;
+      expect(op.rect.width).toBeGreaterThanOrEqual(0);
+      expect(op.rect.height).toBeGreaterThanOrEqual(0);
+    }
+    expect(frontTexts(sheet).length, 'and still sets something').toBeGreaterThan(0);
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatTracklist, formatTrackLength, parseTracklist } from './tracklist.ts';
+import {
+  formatTracklist,
+  formatTrackLength,
+  parseTracklist,
+  totalTrackLength,
+} from './tracklist.ts';
 
 describe('manual tracklist entry', () => {
   it('numbers one track per line', () => {
@@ -134,5 +139,46 @@ describe('editing a tracklist that came with playing times', () => {
 
   it('has nothing to carry when the Release never had times', () => {
     expect(parseTracklist('Only Track')).toEqual([{ position: 1, title: 'Only Track' }]);
+  });
+});
+
+describe('how long the whole Release runs', () => {
+  it('adds the tracks up when every one of them has a time', () => {
+    expect(
+      totalTrackLength([
+        { position: 1, title: 'One More Time', lengthMs: 320840 },
+        { position: 2, title: 'Aerodynamic', lengthMs: 207533 },
+      ]),
+    ).toBe(528373);
+  });
+
+  it('has no total at all when one track is missing its time', () => {
+    // A sum over the tracks that happen to have times is a smaller number
+    // presented as the running time, and nothing on the Part could say which
+    // it was. Better to print no total than a wrong one.
+    expect(
+      totalTrackLength([
+        { position: 1, title: 'One More Time', lengthMs: 320840 },
+        { position: 2, title: 'Aerodynamic' },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('has no total for a Release with no tracks', () => {
+    expect(totalTrackLength([])).toBeUndefined();
+  });
+
+  it('refuses a length that is not a number, exactly as one track does', () => {
+    expect(totalTrackLength([{ position: 1, title: 'Broken', lengthMs: Number.NaN }])).toBeUndefined();
+  });
+
+  it('formats past an hour, which is what a full disc does', () => {
+    const disc = Array.from({ length: 20 }, (_, index) => ({
+      position: index + 1,
+      title: `Track ${index + 1}`,
+      lengthMs: 240_000,
+    }));
+
+    expect(formatTrackLength(totalTrackLength(disc))).toBe('1:20:00');
   });
 });

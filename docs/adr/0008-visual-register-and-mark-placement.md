@@ -53,8 +53,12 @@ or Vietnamese — chrome labels are English, and user-typed text falls through t
 bundled. Body copy on a Part is **not** set in this face and never was, which is the whole of rule 9.
 
 Amended by ticket 02 of v2: a Part is no longer set in Noto Sans either. Five more OFL faces are bundled — Source Serif 4,
-Bitter, Space Grotesk, Archivo Narrow and Cabin, Latin + Latin-ext, 280,420 bytes measured — and a Template names three of
-them by role (display, text, spine). Rule 6 is unaffected in the way that matters: every one of them is an outline face,
+Bitter, Space Grotesk, Archivo Narrow and Cabin, Latin + Latin-ext, 280,420 bytes measured — and a Template names three
+faces by role (display, text, spine). Amended again by ticket 04: three *roles*, not necessarily three faces. **Minimal**
+names Noto Sans in all three, because a Template whose whole design is type sets its hierarchy in size, weight and space
+— the rule this ADR already gives the chrome — and because Noto Sans is the one bundled face that ships past Latin-ext, so
+a Release typed in from a shelf in Greek, Cyrillic or Vietnamese sets in the face the Template chose instead of falling out
+of it mid-line. What a Template may never do is name a *family*; the quarantine holds unchanged. Rule 6 is unaffected in the way that matters: every one of them is an outline face,
 and the serif was chosen *because* it is low-contrast, since an old-style face's hairlines at the 2.4 mm the tracklist
 sets fall under Sony's 0.15 mm printable-stroke floor. Noto Sans stays the fallback every print stack ends with, which is
 what renders a Cyrillic title and a Japanese tracklist in faces that ship Latin only.
