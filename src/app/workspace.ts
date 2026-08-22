@@ -27,6 +27,8 @@ import { createEmptyState } from './empty-state.ts';
 import { createFold } from './fold.ts';
 import { createLabelControls } from './label-controls.ts';
 import { createPartBand } from './part-band.ts';
+import { admitRestore, refuseImport } from './project-arrival.ts';
+import type { SessionWork } from './project-arrival.ts';
 import { createProjectControls } from './project-controls.ts';
 import { createQueuePanel } from './queue-panel.ts';
 import { createReleaseForm } from './release-form.ts';
@@ -112,6 +114,13 @@ export function createWorkspace(): Workspace {
   const partBand = createPartBand({ actions: [preview.exportButton] });
 
   const projectControls = createProjectControls(project, (imported) => {
+    // The file has been read and understood by now, and is still not applied:
+    // a Batch filling the Queue outranks it (see project-arrival.ts).
+    const refused = refuseImport(sessionWork());
+    if (refused) {
+      projectControls.report(refused);
+      return;
+    }
     applyProject(imported);
     projectControls.report(
       imported.entries.length === 0
@@ -211,6 +220,15 @@ export function createWorkspace(): Workspace {
 
   /** Set the moment the collector touches anything, so a late restore cannot undo it. */
   let edited = false;
+
+  /**
+   * What this session has already done, for whatever has to decide that it may
+   * not be replaced. The Batch is the search panel's to know about, so it is
+   * asked rather than tracked twice.
+   */
+  function sessionWork(): SessionWork {
+    return { edited, batchRunning: search.isBatchRunning() };
+  }
 
   function refresh(): void {
     queuePanel.show(queue, selectedId);
@@ -475,9 +493,11 @@ export function createWorkspace(): Workspace {
     .load()
     .then((saved) => {
       if (!saved) return;
-      // Reading the store is asynchronous, and a fast typist can be mid-word
-      // before it answers. Their edit wins; the saved copy is already theirs.
-      if (edited) return;
+      // Reading the store is asynchronous, and by the time it answers a fast
+      // typist can be mid-word and a pasted Batch can be halfway through its
+      // lookups. Either way the work on screen is the newer of the two, and
+      // this copy is already the collector's own.
+      if (!admitRestore(sessionWork())) return;
       applyProject(saved);
       // An empty queue is a real thing to have saved — the collector printed
       // their sheets and cleared it. Their paper and margin still come back;

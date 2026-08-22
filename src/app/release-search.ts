@@ -1,8 +1,8 @@
 import type { Release } from '../domain/release.ts';
 import { errorMessage } from '../errors.ts';
 import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata/metadata-adapter.ts';
-import { resolveBatchIntoQueue } from '../queue/batch.ts';
-import type { BatchRequest } from '../queue/batch.ts';
+import { resolveBatchIntoQueue, searchQueryFor } from '../queue/batch.ts';
+import type { BatchRequest, LineQuery } from '../queue/batch.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { clear, el } from './dom.ts';
 
@@ -11,8 +11,9 @@ import { clear, el } from './dom.ts';
  *
  * It reads four things, and says which one it read before spending a request:
  * `Artist — Album`, a bare title, a MusicBrainz MBID or URL, and several lines
- * at once. There is one convention for all of them, because there was already
- * one — the batch rule below — and a second would be a second thing to learn.
+ * at once. There is one convention for all of them — `readLine` below, which
+ * every line of a batch goes through too — because a second would be a second
+ * thing to learn.
  */
 
 /**
@@ -42,7 +43,23 @@ function splitLine(line: string): { artist: string; album: string } | undefined 
 }
 
 /**
- * `Artist — Album` per line.
+ * How one line reads, and the only place that decision is made.
+ *
+ * A line names both fields or it names a release title, and which one it is
+ * cannot depend on how the line arrived. It did: for the whole of v1 the batch
+ * kept its own copy of this rule and put a line with no separator into
+ * `artist`, so a pasted `Loveless` asked MusicBrainz for a band of that name
+ * while the same word typed alone asked for the record. One rule needs one
+ * place, and this is it.
+ */
+function readLine(line: string): LineQuery {
+  const split = splitLine(line);
+  if (split && split.artist && split.album) return { kind: 'fielded', ...split };
+  return { kind: 'text', text: line };
+}
+
+/**
+ * One request per line.
  *
  * The id is the line itself, not its position in the paste: a line that could
  * not be looked up becomes a Release under this id, and the same line twice is
@@ -53,31 +70,25 @@ export function parseBatchLines(text: string): BatchRequest[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => {
-      const split = splitLine(line);
-      return {
-        id: `batch-${line}`,
-        artist: split?.artist ?? line,
-        album: split?.album ?? '',
-      };
-    });
+    .map((line) => ({ id: `batch-${line}`, query: readLine(line) }));
 }
 
 /** What the field was read as. Shown to the collector before a request is spent. */
 export type ParsedQuery =
   | { readonly kind: 'empty' }
   | { readonly kind: 'mbid'; readonly mbid: string }
-  | { readonly kind: 'fielded'; readonly artist: string; readonly album: string }
-  | { readonly kind: 'text'; readonly text: string }
+  // The two readings one line has, spelled the same way here as in a batch.
+  | LineQuery
   | { readonly kind: 'batch'; readonly requests: readonly BatchRequest[] };
 
 /**
- * Reads the field, using the same rule the batch has always used.
+ * Reads the field.
  *
  * An MBID wins over everything, because it identifies a pressing exactly and
- * there is nothing to search for. Several lines are a batch. One line either
- * names an artist or does not, and a line that does not is a title — never an
- * artist, which is the case a two-field form could not express.
+ * there is nothing to search for. Several lines are a batch. One line goes
+ * through `readLine`, which is also where every line of a batch goes: a line
+ * that names no artist is a title, never an artist, which is the case a
+ * two-field form could not express.
  */
 export function parseQuery(raw: string): ParsedQuery {
   const lines = raw
@@ -92,9 +103,7 @@ export function parseQuery(raw: string): ParsedQuery {
   const mbid = MBID.exec(line);
   if (mbid?.[0]) return { kind: 'mbid', mbid: mbid[0].toLowerCase() };
 
-  const split = splitLine(line);
-  if (split && split.artist && split.album) return { kind: 'fielded', ...split };
-  return { kind: 'text', text: line };
+  return readLine(line);
 }
 
 /** How the reading reads, so the collector can correct it before it costs a request. */
@@ -144,6 +153,15 @@ export interface ReleaseSearch {
   readonly reopen: HTMLButtonElement;
   /** Marks the row whose Release is the one on screen. */
   markInUse(releaseId: string): void;
+  /**
+   * Whether a Batch is filling the Queue right now.
+   *
+   * The panel's other waits are its own business. This one is not: a Batch adds
+   * Entries to the Queue for as long as a minute, and a project arriving in the
+   * middle of one would replace a Queue that is still being filled. See
+   * `project-arrival.ts`, which is what asks.
+   */
+  isBatchRunning(): boolean;
 }
 
 export function createReleaseSearch(
@@ -226,7 +244,16 @@ export function createReleaseSearch(
     ),
   );
 
-  let busy = false;
+  /**
+   * What the panel is waiting for, if anything.
+   *
+   * A boolean would do for the panel's own guards, but one of the four waits
+   * has to be legible from outside — so the state says *what* it is waiting
+   * for, and there is one variable saying it rather than a flag beside a flag
+   * that can disagree with it.
+   */
+  let pending: 'request' | 'batch' | undefined;
+  const busy = (): boolean => pending !== undefined;
   let found: readonly ReleaseSummary[] = [];
   let inUse = '';
 
@@ -243,10 +270,10 @@ export function createReleaseSearch(
     if (!open && found.length > 0) input.focus();
   }
 
-  function setBusy(active: boolean, message: string): void {
-    busy = active;
-    submit.toggleAttribute('disabled', active);
-    rows.toggleAttribute('inert', active);
+  function setPending(next: 'request' | 'batch' | undefined, message: string): void {
+    pending = next;
+    submit.toggleAttribute('disabled', busy());
+    rows.toggleAttribute('inert', busy());
     status.textContent = message;
   }
 
@@ -271,6 +298,13 @@ export function createReleaseSearch(
     const parsed = parseQuery(pasted);
     if (parsed.kind !== 'batch') return;
     event.preventDefault();
+    // One at a time. Two overlapping Batches would interleave their lookups
+    // into the Queue, and `isBatchRunning` — which the workspace trusts to hold
+    // an import off — could only describe whichever of them finished first.
+    if (busy()) {
+      status.textContent = 'Still working on the last one. Wait for it to finish, then paste again.';
+      return;
+    }
     input.value = '';
     parseLine.textContent = describeQuery(parsed);
     void lookUpBatch(parsed.requests);
@@ -307,13 +341,13 @@ export function createReleaseSearch(
   }
 
   async function run(): Promise<void> {
-    if (busy) return;
+    if (busy()) return;
     const parsed = parseQuery(input.value);
     showParse();
 
     if (parsed.kind === 'empty') {
       setOpen(true);
-      setBusy(false, 'Type an artist and a release, a title, or an MBID.');
+      setPending(undefined, 'Type an artist and a release, a title, or an MBID.');
       return;
     }
     if (parsed.kind === 'batch') {
@@ -325,46 +359,43 @@ export function createReleaseSearch(
       return;
     }
 
-    const query =
-      parsed.kind === 'fielded'
-        ? { artist: parsed.artist, album: parsed.album }
-        : { text: parsed.text };
-
+    // Whatever is left is one line's reading, and it becomes a MusicBrainz
+    // query through the same converter every line of a batch goes through.
     found = [];
     renderRows();
     setOpen(true);
-    setBusy(true, 'Searching MusicBrainz…');
+    setPending('request', 'Searching MusicBrainz…');
     try {
-      const results = await adapter.search(query);
+      const results = await adapter.search(searchQueryFor(parsed));
       found = results.releases;
       renderRows();
-      setBusy(false, describe(results));
+      setPending(undefined, describe(results));
     } catch (error) {
-      setBusy(false, `Search failed: ${errorMessage(error)}`);
+      setPending(undefined, `Search failed: ${errorMessage(error)}`);
     }
   }
 
   /** An MBID names one pressing, so there is nothing to search and nothing to choose. */
   async function fetchDirectly(mbid: string): Promise<void> {
     setOpen(true);
-    setBusy(true, `Fetching ${mbid}…`);
+    setPending('request', `Fetching ${mbid}…`);
     try {
       const release = await adapter.resolve(mbid);
       onResolved(release);
-      setBusy(
-        false,
+      setPending(
+        undefined,
         `Filled in “${release.album}”${
           release.artwork ? ' with cover art' : ' — no cover art on file'
         }. Every field stays editable.`,
       );
     } catch (error) {
-      setBusy(false, `Could not fetch that MBID: ${errorMessage(error)}`);
+      setPending(undefined, `Could not fetch that MBID: ${errorMessage(error)}`);
     }
   }
 
   async function pick(summary: ReleaseSummary): Promise<void> {
-    if (busy) return;
-    setBusy(true, `Fetching “${summary.album}”…`);
+    if (busy()) return;
+    setPending('request', `Fetching “${summary.album}”…`);
     // Whatever happens below, this panel has to end up usable again: handing a
     // Release to the workspace rebuilds a good deal of the page, and a throw in
     // there would otherwise leave the panel disabled until a reload.
@@ -379,16 +410,16 @@ export function createReleaseSearch(
       });
       if (outcome?.release) onResolved(outcome.release);
     } catch (error) {
-      setBusy(false, `Could not fetch that release: ${errorMessage(error)}`);
+      setPending(undefined, `Could not fetch that release: ${errorMessage(error)}`);
       return;
     }
 
     if (!outcome?.release) {
-      setBusy(false, `Could not fetch that release: ${outcome?.error ?? 'unknown error'}`);
+      setPending(undefined, `Could not fetch that release: ${outcome?.error ?? 'unknown error'}`);
       return;
     }
-    setBusy(
-      false,
+    setPending(
+      undefined,
       `Filled in “${outcome.release.album}”${
         outcome.release.artwork ? ' with cover art' : ' — no cover art on file'
       }. Every field stays editable.`,
@@ -397,7 +428,7 @@ export function createReleaseSearch(
 
   async function lookUpBatch(requests: readonly BatchRequest[]): Promise<void> {
     setOpen(true);
-    setBusy(true, `Looking up ${requests.length} Releases, one a second…`);
+    setPending('batch', `Looking up ${requests.length} Releases, one a second…`);
     try {
       const entries = await resolveBatchIntoQueue(adapter, requests, (progress) => {
         status.textContent = progress.current
@@ -405,8 +436,8 @@ export function createReleaseSearch(
           : `Looked up ${progress.done} of ${progress.total}.`;
       });
       const added = onBatchResolved(entries);
-      setBusy(
-        false,
+      setPending(
+        undefined,
         describeBatch(
           added.length,
           entries.length - added.length,
@@ -416,7 +447,7 @@ export function createReleaseSearch(
       input.value = '';
       showParse();
     } catch (error) {
-      setBusy(false, `That batch failed: ${errorMessage(error)}`);
+      setPending(undefined, `That batch failed: ${errorMessage(error)}`);
     }
   }
 
@@ -456,6 +487,7 @@ export function createReleaseSearch(
     find,
     hits,
     reopen,
+    isBatchRunning: () => pending === 'batch',
     markInUse(releaseId) {
       if (inUse === releaseId) return;
       inUse = releaseId;
