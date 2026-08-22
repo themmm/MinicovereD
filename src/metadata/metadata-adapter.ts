@@ -70,6 +70,15 @@ const COVER_ART_SIZES = ['front-1200', 'front-500'] as const;
 export interface SearchQuery {
   readonly artist?: string;
   readonly album?: string;
+  /**
+   * A query with no field named — a bare album title, typically.
+   *
+   * Kept apart from `artist` and `album` rather than folded into either,
+   * because routing it into one would search the wrong index: "wichita
+   * lineman" put into `artist` asks MusicBrainz for an artist of that name and
+   * finds nothing. When this is set the fielded clauses are ignored.
+   */
+  readonly text?: string;
 }
 
 /** What a search found: the page of results, and how many matched in total. */
@@ -210,6 +219,15 @@ function toSummary(payload: MbRelease): ReleaseSummary | undefined {
 /** Lucene query for the MusicBrainz search index, with the user's text escaped. */
 function searchTerm(query: SearchQuery): string {
   const escape = (value: string): string => value.replace(/["\\]/g, '\\$&');
+
+  // Unfielded, and quoted as a phrase. Quoted because a title is full of
+  // characters Lucene reads as operators — "AC/DC", "Discovery (Remastered)",
+  // "F♯A♯∞" — and one of those turning into a syntax error costs a request out
+  // of a budget of one per second (ADR-0006). A phrase still matches inside a
+  // longer name, so "wichita lineman" finds "Wichita Lineman (Expanded)".
+  const text = query.text?.trim();
+  if (text) return `"${escape(text)}"`;
+
   const clauses = [
     query.artist?.trim() ? `artist:"${escape(query.artist.trim())}"` : undefined,
     query.album?.trim() ? `release:"${escape(query.album.trim())}"` : undefined,

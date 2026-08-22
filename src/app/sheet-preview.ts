@@ -5,19 +5,30 @@ import { errorMessage } from '../errors.ts';
 import { clear, el } from './dom.ts';
 
 /**
- * Live preview of the packed Sheets, and the export that turns them into one
- * PDF. Preview and export call the same rasteriser with different DPI, so what
- * is on screen is what comes out of the printer.
+ * The Sheet check, and the export (ADR-0010 item 3).
+ *
+ * The Sheet stopped being the design surface and became a verification step:
+ * paper, printable margin, what packed onto how many Sheets, cutting guides.
+ * It is the one view where a sheet of paper is genuinely the subject, which is
+ * why it is also the one view that keeps the neutral mount — colour judgement
+ * against a neutral surround belongs here rather than beside the Parts.
+ *
+ * Preview and export still call the same rasteriser with different DPI, so what
+ * is on screen is what comes out of the printer. That property is why this
+ * module can be demoted without anything being lost.
  */
 
 /** Sharp enough on screen without rasterising eight megapixels per keystroke. */
-const PREVIEW_DPI = 140;
+export const PREVIEW_DPI = 140;
 
 /** Firefox and Safari need the anchor in the document and the URL alive after the click. */
 const DOWNLOAD_URL_LIFETIME_MS = 30_000;
 
 export interface SheetPreview {
+  /** The body of the check: the mount, the pager, the facts, the warnings. */
   readonly element: HTMLElement;
+  /** Lives in the actions row, not in here — Export is not part of the check. */
+  readonly exportButton: HTMLButtonElement;
   /**
    * Show `sheets`, keeping the current Sheet where it still exists.
    *
@@ -28,6 +39,15 @@ export interface SheetPreview {
   show(sheets: readonly SheetLayout[], fileName: string, whenEmpty?: string): void;
   /** Report a problem instead of a stale Sheet. */
   showProblem(message: string): void;
+  /**
+   * Called with the line for the closed fold's header, every time it changes.
+   *
+   * The cost ADR-0010 accepts is that a collector who never opens this never
+   * sees how their Parts were packed. The mitigation is that the numbers that
+   * matter are on the header, so the packing is legible without opening
+   * anything.
+   */
+  onSummary(listener: (summary: string) => void): void;
 }
 
 export interface SheetPreviewOptions {
@@ -47,22 +67,24 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   let fileName = 'minicovered.pdf';
   let sheetIndex = 0;
   let redrawToken = 0;
+  let summaryListener: (summary: string) => void = () => {};
 
   const exportButton = el('button', {
     class: 'button button--primary',
     text: 'Export PDF',
+    attrs: { type: 'button' },
     on: { click: () => void exportPdf() },
   });
   const previous = el('button', {
-    class: 'button',
+    class: 'button button--tiny',
     text: '‹',
-    attrs: { 'aria-label': 'Previous Sheet' },
+    attrs: { type: 'button', 'aria-label': 'Previous Sheet' },
     on: { click: () => turnTo(sheetIndex - 1) },
   });
   const next = el('button', {
-    class: 'button',
+    class: 'button button--tiny',
     text: '›',
-    attrs: { 'aria-label': 'Next Sheet' },
+    attrs: { type: 'button', 'aria-label': 'Next Sheet' },
     on: { click: () => turnTo(sheetIndex + 1) },
   });
   const pager = el('div', { class: 'pager' }, previous, sheetLabel, next);
@@ -71,6 +93,21 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   function turnTo(index: number): void {
     sheetIndex = Math.min(Math.max(index, 0), Math.max(sheets.length - 1, 0));
     void redraw();
+  }
+
+  /** The closed header's line: how many Sheets, of what, at what margin. */
+  function announceSummary(): void {
+    const [first] = sheets;
+    if (!first) {
+      summaryListener('nothing to print');
+      return;
+    }
+    const parts = sheets.reduce((total, sheet) => total + sheet.placements.length, 0);
+    const count = sheets.length;
+    summaryListener(
+      `${count} × ${first.paper.name} · ${parts} ${parts === 1 ? 'Part' : 'Parts'} · ` +
+        `margin ${first.marginMm.toFixed(1)} mm`,
+    );
   }
 
   async function redraw(): Promise<void> {
@@ -89,16 +126,24 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
     status.textContent =
       `${sheet.paper.name} · ${parts} ${parts === 1 ? 'Part' : 'Parts'} on this Sheet · ` +
       `${sheet.marginMm} mm margin`;
+
+    // Every warning in the whole job, named by its Release. The Part band shows
+    // the selected Release's warnings at their cause (ADR-0010 item 5), which
+    // leaves the other Releases' warnings with nowhere else to be — and a
+    // tracklist that shrank past legibility is not a thing to find out after
+    // printing.
     clear(warnings);
-    for (const warning of sheet.warnings ?? []) {
+    const all = sheets.flatMap((each) => each.warnings ?? []);
+    for (const warning of all) {
       warnings.appendChild(el('li', { class: 'warnings__item', text: describeWarning(warning) }));
     }
-    warnings.hidden = (sheet.warnings ?? []).length === 0;
+    warnings.hidden = all.length === 0;
 
     sheetLabel.textContent = `Sheet ${sheetIndex + 1} of ${sheets.length}`;
     pager.hidden = sheets.length < 2;
     previous.toggleAttribute('disabled', sheetIndex === 0);
     next.toggleAttribute('disabled', sheetIndex >= sheets.length - 1);
+    announceSummary();
   }
 
   async function exportPdf(): Promise<void> {
@@ -122,16 +167,9 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   }
 
   const element = el(
-    'section',
-    { class: 'panel preview' },
-    el(
-      'div',
-      { class: 'preview__head' },
-      el('h2', { class: 'panel__title', text: 'Preview' }),
-      pager,
-      actionBar,
-      exportButton,
-    ),
+    'div',
+    { class: 'check' },
+    el('div', { class: 'check__head' }, pager, actionBar),
     el('div', { class: 'preview__frame' }, canvas),
     status,
     warnings,
@@ -151,10 +189,12 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
     canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
     canvas.width = 0;
     canvas.height = 0;
+    announceSummary();
   }
 
   return {
     element,
+    exportButton,
     show(nextSheets, nextFileName, whenEmpty) {
       sheets = nextSheets;
       fileName = nextFileName;
@@ -167,16 +207,34 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
       void redraw();
     },
     showProblem: showNothing,
+    onSummary(listener) {
+      summaryListener = listener;
+      announceSummary();
+    },
   };
 }
 
-/** The wording lives here, not in the geometry that noticed the problem. */
+/**
+ * The wording lives here, not in the geometry that noticed the problem.
+ *
+ * Every Release is named, because this list collects the warnings of all of
+ * them; the band's own notes sit under one Part and do not need to.
+ */
 function describeWarning(warning: SheetWarning): string {
-  const { releaseTitle, trackCount, sizeMm, floorMm } = warning;
-  return (
-    `${releaseTitle}: ${trackCount} tracks only fit at ${sizeMm.toFixed(2)} mm type, below the ` +
-    `${floorMm.toFixed(2)} mm a printer reliably holds. Every track is there, but they may not be legible.`
-  );
+  switch (warning.kind) {
+    case 'type-below-print-floor':
+      return (
+        `${warning.releaseTitle}: ${warning.trackCount} tracks only fit at ` +
+        `${warning.sizeMm.toFixed(2)} mm type, below the ${warning.floorMm.toFixed(2)} mm a printer ` +
+        `reliably holds. Every track is there, but they may not be legible.`
+      );
+    case 'spine-truncated':
+      return (
+        `${warning.releaseTitle}: the Spine does not fit and reads “${warning.shown}”. The type ` +
+        `stays at ${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the ` +
+        `artist or the album instead.`
+      );
+  }
 }
 
 function download(bytes: Uint8Array, fileName: string): void {

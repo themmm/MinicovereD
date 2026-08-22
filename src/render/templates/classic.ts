@@ -4,8 +4,7 @@ import type { DrawOp, TextStyle } from '../layout.ts';
 import {
   artworkOrPlaceholder,
   drawBackCard,
-  drawInnerFlap,
-  drawSpine,
+  drawJCard,
   FRONT_LOGO_WIDTH,
   logoOp,
   PAD,
@@ -85,13 +84,7 @@ export const CLASSIC_TEMPLATE: Template = {
   id: 'classic',
   name: 'Classic',
   description: 'Solid background, artwork as a square, type below it.',
-  drawJCard: (context: JCardContext) => ({
-    ops: [
-      ...drawInnerFlap(context, context.panels['inner-flap']),
-      ...drawSpine(context, context.panels.spine),
-      ...drawFrontPanel(context, context.panels['front-panel']),
-    ],
-  }),
+  drawJCard: (context: JCardContext) => drawJCard(context, drawFrontPanel),
   drawBackCard,
   drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
 };

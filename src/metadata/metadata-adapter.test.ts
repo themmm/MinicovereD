@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { createMetadataAdapter } from './metadata-adapter.ts';
+import type { SearchQuery } from './metadata-adapter.ts';
 import type { HttpClient, HttpResponse } from './http.ts';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__');
@@ -127,6 +128,47 @@ describe('MetadataAdapter — search', () => {
     const musicbrainz = http.urls.filter((url) => url.includes('musicbrainz.org'));
     expect(musicbrainz.length).toBeGreaterThan(1);
     expect(musicbrainz.every((url) => url.includes('client=minicovered-'))).toBe(true);
+  });
+
+  /**
+   * The query these build, read off the URL.
+   *
+   * The fixtures answer only recorded URLs, so a query nothing was recorded for
+   * is refused — which is the point of the harness. The URL is captured before
+   * the refusal, so it is still the thing under test; `sent` throws away the
+   * outcome and keeps the request.
+   */
+  const sent = async (query: SearchQuery): Promise<string> => {
+    const { adapter, http } = adapterOver();
+    await adapter.search(query).catch(() => undefined);
+    return decodeURIComponent(http.urls[0] ?? '');
+  };
+
+  it('builds a fielded query from an artist and a release', async () => {
+    expect(await sent({ artist: 'Daft Punk', album: 'Discovery' })).toContain(
+      'artist:"Daft Punk" AND release:"Discovery"',
+    );
+  });
+
+  it('sends an unfielded query as a phrase, so a bare title stays one search', async () => {
+    // The third case the one search field needs: routed into `artist` this
+    // would ask for an artist called "wichita lineman" and find nothing.
+    const url = await sent({ text: 'wichita lineman' });
+
+    expect(url).toContain('query="wichita lineman"');
+    expect(url).not.toContain('artist:');
+  });
+
+  it('quotes an unfielded query so punctuation cannot become an operator', async () => {
+    // "AC/DC" and "Discovery (Remastered)" are full of Lucene syntax, and a
+    // syntax error costs a request out of a budget of one a second (ADR-0006).
+    expect(await sent({ text: 'Discovery (Remastered) AC/DC' })).toContain(
+      'query="Discovery (Remastered) AC/DC"',
+    );
+  });
+
+  it('ignores the fielded clauses when an unfielded query is given', async () => {
+    expect(await sent({ artist: 'ignored', text: 'wichita lineman' })).not.toContain('ignored');
   });
 });
 

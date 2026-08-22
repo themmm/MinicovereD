@@ -45,7 +45,19 @@ export type DrawOp =
       /** Rotation about the rect's centre, clockwise. The Spine reads sideways. */
       readonly rotationDeg?: -90 | 0 | 90;
     }
-  | { readonly op: 'text'; readonly text: string; readonly at: Point; readonly style: TextStyle };
+  | TextOp;
+
+/**
+ * Named apart from the rest of the union because a caller sometimes needs the
+ * string that actually went onto the Part — `ellipsise` may have shortened it,
+ * and the Spine reports when it did.
+ */
+export type TextOp = {
+  readonly op: 'text';
+  readonly text: string;
+  readonly at: Point;
+  readonly style: TextStyle;
+};
 
 /** A print-only mark showing where to cut or fold (CONTEXT.md: Cutting Guide). */
 export interface Guide {
@@ -106,4 +118,26 @@ export interface TypeBelowPrintFloor {
   readonly floorMm: Mm;
 }
 
-export type SheetWarning = TypeBelowPrintFloor;
+/**
+ * The Spine's one line did not fit, and the end of it is not on the Part.
+ *
+ * The one warning here that reports *lost content* rather than small content.
+ * The Spine is one line by design — a shelved case has to read as one thing —
+ * so it cannot flow the way the tracklist does, and the type does not shrink
+ * to buy room either (`SPINE_SIZE_MM` in `templates/shared.ts` says why). What
+ * is left is to say plainly that the line was cut and what is on the Part
+ * instead, so that a collector can shorten it themselves.
+ */
+export interface SpineTruncated {
+  readonly kind: 'spine-truncated';
+  readonly releaseId: string;
+  /** What to call the Release on screen. */
+  readonly releaseTitle: string;
+  /** What the Spine was asked to say. */
+  readonly line: string;
+  /** What it says instead, ellipsis and all — the string that was drawn. */
+  readonly shown: string;
+  readonly sizeMm: Mm;
+}
+
+export type SheetWarning = TypeBelowPrintFloor | SpineTruncated;

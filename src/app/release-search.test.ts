@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeBatch, parseBatchLines } from './release-search.ts';
+import { describeBatch, describeQuery, parseBatchLines, parseQuery } from './release-search.ts';
 
 describe('reading a pasted batch', () => {
   it('takes one Release per line, as Artist — Album', () => {
@@ -94,5 +94,74 @@ describe('saying how a batch went', () => {
     expect(describeBatch(3, 1, 1)).toBe(
       'Added 3 Releases; 1 was already in the queue; 1 could not be found and needs completing by hand.',
     );
+  });
+});
+
+describe('reading the one search field', () => {
+  it('reads Artist — Album as two fields, by the same rule the batch uses', () => {
+    expect(parseQuery('Glen Campbell — Wichita Lineman')).toEqual({
+      kind: 'fielded',
+      artist: 'Glen Campbell',
+      album: 'Wichita Lineman',
+    });
+  });
+
+  it('reads a bare title as a title, never as an artist', () => {
+    // The whole reason SearchQuery needed a third case: routed into `artist`
+    // this would ask MusicBrainz for an artist called "wichita lineman".
+    expect(parseQuery('wichita lineman')).toEqual({ kind: 'text', text: 'wichita lineman' });
+  });
+
+  it('keeps a hyphenated name out of the fielded case', () => {
+    // Only a spaced dash separates, so this is one artist and not a query.
+    expect(parseQuery('Jean-Michel Jarre')).toEqual({ kind: 'text', text: 'Jean-Michel Jarre' });
+  });
+
+  it('treats a line whose separator leaves one side empty as a title', () => {
+    // "Artist — " is not an artist and a release; it is someone mid-typing.
+    expect(parseQuery('Glen Campbell — ').kind).toBe('text');
+  });
+
+  it('takes an MBID on its own', () => {
+    const mbid = '4f2e6a1b-3c4d-5e6f-7a8b-9c0d1e2f3a4b';
+    expect(parseQuery(mbid)).toEqual({ kind: 'mbid', mbid });
+  });
+
+  it('takes an MBID out of a pasted MusicBrainz URL, and lowercases it', () => {
+    expect(parseQuery('https://musicbrainz.org/release/4F2E6A1B-3C4D-5E6F-7A8B-9C0D1E2F3A4B')).toEqual({
+      kind: 'mbid',
+      mbid: '4f2e6a1b-3c4d-5e6f-7a8b-9c0d1e2f3a4b',
+    });
+  });
+
+  it('prefers an MBID over reading the same line as a query', () => {
+    // A URL is full of dashes and slashes; searching for one would find nothing.
+    expect(parseQuery('release — 4f2e6a1b-3c4d-5e6f-7a8b-9c0d1e2f3a4b').kind).toBe('mbid');
+  });
+
+  it('reads several lines as a batch, using the batch parser itself', () => {
+    const parsed = parseQuery('Daft Punk — Discovery\nCornelius — Fantasma');
+
+    expect(parsed.kind).toBe('batch');
+    expect(parsed.kind === 'batch' && parsed.requests.map((r) => r.album)).toEqual([
+      'Discovery',
+      'Fantasma',
+    ]);
+  });
+
+  it('ignores blank lines when deciding whether a paste is a batch', () => {
+    expect(parseQuery('\n  \nGlen Campbell — Wichita Lineman\n\n').kind).toBe('fielded');
+  });
+
+  it('says nothing about an empty field', () => {
+    expect(parseQuery('   ').kind).toBe('empty');
+    expect(describeQuery({ kind: 'empty' })).toBe('');
+  });
+
+  it('names the case it read, so a wrong reading is visible before a request', () => {
+    // At one request a second (ADR-0006), finding out afterwards is expensive.
+    expect(describeQuery(parseQuery('wichita lineman'))).toMatch(/release title/i);
+    expect(describeQuery(parseQuery('A — B'))).toMatch(/artist and release/i);
+    expect(describeQuery(parseQuery('A — B\nC — D'))).toMatch(/batch/i);
   });
 });

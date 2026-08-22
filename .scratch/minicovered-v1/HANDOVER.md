@@ -15,10 +15,40 @@ Written mid-run so a fresh session can pick this up without re-deriving anything
 | 07 tracklist overflow, Unicode hardening | **merged** — [PR #7](https://github.com/themmm/mdcovergen/pull/7) |
 | 08 autosave + project files | **merged** — [PR #8](https://github.com/themmm/mdcovergen/pull/8) |
 | 09 batch queue | **merged** — [PR #9](https://github.com/themmm/mdcovergen/pull/9) |
-| 10 release polish | **reviewed, fixed, ready to merge** — branch `ticket-10-release-polish` |
-| 11 register, rename, Part preview | **not started** — written by another session; read ADR-0008/0009/0010 first |
+| 10 release polish | **merged** — [PR #10](https://github.com/themmm/MinicovereD/pull/10) |
+| 11 register, rename, Part preview | **built, four PRs open and stacked** — see below |
 
-239 tests, `tsc --noEmit` clean, both builds green.
+269 tests, `tsc --noEmit` clean, both builds green.
+
+## Ticket 11, as built
+
+Four stacked PRs, none merged. Each targets the one before it, so merging #11 first retargets the
+rest automatically.
+
+| PR | Step |
+| --- | --- |
+| [#11](https://github.com/themmm/MinicovereD/pull/11) -> `main` | 0 · the rename, 30 files |
+| [#12](https://github.com/themmm/MinicovereD/pull/12) -> step 0 | 1 · Everforest Light, JetBrains Mono, the three palette laws |
+| [#13](https://github.com/themmm/MinicovereD/pull/13) -> step 1 | 2 · the quarantine, enforced by 8 checks |
+| [#14](https://github.com/themmm/MinicovereD/pull/14) -> step 2 | 3+4 · the Parts as the page, one search field, attribution |
+
+Steps 3 and 4 are one PR because the prototype's header *is* the single search field; the ticket's
+split does not survive the design. The first commit on that branch built ADR-0010's description of
+the page rather than the page itself and was replaced — read the second.
+
+**Still to do for v1, outside these PRs:**
+
+- **The Mark.** Its own task (ADR-0009 has a prototype prompt for it). Until then `assets/logo.svg`
+  — which ADR-0009 records as the discarded old mark — sits in the header at 19 px, in the favicon,
+  in the README and in `OWN_ARTWORK`, and the three icon PNGs are the old mark too. All of that moves
+  together when the Mark is drawn.
+- **The GitHub repository rename** to `MinicovereD`. The User-Agent already points at it; GitHub
+  redirects either way.
+- **The Spine type-size warning.** ADR-0010 puts a warning under the J-Card and the prototype shows
+  one, but no such warning kind exists in the renderer — inventing a threshold for Sony's 7 pt
+  recommendation is a geometry decision, not a preview one. The slot and `.note--error` are ready.
+- **Saved work does not survive step 0.** `PROJECT_FORMAT` and the IndexedDB name were renamed
+  without a migration, by decision. Export a project file before updating.
 
 ## What ticket 09 turned into
 

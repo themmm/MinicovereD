@@ -49,18 +49,23 @@
   --aqua: #35a77c;
   --yellow: #dfa000;
   --red: #f85552;
+  /* The tinted fields those accents sit on, and Everforest Light's own
+     bg_yellow, bg_red and bg_green rather than a mix of ours. */
   --fill-warn: #faedcd;
+  --fill-error: #fde3da;
   --fill-ok: #e9f0e9;
 
-  /* The shell band is ink, so its text is paper: the same 5.18:1 pair as the
-     filled control, inverted. --shell-line is the one border that sits on ink,
-     and 70 % paper is where it clears 3:1 (3.46) — 55 % does not (2.76). */
-  --shell: var(--ink);
-  --shell-ink: var(--surface);
-  --shell-line: color-mix(in srgb, var(--surface) 70%, transparent);
-
   --radius: 8px;
+  /* The register's own corner: 5 px, small enough that a 1 px hairline still
+     reads as a straight edge at the scale these controls are drawn. */
+  --r: 5px;
   --gap: 16px;
+
+  /* Two curves, because the two movements are not the same movement. Most
+     things settle; the zoom is one large deliberate move and gets a slower,
+     more symmetric curve so it reads as a change of scale rather than a snap. */
+  --ease: cubic-bezier(0.33, 1, 0.68, 1);
+  --ease-zoom: cubic-bezier(0.42, 0.02, 0.24, 1);
 
   /* Light-only in v1 (ADR-0008): form controls and scrollbars follow, and the
      interactive accent reaches checkboxes without a selector for each. */
@@ -72,6 +77,24 @@
   box-sizing: border-box;
 }
 
+/*
+ * Form controls do not inherit colour: a bare <button> takes `buttontext` from
+ * the browser, which is black, and black is not in this palette. Under rule 1
+ * there is one text colour, so inheriting it is the correct default and any
+ * control that wants the other one — the single filled button — says so.
+ *
+ * This closes a whole class of leak rather than two instances of it. The queue
+ * row and the result row were both black, and neither had a `color` declaration
+ * to notice: the bug is the absence of one, which no rule about declared values
+ * can see.
+ */
+button,
+input,
+select,
+textarea {
+  color: inherit;
+}
+
 html,
 body {
   margin: 0;
@@ -81,9 +104,7 @@ body {
 body {
   background: var(--page);
   color: var(--ink);
-  font-family: var(--font-chrome);
-  font-size: 15px;
-  line-height: 1.5;
+  font: 400 13.5px/1.55 var(--font-chrome);
   /* A tool whose every field is a millimetre wants its digits to line up. */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -95,49 +116,302 @@ body {
   flex-direction: column;
 }
 
-/* ---------------------------------------------------------------- shell -- */
+/* ------------------------------------------------------------- the page -- */
 
-.shell-header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap);
-  padding: 12px 20px;
-  background: var(--shell);
-  color: var(--shell-ink);
+/*
+ * One measure for everything, so the header, the results, the Parts and the
+ * folds all begin at the same left edge. The band and the result list are
+ * full-bleed and carry their own `.wrap` inside, because their background has
+ * to reach the window while their content does not.
+ */
+.wrap {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0 30px;
 }
 
-.shell-header__logo {
-  width: 34px;
-  height: 34px;
+/* Prose is set in the Part's face, not the chrome's: a paragraph of English is
+   what the Noto stack is for, and a monospace paragraph is a wall. */
+.prose {
+  font-family: var(--font-print);
+}
+
+.micro {
+  font-size: 11.5px;
+}
+
+/* The one piece of display type on the page, and the only thing that says
+   which of several queued Releases the Parts below belong to. */
+.display {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+/* ------------------------------------------------------------ the header -- */
+
+/*
+ * 68 px: mark, wordmark, the field, the state, About. Nothing else fits, and
+ * that is the point — search is permanent here and is the widest thing in it
+ * (ADR-0010), which a tagline and a 34 px logo made impossible.
+ */
+.top-wrap {
+  border-bottom: 1px solid var(--line);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 14px;
+}
+
+.top__mark {
+  width: 19px;
+  height: 19px;
   flex: none;
 }
 
-.shell-header__titles {
-  flex: 1;
-  min-width: 0;
-}
-
-.shell-header__title {
-  margin: 0;
-  font-size: 17px;
+.top__wm {
+  white-space: nowrap;
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
 }
 
-/* Rule 1: the tagline is the same paper as the title, and the 4.5 px of size
-   between them is the hierarchy. The grey it used to be was 2.56:1. */
-.shell-header__tagline {
+.find {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  flex: 1 1 420px;
+  max-width: 620px;
+  margin: 0 6px;
+}
+
+.find__box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.find__box svg {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
+}
+
+/*
+ * Scoped to its box, not left bare. `.field__input` sets `padding: 7px 10px`
+ * further down the sheet at the same specificity, so a bare `.find__input`
+ * lost the argument and the magnifier ran under the placeholder. One class is
+ * not more important than another just because it is more specific in intent.
+ */
+.find__box > .find__input {
+  padding-left: 34px;
+  min-height: 38px;
+  font-size: 13.5px;
+}
+
+.find__reopen {
+  white-space: nowrap;
+}
+
+.find__reopen[hidden] {
+  display: none;
+}
+
+/*
+ * The state of the offline copy. The dot is an accent doing what rule 2 allows
+ * — a graphic — and the word beside it is what says the state, so the colour is
+ * reinforcement and never the message.
+ */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 22%, transparent);
+}
+
+.state[data-state='ready'] .dot {
+  background: var(--aqua);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua) 22%, transparent);
+}
+
+.state[data-state='unsupported'] .dot {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+}
+
+/* ----------------------------------------------------------- the results -- */
+
+/*
+ * The list expands rather than appears: 0fr to 1fr is animatable where height
+ * to auto is not. Same mechanism as a fold, same reason the clip carries the
+ * overflow and the paint containment.
+ */
+.hits {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.hits[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.hits:not([data-open]) {
+  border-bottom-color: transparent;
+}
+
+.hits__clip {
+  overflow: hidden;
+  min-height: 0;
+  contain: paint;
+}
+
+.hits__inner {
+  padding: 14px 0 16px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 220ms var(--ease) 60ms,
+    transform 220ms var(--ease) 60ms;
+}
+
+.hits[data-open] .hits__inner {
+  opacity: 1;
+  transform: none;
+}
+
+.hits__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.hits__eyebrow {
+  flex: 1;
+}
+
+.hits__note {
+  margin: 10px 0 0;
+  max-width: 78ch;
+}
+
+/* What the field was read as, before a request is spent on it. */
+.parse {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+}
+
+.rows {
+  list-style: none;
   margin: 0;
-  font-size: 12.5px;
+  padding: 0;
+}
+
+/*
+ * A result row. The bar at its left edge is the accent as a graphic; the row is
+ * marked as in use by that bar and by a word, never by colour alone.
+ */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px 9px 13px;
+  cursor: pointer;
+  position: relative;
+  transition: background 150ms var(--ease);
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--blue);
+  transform: scaleY(0);
+  transition: transform 150ms var(--ease);
+}
+
+.row:hover {
+  background: var(--sunken);
+}
+
+.row:hover::before,
+.row[aria-current='true']::before {
+  transform: scaleY(1);
+}
+
+.row[aria-current='true'] {
+  background: var(--sunken);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.row b {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.row span {
+  grid-column: 1;
+  font-size: 11.5px;
+}
+
+/*
+ * The "in use" badge. Declared after `.row span` on purpose: `.row span` is
+ * (0,1,1) and would otherwise outrank a bare `.use` at (0,1,0) further up the
+ * sheet, which is how every row came to show its badge at once.
+ */
+.row .use {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+
+.row[aria-current='true'] .use {
+  opacity: 1;
 }
 
 .shell-main {
   flex: 1;
-  padding: 24px 20px 40px;
+  padding: 0 0 40px;
 }
 
 .shell-footer {
-  padding: 14px 20px 22px;
+  padding: 14px 0 22px;
   font-size: 12.5px;
   border-top: 1px solid var(--line);
 }
@@ -205,7 +479,7 @@ a:focus-visible {
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 7px 13px;
   cursor: pointer;
 }
@@ -223,59 +497,42 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
-.button--onshell {
-  background: transparent;
-  border-color: var(--shell-line);
-  color: var(--shell-ink);
-}
+/* ------------------------------------------------------------ workspace -- */
 
-.button--onshell:hover {
-  border-color: var(--shell-ink);
-  background: color-mix(in srgb, var(--surface) 12%, transparent);
-}
-
-.status-pill {
-  font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--shell-line);
-  white-space: nowrap;
+/*
+ * One column, top to bottom: search · selection · the Release · its Parts ·
+ * the folds · the actions (ADR-0010).
+ *
+ * The two-column grid this replaces put the controls beside a permanent A4
+ * Sheet. That is what made the Front Panel show at roughly 2× physical size
+ * with two-thirds of the preview area showing empty paper — Parts pack to the
+ * top-left, and the paper does not care what is being designed.
+ */
+/* One measure, `.wrap`, shared with the header, the results and the footer.
+   Its own max-width here was a second measure by 40 px, which is the kind of
+   drift that is invisible until two edges are meant to line up. */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 /*
- * Ready is a light chip on the ink band — 4.82:1 for its edge and the same
- * for its ink text — with the accent doing what rule 2 allows: an aqua dot,
- * which is redundant reinforcement rather than the message. The pill's own
- * label names the state, so nothing here is carried by colour alone.
+ * Everything that is a view of the selected Release. Hidden as one thing,
+ * because nothing to design is not an empty design surface — it is no design
+ * surface. This is what the replaceable `display: contents` block used to be
+ * for; the folds do that job now, and better, because a fold the collector
+ * opened survives a selection change.
  */
-.status-pill[data-state='ready'] {
-  border-color: var(--aqua);
-  background: var(--fill-ok);
-  color: var(--ink);
-}
-
-/* ------------------------------------------------------------ workspace -- */
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: var(--gap);
-  align-items: start;
-  max-width: 1240px;
-  margin: 0 auto;
-}
-
-.workspace__column {
+.workspace__design {
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
+  gap: 0;
   min-width: 0;
 }
 
-/* The panels that show the selected Release: one replaceable block in the
-   column, laid out as if they were still direct children of it. */
-.workspace__panels {
-  display: contents;
+.workspace__design[hidden] {
+  display: none;
 }
 
 .field-row {
@@ -347,9 +604,625 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+/* ======================================================= the Parts band ==
+ * The Parts are the page (ADR-0010). Every width below is literally its
+ * millimetres — `calc(var(--w) * var(--mm))`, where `--w` is set from the
+ * layout model — so one token is one truth and the real size relationships
+ * between the three Parts stay visible.
+ *
+ * `--w` and `--h` come from TypeScript rather than being written here, because
+ * a Part's dimensions are adjustable parameters: the Label has presets and a
+ * size control, and hardcoding 35 × 52.5 would make this stylesheet quietly
+ * wrong the moment anyone used them.
+ */
+
+/*
+ * An unregistered custom property is not animatable, and it is not a typed
+ * value either — so `width: calc(var(--w) * var(--mm))` could not resolve to a
+ * length the browser is willing to interpolate, and every scale change was a
+ * jump cut. Registering them is what makes the zoom a movement.
+ */
+@property --mm {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 6.05px;
+}
+
+@property --mm-thumb {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 2.85px;
+}
+
+@property --cond {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --w {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --h {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/*
+ * A static 1 px marker, and the reason the condense can latch at all.
+ *
+ * A sticky element's own `offsetTop` moves the moment it sticks, so using the
+ * band as its own trip point is self-referential: it would enter the condensed
+ * state, move, and immediately no longer qualify. This does not move.
+ */
+.band-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+.band {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  /* The resting scale of all three Parts. The peers run 8-12 px/mm on a single
+     Part; three at once rest at ~6 and are clicked to isolate. */
+  --mm: clamp(3.1px, 0.5vw, 6.05px);
+  padding: calc(14px - 5px * var(--cond)) 0 calc(18px - 8px * var(--cond));
+  background: var(--page);
+  border-bottom: 1px solid var(--line);
+  /* Declared here and nowhere below. The same transition on a descendant that
+     merely inherits the value starts a competing animation and pins it at the
+     old one. */
+  transition:
+    --cond 380ms var(--ease),
+    box-shadow 240ms var(--ease);
+}
+
+/*
+ * Scrolling gives the folds below room: the band goes from about 664 px to
+ * 386 px, which turns 113 px of usable space underneath into 614 px.
+ *
+ * That shortens the document by roughly 280 px, which pulls the scroll position
+ * — so the two edges are 48 px and 10 px past the marker rather than one
+ * threshold, which the two edges would otherwise chase.
+ */
+.band[data-condensed] {
+  --mm: 3.15px;
+  --cond: 1;
+}
+
+.band[data-stuck] {
+  box-shadow: 0 12px 26px -20px color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+/*
+ * A Part being looked at outranks the scroll position: that zoom is a decision,
+ * and scrolling is not a reason to undo it.
+ *
+ * Both flags sit on this one element so the two rules have equal specificity and
+ * this one wins by coming last. With `data-condensed` on the wrapper instead,
+ * its descendant selector scored higher and silently beat the zoom — the same
+ * trap as a `.row span` that outranks a `.use` further up the sheet.
+ */
+/*
+ * Actual size. 3.7795 px is the nominal CSS millimetre — what a browser calls a
+ * millimetre — so this is a sanity check against a ruler, not a promise. Only
+ * the calibration sheet settles what a printer really does.
+ */
+.band[data-scale] {
+  --mm: 3.7795px;
+}
+
+.band[data-focus] {
+  --mm: min(clamp(5px, 1.15vw, 13.5px), calc(56vh / 79));
+  --cond: 0;
+}
+
+.band__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: calc(16px - 7px * var(--cond));
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  flex: 1 1 240px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* The rule that finishes an eyebrow is a graphic, which is the one thing an
+   accent is allowed to be — but a hairline reads better here than an accent. */
+.eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/*
+ * The eyebrow's loud half and its quiet half. Rule 1 forbids doing this with a
+ * lighter grey — and the prototype's opacity is a lighter grey by another route,
+ * measured at 1.95:1 — so the difference is weight, case and size instead.
+ */
+.eyebrow__num {
+  font-weight: 600;
+}
+
+.eyebrow__tail {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-size: 11px;
+}
+
+/*
+ * Three rows, one column per Part, so the artwork, the caption and any warning
+ * line up across all three however tall any one of them turns out to be. `.spec`
+ * is `display: contents` for exactly that reason.
+ */
+.specimens {
+  display: grid;
+  grid-auto-flow: column;
+  justify-content: start;
+  grid-template-rows: auto auto auto;
+  align-items: end;
+  gap: 9px clamp(18px, 3vw, 44px);
+}
+
+.spec {
+  display: contents;
+}
+
+/*
+ * The Part itself. `width` and `height` are what animate — never `transform`,
+ * which re-rasterises the element and shifts the antialiasing of every hairline
+ * and guide inside it, and reads as flickering edges.
+ *
+ * The canvas carries the cut line the Part actually prints with, which is
+ * #8a8a8a on paper at 3.45:1 — so the hairline ADR-0010 item 4 asks for is
+ * drawn by the renderer, and the border here only guarantees it where a guide
+ * falls on the canvas edge and is half-clipped.
+ */
+.spec__art {
+  width: calc(var(--w) * var(--mm));
+  height: calc(var(--h) * var(--mm));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  background: none;
+  cursor: zoom-in;
+  /* Never geometry on hover; colour and shadow only. */
+  transition:
+    width 540ms var(--ease-zoom),
+    height 540ms var(--ease-zoom),
+    box-shadow 150ms var(--ease),
+    border-color 150ms var(--ease);
+  box-shadow: 0 3px 14px -4px color-mix(in srgb, var(--ink) 22%, transparent);
+}
+
+.spec__art:hover {
+  border-color: var(--ink);
+  box-shadow: 0 9px 24px -8px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.spec__art:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+
+.spec__art[data-focused] {
+  cursor: zoom-out;
+}
+
+.spec__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spec__cap {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: opacity 540ms var(--ease-zoom);
+}
+
+.spec__cap b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The millimetres are the point of the caption, so they are not shouted. */
+.spec__cap span {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-size: 11px;
+}
+
+/* Warnings sit at their cause (ADR-0010 item 5), and are the first thing to
+   give up room when the band condenses. */
+.spec__note {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 34ch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: calc(1 - var(--cond));
+  max-height: calc(90px * (1 - var(--cond)));
+  overflow: hidden;
+  /* Same reason as `.fold__clip`: clipped is not the same as out of the way. */
+  contain: paint;
+  transition: opacity 540ms var(--ease-zoom);
+}
+
+/*
+ * A note under a Part. Rule 2 again: ink on a tinted field with an accent bar,
+ * never accent-coloured text — so the three kinds differ by field and bar, and
+ * nothing is carried by colour alone. The words say which is which.
+ *
+ * Both fields need the --line-strong boundary the Sheet check's warnings have,
+ * and for the same reason: --fill-warn is 1.03:1 against the band and
+ * --fill-error 1.02, so without a bounded edge neither reads as a field. The
+ * bar is an inset shadow rather than a border, so switching kinds never moves
+ * the text. The bars themselves are reinforcement — yellow is 1.97:1 on its
+ * own tint and red 2.68, and Everforest Light has nothing stronger.
+ */
+.note {
+  line-height: 1.45;
+  border-radius: var(--r);
+  padding: 6px 9px 6px 12px;
+}
+
+.note--warn,
+.note--error {
+  border: 1px solid var(--line-strong);
+}
+
+.note--warn {
+  background: var(--fill-warn);
+  box-shadow: inset 3px 0 0 var(--yellow);
+}
+
+/* Red for the Spine, which is the one note reporting something the collector
+   will not find on the Part at all. 4.57:1 for the ink, so it still carries
+   text; red is also the strongest accent here at 2.73:1 on the band, where
+   yellow is 1.91. */
+.note--error {
+  background: var(--fill-error);
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+/* Not a warning at all — the Label's notch line is a fact about the Part, so
+   it gets no field, no bar and no indent, and stays in the chrome face beside
+   the caption it continues. */
+.note--plain {
+  padding: 0;
+}
+
+/*
+ * Isolating one Part shrinks the others rather than removing them.
+ * `display: none` on a sibling takes it away in a single frame, so the element
+ * that grows also *jumps* to where the missing sibling used to be. Shrinking
+ * keeps the row's shape and lets every position glide.
+ */
+.band[data-focus] .spec__art:not([data-focused]) {
+  width: calc(var(--w) * var(--mm-thumb));
+  height: calc(var(--h) * var(--mm-thumb));
+}
+
+.band[data-focus] .spec__art:not([data-focused]) ~ .spec__cap,
+.band[data-focus] .spec__art:not([data-focused]) ~ .spec__note {
+  opacity: 0;
+}
+
+.band-wrap[data-empty] .specimens {
+  display: none;
+}
+
+/* --------------------------------------------------- segmented control -- */
+
+/* 30 px tall with 24 px targets inside, which clears WCAG 2.2 SC 2.5.8. */
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.seg__btn {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  min-height: 24px;
+  min-width: 24px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease),
+    color 150ms var(--ease);
+}
+
+.seg__btn:hover {
+  background: var(--sunken);
+}
+
+.seg__btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* The pressed one is filled, which is the same ink-on-paper pair the primary
+   button uses — a segmented control is one control, so rule 3 still holds. */
+.seg__btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* ------------------------------------------------------------- the hero -- */
+
+.hero {
+  padding: 26px 0 22px;
+}
+
+.hero__eyebrow {
+  margin-bottom: 13px;
+}
+
+.hero .display {
+  max-width: 24ch;
+}
+
+.hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 20px;
+  margin-top: 13px;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------------- the folds -- */
+
+.fold {
+  border-bottom: 1px solid var(--line);
+}
+
+.fold__btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  padding: 15px 2px;
+  cursor: pointer;
+  text-align: left;
+  min-height: 30px;
+  transition: background 150ms var(--ease);
+}
+
+.fold__btn:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.fold__btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.fold__num {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+}
+
+.fold__ttl {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fold__sum {
+  margin-left: auto;
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.fold__caret {
+  width: 9px;
+  height: 9px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 260ms var(--ease);
+  flex: none;
+}
+
+.fold[data-open] .fold__caret {
+  transform: rotate(45deg);
+}
+
+/* `height` cannot animate to `auto`; a grid track from 0fr to 1fr can. */
+.fold__body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+}
+
+.fold[data-open] .fold__body {
+  grid-template-rows: 1fr;
+}
+
+/*
+ * On the grid *item*, not on the container. On the item its automatic minimum
+ * size becomes 0 and the track can actually close; on the container the track
+ * never closes and the fold stays open at full height.
+ *
+ * `overflow: hidden` alone stops the contents being *painted* but not being
+ * *scrolled to*: a closed fold's 721 px of form still counted towards the
+ * document's scrollable height, so a page with 1715 px of content scrolled to
+ * 2672 and ended in blank paper. Neither `overflow: clip` nor hiding the
+ * overflow further up fixed it — only paint containment, which is what actually
+ * says descendants may not reach outside this box.
+ */
+.fold__clip {
+  overflow: hidden;
+  min-height: 0;
+  contain: paint;
+}
+
+.fold__pad {
+  padding: 4px 2px 26px;
+  display: grid;
+  gap: 14px;
+  opacity: 0;
+  transition: opacity 200ms var(--ease) 70ms;
+}
+
+.fold[data-open] .fold__pad {
+  opacity: 1;
+}
+
+/*
+ * A panel inside a fold has already been introduced by the fold's own header,
+ * so it gives up its card: the border and the fill would be a second frame
+ * around the same content. Done here rather than in each control module,
+ * because which surface a panel sits on is the page's business, not the
+ * control's.
+ */
+.fold__pad .panel {
+  border: 0;
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  /* The key column. Every label lines up at 138 px whatever it says, which is
+     what makes a fold of fields read as a table of settings rather than a
+     stack of boxes. */
+  display: grid;
+  grid-template-columns: 138px minmax(0, 1fr);
+  gap: 11px 20px;
+  align-items: center;
+}
+
+/*
+ * A field is a label wrapping its own input, so it cannot be a row of the grid
+ * on its own — subgrid lets it borrow the parent's columns instead. The
+ * alternative was rewriting five control modules to emit key/value siblings,
+ * which is a lot of churn for a column.
+ */
+.fold__pad .panel > .field,
+.fold__pad .panel > .field-row,
+.fold__pad .panel > .field-buttons,
+.fold__pad .panel > .toggles,
+.fold__pad .panel > .swatches,
+.fold__pad .panel > .panel__title,
+.fold__pad .panel > .panel__hint,
+.fold__pad .panel > p {
+  grid-column: 1 / -1;
+}
+
+.fold__pad .panel > .field {
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  margin: 0;
+}
+
+.fold__pad .field__label {
+  margin: 0;
+  align-self: center;
+}
+
+/* A tracklist is tall, so its label sits at the top of it rather than halfway
+   down the side. */
+.fold__pad .panel > .field:has(> .field__input--area) {
+  align-items: start;
+}
+
+.fold__pad .panel > .field:has(> .field__input--area) .field__label {
+  padding-top: 9px;
+}
+
+.fold__pad .panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fold__pad .panel__hint,
+.fold__pad .field__note {
+  max-width: 68ch;
+}
+
+.output__controls {
+  display: grid;
+  gap: 22px;
+}
+
+/* ----------------------------------------------------- the Sheet check -- */
+
+.check {
+  display: grid;
+  gap: 12px;
+}
+
+.check__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 22px 0 10px;
+}
+
+/* The claim the whole app rests on, stated where the printing happens. */
+.actions__note {
+  margin-left: auto;
+  max-width: 46ch;
+  text-align: right;
+}
+
 @media (max-width: 900px) {
-  .workspace {
-    grid-template-columns: minmax(0, 1fr);
+  .specimens {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    justify-items: start;
+  }
+
+  .spec {
+    display: grid;
+    gap: 8px;
   }
 }
 
@@ -380,7 +1253,7 @@ a:focus-visible {
   color: var(--ink);
   background: var(--sunken);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
 }
 
 .field__input:hover {
@@ -461,7 +1334,7 @@ label.button {
 
 .preview__frame {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 12px;
   display: flex;
   justify-content: center;
@@ -525,7 +1398,7 @@ label.button {
   color: var(--ink);
   background: var(--fill-warn);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 7px 10px 7px 13px;
   box-shadow: inset 3px 0 0 var(--yellow);
 }
@@ -538,44 +1411,80 @@ label.button {
 
 /* ------------------------------------------------------------ the queue -- */
 
+.queue-panel {
+  padding: 18px 0 4px;
+}
+
+.queue-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.queue-panel__head .eyebrow {
+  flex: 1 1 240px;
+}
+
 .queue {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   max-height: 260px;
   overflow: auto;
 }
 
 .queue__row {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 6px;
+  border-bottom: 1px solid var(--line);
 }
 
-/* Red is the one accent strong enough to be the boundary itself: 3.04:1 on the
-   panel, where aqua and yellow are 2.60 and 2.12. */
-.queue__row--failed .queue__pick {
-  border-color: var(--red);
-  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+/* Red is the one accent strong enough to carry the row itself: 3.04:1 on the
+   page, where aqua and yellow are 2.60 and 2.12. */
+.queue__row--failed {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 
+.queue__row--failed .queue__pick::before {
+  background: var(--red);
+  transform: scaleY(1);
+}
+
+/* A row, not a box: the list is separated by hairlines and the current entry is
+   marked by a bar, which is the accent doing the one thing it may. */
 .queue__pick {
   font: inherit;
   flex: 1;
   min-width: 0;
   text-align: left;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
+  padding: 7px 10px 7px 13px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
+  position: relative;
+  transition: background 150ms var(--ease);
+}
+
+.queue__pick::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--blue);
+  transform: scaleY(0);
+  transition: transform 150ms var(--ease);
+}
+
+.queue__pick:hover::before,
+.queue__pick[aria-current='true']::before {
+  transform: scaleY(1);
 }
 
 .queue__pick:hover {
-  border-color: var(--ink);
   background: var(--sunken);
 }
 
@@ -585,8 +1494,7 @@ label.button {
 }
 
 .queue__pick[aria-current='true'] {
-  border-color: var(--blue);
-  box-shadow: inset 3px 0 0 var(--blue);
+  background: var(--sunken);
 }
 
 .queue__title {
@@ -609,10 +1517,23 @@ label.button {
   align-items: center;
 }
 
+/* WCAG 2.2 SC 2.5.8: 24 x 24 CSS px is the floor for a pointer target, and the
+   queue's reorder and remove controls were 25 x 22. */
+/* Icon-only, and still 24 px of target (WCAG 2.2 SC 2.5.8). */
+.button--icon {
+  padding: 3px 9px;
+  min-height: 24px;
+  min-width: 24px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .button--tiny {
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 /* --------------------------------------------------------- search hits -- */
@@ -641,7 +1562,7 @@ label.button {
   text-align: left;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   background: var(--surface);
   cursor: pointer;
 }
@@ -691,6 +1612,15 @@ label.button {
 
 .specimen dd[data-weight='bold'] {
   font-weight: 700;
+}
+
+/* Each line set in the stack it is proving. */
+.specimen dd[data-stack='chrome'] {
+  font-family: var(--font-chrome);
+}
+
+.specimen dd[data-stack='print'] {
+  font-family: var(--font-print);
 }
 
 /* ------------------------------------------------------------- licenses -- */
@@ -745,7 +1675,7 @@ label.button {
 
 .credit {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 10px 12px;
   margin-bottom: 8px;
   background: var(--sunken);
@@ -792,7 +1722,7 @@ label.button {
   padding: 6px 9px 6px 12px;
   background: var(--fill-warn);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   box-shadow: inset 3px 0 0 var(--yellow);
 }
 

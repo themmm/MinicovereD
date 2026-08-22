@@ -14,7 +14,15 @@ import { el } from './dom.ts';
 const DOWNLOAD_URL_LIFETIME_MS = 30_000;
 
 export interface ProjectControls {
+  /**
+   * The status line, which is all that is left of the panel: the two buttons go
+   * in the page's actions row (ADR-0010), because moving a project is an action
+   * and not a setting.
+   */
   readonly element: HTMLElement;
+  readonly exportButton: HTMLButtonElement;
+  /** A label, not a button: the file input it wraps is what actually opens. */
+  readonly openButton: HTMLElement;
   /** Say what happened, in the same place the user pressed the button. */
   report(message: string): void;
 }
@@ -70,25 +78,17 @@ export function createProjectControls(
     },
   });
 
-  const element = el(
-    'section',
-    { class: 'panel' },
-    el('h2', { class: 'panel__title', text: 'Project' }),
-    el('p', {
-      class: 'panel__hint',
-      text: 'Your work saves itself in this browser. Export it to move it to another device or keep a backup.',
-    }),
-    el(
-      'div',
-      { class: 'field-buttons' },
-      exportButton,
-      el('label', { class: 'button', attrs: { for: 'project-import' } }, 'Open project…', input),
-    ),
-    status,
+  const openButton = el(
+    'label',
+    { class: 'button', attrs: { for: 'project-import' } },
+    'Open project…',
+    input,
   );
 
   return {
-    element,
+    element: status,
+    exportButton,
+    openButton,
     report(message) {
       status.textContent = message;
     },
