@@ -55,7 +55,20 @@ function testClock(): Clock & { readonly slept: number[] } {
 }
 
 const requests = (...queries: Array<[string, string]>): BatchRequest[] =>
-  queries.map(([artist, album]) => ({ id: `${artist}/${album}`, artist, album }));
+  queries.map(([artist, album]) => ({
+    id: `${artist}/${album}`,
+    query: { kind: 'fielded', artist, album },
+  }));
+
+/**
+ * Lines that named no artist, which the field reads as release titles.
+ *
+ * The id is prefixed the way `parseBatchLines` prefixes it, so that it differs
+ * from the title — otherwise a progress line that fell back to the id would be
+ * indistinguishable from one that named the title.
+ */
+const titles = (...names: readonly string[]): BatchRequest[] =>
+  names.map((text) => ({ id: `batch-${text}`, query: { kind: 'text', text } }));
 
 describe('resolving a batch into the queue', () => {
   it('resolves every entry and reports progress as it goes', async () => {
@@ -164,5 +177,45 @@ describe('resolving a batch into the queue', () => {
 
     expect(seen).toContain('Daft Punk — Discovery');
     expect(seen).toContain('Daft Punk — Homework');
+  });
+});
+
+describe('a request that named no artist', () => {
+  it('searches the release index unfielded, exactly as one typed line does', async () => {
+    // The v1 debt at the far end: a title routed into `artist` asks
+    // MusicBrainz for an artist of that name and finds nothing, which is a
+    // request out of a budget of one a second spent on a certain miss.
+    const http = recordedHttp();
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    await resolveBatchIntoQueue(adapter, titles('Loveless'), () => {});
+
+    expect(http.urls[0]).toContain('query=%22Loveless%22');
+    expect(http.urls[0]).not.toContain('artist');
+  });
+
+  it('leaves a title that found nothing in the album field, never the artist', async () => {
+    const http = recordedHttp(['Loveless']);
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    const [entry] = await resolveBatchIntoQueue(adapter, titles('Loveless'), () => {});
+
+    // The card the collector completes by hand has the title where a title
+    // goes, so all that is left to type is the artist.
+    expect(entry?.status).toBe('failed');
+    expect(entry?.design.release.album).toBe('Loveless');
+    expect(entry?.design.release.artist).toBe('');
+  });
+
+  it('names itself by its title in progress, not by its id', async () => {
+    const http = recordedHttp();
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+    const seen: string[] = [];
+
+    await resolveBatchIntoQueue(adapter, titles('Loveless'), (update) => {
+      if (update.current) seen.push(update.current);
+    });
+
+    expect(seen).toContain('Loveless');
   });
 });

@@ -2,34 +2,45 @@ import { describe, expect, it } from 'vitest';
 
 import { describeBatch, describeQuery, parseBatchLines, parseQuery } from './release-search.ts';
 
+/**
+ * The two fields each line named, for the tests that are about separators.
+ *
+ * Throws rather than flattening when a line was not read as fielded. A reading
+ * of `{ kind: 'fielded', artist: '', album: line }` would satisfy any assertion
+ * about the fields alone, and it is exactly the shape the union is here to rule
+ * out — so the kind is checked even where the test is about something else.
+ */
+const fields = (text: string): Array<[string, string]> =>
+  parseBatchLines(text).map(({ query }) => {
+    if (query.kind !== 'fielded') throw new Error(`read as ${query.kind}, not as two fields`);
+    return [query.artist, query.album];
+  });
+
 describe('reading a pasted batch', () => {
   it('takes one Release per line, as Artist — Album', () => {
-    const wanted = parseBatchLines('Daft Punk — Discovery\nCornelius — Fantasma');
-
-    expect(wanted.map(({ artist, album }) => [artist, album])).toEqual([
-      ['Daft Punk', 'Discovery'],
-      ['Cornelius', 'Fantasma'],
+    expect(parseBatchLines('Daft Punk — Discovery\nCornelius — Fantasma').map(({ query }) => query)).toEqual([
+      { kind: 'fielded', artist: 'Daft Punk', album: 'Discovery' },
+      { kind: 'fielded', artist: 'Cornelius', album: 'Fantasma' },
     ]);
   });
 
   it('accepts an en dash, a hyphen or a tab, because people paste all three', () => {
-    const wanted = parseBatchLines('A – One\nB - Two\nC\tThree');
-
-    expect(wanted.map(({ album }) => album)).toEqual(['One', 'Two', 'Three']);
+    expect(fields('A – One\nB - Two\nC\tThree').map(([, album]) => album)).toEqual([
+      'One',
+      'Two',
+      'Three',
+    ]);
   });
 
   it('splits at the first separator only, so a dash in the title survives', () => {
-    const [wanted] = parseBatchLines('Godspeed You! Black Emperor — F♯A♯∞ — Deluxe Edition');
-
-    expect(wanted?.artist).toBe('Godspeed You! Black Emperor');
-    expect(wanted?.album).toBe('F♯A♯∞ — Deluxe Edition');
+    expect(fields('Godspeed You! Black Emperor — F♯A♯∞ — Deluxe Edition')[0]).toEqual([
+      'Godspeed You! Black Emperor',
+      'F♯A♯∞ — Deluxe Edition',
+    ]);
   });
 
   it('leaves a hyphenated name alone, since only a spaced dash separates', () => {
-    const [wanted] = parseBatchLines('Jean-Michel Jarre — Oxygène');
-
-    expect(wanted?.artist).toBe('Jean-Michel Jarre');
-    expect(wanted?.album).toBe('Oxygène');
+    expect(fields('Jean-Michel Jarre — Oxygène')[0]).toEqual(['Jean-Michel Jarre', 'Oxygène']);
   });
 
   it('skips blank lines rather than searching for nothing', () => {
@@ -52,9 +63,44 @@ describe('reading a pasted batch', () => {
   });
 
   it('separates on a figure dash and a minus sign too, because people paste them', () => {
-    const wanted = parseBatchLines('A ‒ One\nB − Two');
+    expect(fields('A ‒ One\nB − Two').map(([, album]) => album)).toEqual(['One', 'Two']);
+  });
+});
 
-    expect(wanted.map(({ album }) => album)).toEqual(['One', 'Two']);
+describe('a pasted line that names no artist', () => {
+  it('asks for exactly what the same line typed alone asks for', () => {
+    // The v1 debt. `Loveless` pasted among five lines was read as an artist
+    // called Loveless, while the same word typed on its own was read as a
+    // title — one field, two rules, and the batch had the wrong one.
+    const pasted = parseBatchLines(
+      'Daft Punk — Discovery\nLoveless\nCornelius — Fantasma\nSpiderland\nBoards of Canada — Music Has the Right to Children',
+    );
+
+    expect(pasted[1]?.query).toEqual(parseQuery('Loveless'));
+    expect(pasted[3]?.query).toEqual(parseQuery('Spiderland'));
+  });
+
+  it('is a title, never an artist', () => {
+    expect(parseBatchLines('Loveless\nSpiderland').map(({ query }) => query)).toEqual([
+      { kind: 'text', text: 'Loveless' },
+      { kind: 'text', text: 'Spiderland' },
+    ]);
+  });
+
+  it('is a title even when it is the only line in the paste', () => {
+    // Reached through the batch parser rather than the field: a paste of one
+    // line lands in the field, but `parseBatchLines` is public and a caller
+    // with one line must get the same answer.
+    expect(parseBatchLines('Loveless')[0]?.query).toEqual({ kind: 'text', text: 'Loveless' });
+  });
+
+  it('treats a half-typed separator as a title, in a batch as well as alone', () => {
+    // "Artist — " is someone mid-typing, and the field has always read it as a
+    // title. Pasted, it used to become the artist "Glen Campbell —".
+    const [first] = parseBatchLines('Glen Campbell — \nA — B');
+
+    expect(first?.query).toEqual(parseQuery('Glen Campbell — '));
+    expect(first?.query.kind).toBe('text');
   });
 });
 
@@ -143,10 +189,10 @@ describe('reading the one search field', () => {
     const parsed = parseQuery('Daft Punk — Discovery\nCornelius — Fantasma');
 
     expect(parsed.kind).toBe('batch');
-    expect(parsed.kind === 'batch' && parsed.requests.map((r) => r.album)).toEqual([
-      'Discovery',
-      'Fantasma',
-    ]);
+    expect(
+      parsed.kind === 'batch' &&
+        parsed.requests.map(({ query }) => (query.kind === 'fielded' ? query.album : query.text)),
+    ).toEqual(['Discovery', 'Fantasma']);
   });
 
   it('ignores blank lines when deciding whether a paste is a batch', () => {
