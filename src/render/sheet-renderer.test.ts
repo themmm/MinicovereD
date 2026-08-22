@@ -1365,6 +1365,13 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     for (const op of heading) {
       expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(band.rect.height);
     }
+
+    // And the list starts below the band, which is the other edge of it: a bar
+    // grown past the list top prints the first tracks inside the masthead, and
+    // both of them still look right on their own.
+    const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+    expect(firstTrack, 'the list was drawn').toBeDefined();
+    expect(band.rect.height).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
   });
 
   it('sets no line wider than the card it is on', () => {
