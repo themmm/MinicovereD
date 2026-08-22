@@ -239,18 +239,29 @@ describe('a tracklist with playing times', () => {
     expect(width(withTime.lines[0]?.text ?? '')).toBeLessThan(width(withoutTime.lines[0]?.text ?? ''));
   });
 
-  it('reserves one width for the whole list, so the times line up', () => {
-    // A ragged right edge is what "not a table" looks like: the reserve is the
-    // widest time in the list, not each row's own.
+  it('reserves the widest time in the list, so no title runs under one', () => {
+    // One reserve for the whole list, not each row's own. The long time comes
+    // first on purpose: a reserve taken from the row being laid out, or from
+    // the last one seen, would clear "1:05" and leave "1:11:05" with a title
+    // written through it.
+    const long = 'A title far too long for sixty-three millimetres of column, honestly';
     const mixed: Track[] = [
-      { position: 1, title: 'Short', lengthMs: 65_000 },
-      { position: 2, title: 'Long', lengthMs: 4_265_000 },
+      { position: 1, title: long, lengthMs: 4_265_000 },
+      { position: 2, title: long, lengthMs: 65_000 },
     ];
 
     const { lines } = layOutTracklist(mixed, BOX, STYLE, measurer);
 
-    expect(lines.map((line) => line.duration?.text)).toEqual(['1:05', '1:11:05']);
+    expect(lines.map((line) => line.duration?.text)).toEqual(['1:11:05', '1:05']);
     expect(new Set(lines.map((line) => line.duration?.at.x)).size).toBe(1);
+
+    // Both rows are trimmed against the same reserve, so both stop clear of the
+    // longest time either of them could sit beside — including the row whose
+    // own time is four characters shorter.
+    const widest = measurer.widthMm('1:11:05', STYLE);
+    for (const line of lines) {
+      expect(measurer.widthMm(line.text, STYLE) + 2 + widest).toBeLessThanOrEqual(BOX.width);
+    }
   });
 
   it('leaves a track with no time without a cell to draw', () => {

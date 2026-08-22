@@ -22,7 +22,7 @@ const design: ReleaseDesign = {
     artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 400 },
   },
   templateId: 'fullbleed',
-  params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false },
+  params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
   dimensions: {
     ...DEFAULT_PART_DIMENSIONS,
     label: { width: 36.4, height: 53.1, notch: false, notchSize: 6 },
@@ -139,6 +139,7 @@ describe('reading a project file back', () => {
     expect(designs[0]?.templateId).toBe('fullbleed');
     expect(designs[0]?.params.accentColor).toBe('#7c2d12');
     expect(designs[0]?.params.showLogo).toBe(false);
+    expect(designs[0]?.params.insetArtwork).toBe(true);
   });
 
   it('carries a whole queue, in order', () => {

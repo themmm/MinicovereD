@@ -1255,6 +1255,20 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
+  it('sets the times at the size the list shrank to, not the size it started at', () => {
+    // The failure `layOutTracklist` hands the whole style back to prevent, one
+    // cell over: a time drawn from a style the fit never saw is a time that
+    // does not match the list it belongs to, and only paper shows it.
+    for (const templateId of ['classic', 'fullbleed'] as const) {
+      const { texts } = backCard(templateId, DARK, timed(200));
+      const listSize = texts.find((op) => /^\d+\. /.test(op.text))?.style.sizeMm ?? 0;
+      const timeSizes = [...new Set(texts.filter((op) => /^\d+:\d\d$/.test(op.text)).map((op) => op.style.sizeMm))];
+
+      expect(listSize, `${templateId} shrank`).toBeLessThan(2.4);
+      expect(timeSizes, `${templateId} sets its times at the fitted size`).toEqual([listSize]);
+    }
+  });
+
   it('keeps every mark on the card, times included', () => {
     for (const templateId of ['classic', 'fullbleed'] as const) {
       const { texts, placement } = backCard(templateId, DARK, timed(70));
