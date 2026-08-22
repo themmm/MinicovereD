@@ -2,12 +2,13 @@
  * Bundled OFL fonts (ADR-0003). Nothing here touches the network at runtime:
  * every face is part of the build and is precached by the service worker.
  *
- * Two stacks, and the boundary between them is the quarantine of ADR-0008
- * rule 9. `--font-chrome` is the app surface and never reaches a Part.
- * `--font-print` is the Part's stack, and it has to stay equal to
- * `PRINT_FONT_STACK` in `src/render/raster.ts` — which is the string a canvas
- * actually gets, because a canvas cannot read a custom property. Nothing in
- * CSS can enforce that, so a test does.
+ * One chrome stack and one print stack per bundled face, and the boundary
+ * between the two kinds is the quarantine of ADR-0008 rule 9. `--font-chrome`
+ * is the app surface and never reaches a Part. Every `--font-print-*` is a
+ * Part's stack, and each has to stay equal to its entry in `PRINT_FONT_STACKS`
+ * in `src/render/raster.ts` — which is the string a canvas actually gets,
+ * because a canvas cannot read a custom property. Nothing in CSS can enforce
+ * that, so a test does, pair by pair.
  */
 
 /* Latin, Latin-ext, Greek, Cyrillic, Vietnamese and Devanagari, split into
@@ -68,6 +69,147 @@
     U+2C60-2C7F, U+A720-A7FF;
 }
 
+/*
+ * The five faces a Template can set a Part in, beside the Noto pair above.
+ *
+ * Declared by hand for the reason JetBrains Mono is: Fontsource ships one
+ * `wght.css` per package covering every subset it has, and these five have
+ * between three and six each — Vietnamese in all of them, Cyrillic and Greek in
+ * Source Serif 4 and Bitter. Importing the lot would inline subsets nothing
+ * asks for into a double-clickable HTML file, and Noto already covers those
+ * ranges as the fallback every print stack ends with. So: Latin and Latin-ext
+ * only, roman only, one `wght` axis each, and every axis spans 400-700, which
+ * is exactly the three weights `TextStyle` can ask for.
+ *
+ * Latin-ext is not optional politeness. Without it a single Polish l-stroke in
+ * Lodz drops mid-word to Noto Sans, and a face change inside one word is
+ * permanent once the Part is cut. It costs 126,224 bytes across the five.
+ *
+ * The unicode ranges are Google Fonts' own for these subsets, byte-identical
+ * across all five packages and to the JetBrains Mono blocks above; they are
+ * repeated rather than shared because `unicode-range` cannot take a custom
+ * property.
+ *
+ * Measured woff2, Latin + Latin-ext: Source Serif 4 50,824 + 42,040; Bitter
+ * 34,072 + 32,716; Space Grotesk 22,288 + 18,940; Archivo Narrow 18,692 +
+ * 16,536; Cabin 28,320 + 15,992. 280,420 bytes in all.
+ */
+
+@font-face {
+  font-family: 'Source Serif 4 Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Source Serif 4 Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url('@fontsource-variable/source-serif-4/files/source-serif-4-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Bitter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/bitter/files/bitter-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Bitter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/bitter/files/bitter-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Space Grotesk Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Space Grotesk Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('@fontsource-variable/space-grotesk/files/space-grotesk-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Archivo Narrow Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('@fontsource-variable/archivo-narrow/files/archivo-narrow-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Archivo Narrow Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('@fontsource-variable/archivo-narrow/files/archivo-narrow-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Cabin Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('@fontsource-variable/cabin/files/cabin-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Cabin Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url('@fontsource-variable/cabin/files/cabin-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* The app surface, and never a Part. The Noto faces sit behind JetBrains
      Mono so that a Cyrillic or Japanese album title typed into a field still
@@ -75,8 +217,16 @@
   --font-chrome: 'JetBrains Mono Variable', 'Noto Sans Variable', 'Noto Sans JP', ui-monospace,
     monospace;
 
-  /* The Part's stack, and the one thing in this file that is not free to
-     change: it must read exactly as `PRINT_FONT_STACK` does in
-     `src/render/raster.ts`. */
-  --font-print: 'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif;
+  /* The Part's stacks, one per face, and the one part of this file that is not
+     free to change: each must read exactly as its entry in `PRINT_FONT_STACKS`
+     does in `src/render/raster.ts`. A face named here that no Template selects
+     would be bytes nobody can reach, and a face a Template selects that is not
+     named here would be measured against a fallback; both fail a test. */
+  --font-print-sans: 'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif;
+  --font-print-serif: 'Source Serif 4 Variable', 'Noto Sans Variable', 'Noto Sans JP', serif;
+  --font-print-slab: 'Bitter Variable', 'Noto Sans Variable', 'Noto Sans JP', serif;
+  --font-print-grotesque: 'Space Grotesk Variable', 'Noto Sans Variable', 'Noto Sans JP', sans-serif;
+  --font-print-condensed: 'Archivo Narrow Variable', 'Noto Sans Variable', 'Noto Sans JP',
+    sans-serif;
+  --font-print-humanist: 'Cabin Variable', 'Noto Sans Variable', 'Noto Sans JP', sans-serif;
 }

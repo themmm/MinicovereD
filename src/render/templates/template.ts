@@ -1,7 +1,7 @@
 import type { JCardPanel, PartDimensions } from '../../domain/parts.ts';
 import type { Release } from '../../domain/release.ts';
 import type { Rect, Size } from '../../domain/units.ts';
-import type { DrawOp, SheetWarning } from '../layout.ts';
+import type { DrawOp, PrintFace, SheetWarning } from '../layout.ts';
 import type { TextMeasurer } from '../text.ts';
 
 /**
@@ -11,6 +11,32 @@ import type { TextMeasurer } from '../text.ts';
  * Part-local millimetres.
  */
 export type TemplateId = 'classic' | 'fullbleed';
+
+/**
+ * What a Template sets each kind of type in. CONTEXT.md already puts typography
+ * inside the Template rather than beside it, which is why this is not a
+ * `TemplateParams` field: the collector picks a design, not a font.
+ *
+ * Three roles rather than one, because one face per Template would make a
+ * Template's whole voice a single choice and leave most of the bundled faces
+ * unreachable. They are the three jobs type actually does on a Part, and each
+ * has a different constraint:
+ *
+ *  - `display` is read at arm's length off a shelf front, so it can carry the
+ *    voice and afford some contrast.
+ *  - `text` is read at 2.4 mm, and in v2 reversed out of colour on the
+ *    tracklist Page, so it needs stems that survive both.
+ *  - `spine` is one line on 5.5 mm that gets cut when it will not fit
+ *    (`SpineTruncated`), so width per character is worth real money there.
+ */
+export interface TemplateFaces {
+  /** Artist and album at display size: the Front Panel, the Label, headings. */
+  readonly display: PrintFace;
+  /** Body copy: the tracklist, the Inner Flap caption. */
+  readonly text: PrintFace;
+  /** The one line that reads up the 5.5 mm case edge. */
+  readonly spine: PrintFace;
+}
 
 /**
  * What a collector can change about a Template without leaving it. Shared by
@@ -49,6 +75,12 @@ export interface PartContext {
   readonly dimensions: PartDimensions;
   /** The Part being drawn, at Part-local origin (0, 0). */
   readonly size: Size;
+  /**
+   * The drawing Template's own faces, handed down rather than looked up, so the
+   * shared pieces set the Spine and the tracklist in the Template's type
+   * without knowing which Template they are inside.
+   */
+  readonly faces: TemplateFaces;
   readonly measure: TextMeasurer;
 }
 
@@ -72,6 +104,7 @@ export interface Template {
   readonly name: string;
   /** One line saying what this design does, for the picker. */
   readonly description: string;
+  readonly faces: TemplateFaces;
   drawJCard(context: JCardContext): PartDrawing;
   drawBackCard(context: PartContext): PartDrawing;
   drawLabel(context: PartContext): PartDrawing;

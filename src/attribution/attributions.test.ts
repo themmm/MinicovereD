@@ -3,6 +3,7 @@ import { dirname, extname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { PRINT_FONT_STACKS } from '../render/raster.ts';
 import {
   ATTRIBUTIONS,
   DATA_SOURCES,
@@ -227,14 +228,55 @@ describe('attribution manifest (ADR-0003)', () => {
 
   it('attributes the bundled fonts as OFL-1.1', () => {
     const fonts = ATTRIBUTIONS.filter((entry) => entry.kind === 'font');
-    // Three faces across two stacks: JetBrains Mono is the chrome, the two Noto
-    // faces are what a Part is set in (ADR-0008 rule 9).
+    // Eight faces: JetBrains Mono is the chrome, and the other seven are what a
+    // Part can be set in (ADR-0008 rule 9). Spelled out rather than counted, so
+    // that bundling a face without crediting it fails here rather than shipping.
     expect(fonts.map((entry) => entry.name).sort()).toEqual([
+      'Archivo Narrow',
+      'Bitter',
+      'Cabin',
       'JetBrains Mono',
       'Noto Sans',
       'Noto Sans JP',
+      'Source Serif 4',
+      'Space Grotesk',
     ]);
     expect(fonts.every((entry) => entry.license === 'OFL-1.1')).toBe(true);
+  });
+
+  it('credits every family a print stack can actually reach', () => {
+    // The spec says the attribution suite grows with every bundled face, and
+    // this is what makes that automatic rather than remembered: the stacks in
+    // `raster.ts` are the definitive list of what a Part can be set in, so a
+    // face added there without an entry here fails, and so does an entry whose
+    // stack was removed.
+    //
+    // Fontsource names its variable families `<Family> Variable`; the credit is
+    // for the typeface, so the suffix comes off.
+    const reachable = [
+      ...new Set(
+        Object.values(PRINT_FONT_STACKS).flatMap((stack) =>
+          stack
+            .split(',')
+            .map((family) => family.trim().replace(/^['"]|['"]$/g, ''))
+            // Generic keywords are the browser's, and nobody's to credit.
+            .filter((family) => /^[A-Z]/.test(family))
+            .map((family) => family.replace(/ Variable$/, '')),
+        ),
+      ),
+    ].sort();
+
+    const credited = new Set(
+      ATTRIBUTIONS.filter((entry) => entry.kind === 'font').map((entry) => entry.name),
+    );
+    expect(reachable.filter((family) => !credited.has(family))).toEqual([]);
+
+    // And the other way: a font entry no stack names is either the chrome face
+    // or a credit for something that stopped shipping.
+    const chromeOnly = new Set(['JetBrains Mono']);
+    expect(
+      [...credited].filter((name) => !reachable.includes(name) && !chromeOnly.has(name)),
+    ).toEqual([]);
   });
 
   it('credits the services it fetches from at runtime', () => {

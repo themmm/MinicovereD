@@ -2,7 +2,7 @@ import type { Track } from '../domain/release.ts';
 import type { Mm, Point, Rect } from '../domain/units.ts';
 import { ellipsise } from './text.ts';
 import type { TextMeasurer } from './text.ts';
-import type { TextStyle } from './layout.ts';
+import type { PrintFace, TextStyle } from './layout.ts';
 
 /**
  * Fitting a tracklist into the Back Card. The rule the spec sets is simple and
@@ -72,10 +72,17 @@ function chooseFit(
   return { columns: 2, sizeMm };
 }
 
+/**
+ * `face` is here rather than defaulted because trimming is measurement: a list
+ * fitted against one face and drawn in another puts titles on the Part that
+ * were cut to a width they never had. The caller passes the face it will draw
+ * in.
+ */
 export function layOutTracklist(
   tracks: readonly Track[],
   box: Rect,
   baseSizeMm: Mm,
+  face: PrintFace,
   measure: TextMeasurer,
 ): TracklistLayout {
   if (tracks.length === 0) {
@@ -92,6 +99,7 @@ export function layOutTracklist(
   const style: TextStyle = {
     sizeMm,
     weight: 400,
+    face,
     color: '#000000',
     align: 'left',
     baseline: 'top',

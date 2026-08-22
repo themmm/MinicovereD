@@ -44,7 +44,7 @@ function scrimAndText(
   scrimHeight: Mm,
   artistSizeMm: Mm,
 ): DrawOp[] {
-  const { release, params, measure } = context;
+  const { release, params, faces, measure } = context;
   if (!params.showOverlayText) return [];
 
   const ink = overlayInk(params);
@@ -54,6 +54,7 @@ function scrimAndText(
   const artistStyle: TextStyle = {
     sizeMm: artistSizeMm,
     weight: 700,
+    face: faces.display,
     color: ink,
     align: 'center',
     baseline: 'top',
@@ -61,6 +62,7 @@ function scrimAndText(
   const albumStyle: TextStyle = {
     sizeMm: artistSizeMm * 0.8,
     weight: 400,
+    face: faces.display,
     color: ink,
     align: 'center',
     baseline: 'top',
@@ -115,6 +117,18 @@ export const FULLBLEED_TEMPLATE: Template = {
   id: 'fullbleed',
   name: 'Full-bleed',
   description: 'Artwork edge to edge, type as an overlay.',
+  /**
+   * A poster: a squared grotesque over the artwork and on the Spine, a slab for
+   * the reading.
+   *
+   * Space Grotesk twice on purpose — the overlay type and the Spine are the two
+   * things read together when the case is on a shelf, and this Template's whole
+   * argument is one graphic surface rather than a design plus a caption. Bitter
+   * carries the body because v2 sets the tracklist Page reversed out of the
+   * Release's colour (spec, Templates and type), and a slab's blunt stems
+   * survive white-on-colour where a fine serif's hairlines close up.
+   */
+  faces: { display: 'grotesque', text: 'slab', spine: 'grotesque' },
   drawJCard: (context: JCardContext) => drawJCard(context, drawFrontPanel),
   drawBackCard,
   drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),

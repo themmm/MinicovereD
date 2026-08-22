@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Track } from '../domain/release.ts';
 import { layOutTracklist, PRINT_FLOOR_MM } from './tracklist-layout.ts';
 import type { TextMeasurer } from './text.ts';
+import type { PrintFace } from './layout.ts';
 
 /**
  * Deterministic metrics: half an em per Latin character, a full em per CJK one,
@@ -20,12 +21,18 @@ const measurer: TextMeasurer = {
  */
 const BOX = { x: 3, y: 13.6, width: 63, height: 62.4 };
 const BASE_SIZE = 2.4;
+/**
+ * Whichever face the Template chose. The fitting rules are the same for all of
+ * them, and the measurer above is face-blind on purpose, so these assertions
+ * stay about columns and sizes rather than about anybody's metrics.
+ */
+const FACE: PrintFace = 'sans';
 
 const tracks = (count: number, title = 'Track'): Track[] =>
   Array.from({ length: count }, (_, index) => ({ position: index + 1, title: `${title} ${index + 1}` }));
 
 const layout = (count: number, title?: string) =>
-  layOutTracklist(tracks(count, title), BOX, BASE_SIZE, measurer);
+  layOutTracklist(tracks(count, title), BOX, BASE_SIZE, FACE, measurer);
 
 describe('laying out a tracklist', () => {
   it('keeps a short list in one column at full size', () => {
@@ -117,7 +124,7 @@ describe('laying out a tracklist in other scripts', () => {
       { position: 3, title: 'カタカナ' },
     ];
 
-    const { lines } = layOutTracklist(japanese, BOX, BASE_SIZE, measurer);
+    const { lines } = layOutTracklist(japanese, BOX, BASE_SIZE, FACE, measurer);
 
     expect(lines.map((line) => line.text)).toEqual([
       '1. 東京は夜の七時',
@@ -135,6 +142,7 @@ describe('laying out a tracklist in other scripts', () => {
         Array.from({ length: 30 }, (_, index) => ({ position: index + 1, title })),
         BOX,
         BASE_SIZE,
+        FACE,
         measurer,
       );
     const latin = sixteen('Abcdefghijklmnop');
@@ -152,7 +160,7 @@ describe('laying out a tracklist in other scripts', () => {
   it('never cuts a surrogate pair in half when trimming', () => {
     const emoji: Track[] = [{ position: 1, title: '🎵'.repeat(60) }];
 
-    const [line] = layOutTracklist(emoji, BOX, BASE_SIZE, measurer).lines;
+    const [line] = layOutTracklist(emoji, BOX, BASE_SIZE, FACE, measurer).lines;
     const text = line?.text ?? '';
 
     // A trim by code unit would leave a high surrogate with nothing after it,

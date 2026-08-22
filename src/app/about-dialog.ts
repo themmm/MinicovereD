@@ -1,5 +1,6 @@
 import { ATTRIBUTIONS, DATA_SOURCES, licenseTextFor } from '../attribution/attributions.ts';
 import type { Attribution, AttributionKind } from '../attribution/attributions.ts';
+import type { PrintFace } from '../render/sheet-renderer.ts';
 import { el } from './dom.ts';
 
 /**
@@ -16,25 +17,35 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
 
 /**
  * Lines that only render completely from the bundled fonts — the offline
- * typography proof, and now of both stacks rather than one.
+ * typography proof, and of every stack rather than one.
  *
  * The boundary is the point (ADR-0008 rule 9): the chrome is set in JetBrains
- * Mono and a Part is set in the Noto stack, and these two things are not the
- * same typeface on purpose. Showing only the chrome would prove the half that
- * never reaches paper.
+ * Mono and a Part is set in one of the print faces, and those are not the same
+ * typeface on purpose. Showing only the chrome would prove the half that never
+ * reaches paper.
+ *
+ * Each print face gets its own line, set in itself, because that is the only
+ * thing here that can actually go wrong offline: a face that failed to load
+ * renders in a fallback and still looks like type. The last three lines carry
+ * Latin-ext and CJK on purpose — the five voices ship Latin and Latin-ext
+ * only, so those are where the Noto fallback is doing the work and has to be
+ * seen doing it.
  */
 const FONT_SPECIMEN: ReadonlyArray<{
   script: string;
   sample: string;
   weight?: 'bold';
-  stack: 'chrome' | 'print';
+  stack: 'chrome' | PrintFace;
 }> = [
   { script: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
-  { script: 'A Part', sample: 'Wichita Lineman — Glen Campbell', stack: 'print' },
-  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'print' },
-  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel', stack: 'print' },
-  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'print' },
-  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'print' },
+  { script: 'Sans', sample: 'Wichita Lineman — Glen Campbell', stack: 'sans' },
+  { script: 'Serif', sample: 'Rêveries · Canción · Ángel · Sinnöver', stack: 'serif' },
+  { script: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
+  { script: 'Grotesque', sample: 'Lift Your Skinny Fists Like Antennas', stack: 'grotesque' },
+  { script: 'Condensed', sample: 'Ascenseur pour l’échafaud · Şafak', stack: 'condensed' },
+  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
+  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'sans' },
+  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'sans' },
 ];
 
 function fontSpecimen(): HTMLElement {

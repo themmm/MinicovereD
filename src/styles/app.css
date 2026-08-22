@@ -130,10 +130,12 @@ body {
   padding: 0 30px;
 }
 
-/* Prose is set in the Part's face, not the chrome's: a paragraph of English is
-   what the Noto stack is for, and a monospace paragraph is a wall. */
+/* Prose is set in a Part's face, not the chrome's: a paragraph of English is
+   what the Noto stack is for, and a monospace paragraph is a wall. The neutral
+   one of the six, because this is running text about the app rather than a
+   specimen of any Template's voice. */
 .prose {
-  font-family: var(--font-print);
+  font-family: var(--font-print-sans);
 }
 
 .micro {
@@ -1622,8 +1624,31 @@ label.button {
   font-family: var(--font-chrome);
 }
 
-.specimen dd[data-stack='print'] {
-  font-family: var(--font-print);
+/* One rule per print face, because the dialog's job here is to prove that each
+   of them actually loaded from the bundle — a specimen that fell back to a
+   system face would look like type rather than like a failure. */
+.specimen dd[data-stack='sans'] {
+  font-family: var(--font-print-sans);
+}
+
+.specimen dd[data-stack='serif'] {
+  font-family: var(--font-print-serif);
+}
+
+.specimen dd[data-stack='slab'] {
+  font-family: var(--font-print-slab);
+}
+
+.specimen dd[data-stack='grotesque'] {
+  font-family: var(--font-print-grotesque);
+}
+
+.specimen dd[data-stack='condensed'] {
+  font-family: var(--font-print-condensed);
+}
+
+.specimen dd[data-stack='humanist'] {
+  font-family: var(--font-print-humanist);
 }
 
 /* ------------------------------------------------------------- licenses -- */

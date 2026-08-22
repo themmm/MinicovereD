@@ -3,7 +3,9 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { PRINT_FONT_STACK } from './raster.ts';
+import type { PrintFace } from './layout.ts';
+import { PRINT_FONT_STACKS } from './raster.ts';
+import { TEMPLATES } from './sheet-renderer.ts';
 
 /**
  * The quarantine, enforced rather than observed (ADR-0008 rule 9).
@@ -12,18 +14,32 @@ import { PRINT_FONT_STACK } from './raster.ts';
  * that "cannot" has to be a fact rather than an intention. Two things make it
  * one, and neither can be expressed in the languages involved:
  *
- *  - a canvas cannot read a custom property, so the print stack is written down
- *    twice — once in CSS and once as a string literal — and nothing in CSS or
- *    TypeScript notices when the two drift. They already had: the stylesheet
+ *  - a canvas cannot read a custom property, so every print stack is written
+ *    down twice — once in CSS and once as a string literal — and nothing in CSS
+ *    or TypeScript notices when the two drift. They already had: the stylesheet
  *    carried `-apple-system` and `'Segoe UI'` that the canvas never had.
  *  - a token can be re-themed and a literal cannot, so the print surface is
  *    literal on purpose. Nothing stops an editor from "tidying" a hex into a
  *    token except a test that fails when they do.
  *
- * The first four checks here are the ones ticket 11 names. The last two are
- * additions: they hold the two claims step 1 actually rests on — one text
- * colour, and four literals — which the other four do not touch.
+ * The first four checks here are the ones ticket 11 names, grown from one stack
+ * to one per bundled face. Two of them became pairs on the way, and the pairing
+ * is the point: a face declared in CSS that no Template selects is bytes in a
+ * double-clickable file that nothing can reach, and a face a Template selects
+ * that the manifest does not name is laid out against a fallback and drawn in
+ * itself. Either one alone reads as fine.
+ *
+ * The last two checks are additions from step 1: they hold the two claims it
+ * rests on — one text colour, and four literals — which the others do not
+ * touch.
  */
+
+const PRINT_FACES = Object.keys(PRINT_FONT_STACKS) as PrintFace[];
+
+/** The faces a Template can actually put on paper, across all of them. */
+const facesInUse = (): PrintFace[] => [
+  ...new Set(Object.values(TEMPLATES).flatMap((template) => Object.values(template.faces))),
+];
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = (path: string): string => readFileSync(join(repoRoot, path), 'utf8');
@@ -45,6 +61,13 @@ function customProperty(css: string, name: string): string {
 /** The first family of a stack, unquoted — the face itself, not its fallbacks. */
 const firstFamily = (stack: string): string =>
   (stack.split(',')[0] ?? '').trim().replace(/^['"]|['"]$/g, '');
+
+/** Every family a stack names, leading face and fallbacks alike. */
+const families = (stack: string): string[] => stack.split(',').map(firstFamily);
+
+/** The print faces a stylesheet declares a property for, by face id. */
+const declaredPrintFaces = (css: string): string[] =>
+  [...css.matchAll(/--font-print-([a-z0-9-]+)\s*:/g)].map(([, id]) => id as string);
 
 /**
  * Every TypeScript module under `src/render` that ships, repo-relative.
@@ -88,22 +111,36 @@ function printSurfaceBlock(): string {
 
 describe('the print quarantine (ADR-0008 rule 9)', () => {
   it('gives the Part the same font stack in CSS as the canvas actually draws with', () => {
-    // The one duplication that cannot be removed, so it is the one that is checked.
-    expect(customProperty(read(FONTS_CSS), 'font-print')).toBe(normalise(PRINT_FONT_STACK));
+    // The one duplication that cannot be removed, so it is the one that is
+    // checked — once per face now, because `--font-print` became a family of
+    // properties the moment a Template could choose between them.
+    const css = read(FONTS_CSS);
+    for (const face of PRINT_FACES) {
+      expect(customProperty(css, `font-print-${face}`), face).toBe(
+        normalise(PRINT_FONT_STACKS[face]),
+      );
+    }
+
+    // Both directions, so a face cannot be retired from the code and left in
+    // the stylesheet: a stale property keeps shipping its woff2.
+    expect(declaredPrintFaces(css).sort()).toEqual([...PRINT_FACES].sort());
   });
 
   it('keeps the chrome face out of every module that draws a Part', () => {
     const chromeFace = firstFamily(customProperty(read(FONTS_CSS), 'font-chrome'));
     expect(chromeFace).not.toBe('');
-    // Not `--font-print`'s first family either: if the two stacks ever lead with
-    // the same face there is no boundary left to police.
-    expect(chromeFace).not.toBe(firstFamily(PRINT_FONT_STACK));
+    // Not the first family of any print stack either: if the chrome and a
+    // Template's face ever lead with the same one there is no boundary left to
+    // police, and with six stacks it takes only one of them to open the gap.
+    for (const face of PRINT_FACES) {
+      expect(firstFamily(PRINT_FONT_STACKS[face]), face).not.toBe(chromeFace);
+    }
 
     const offenders = renderModules().filter((path) => read(path).includes(chromeFace));
     expect(offenders, `${chromeFace} may not appear under src/render`).toEqual([]);
   });
 
-  it('lists only print faces in the manifest that preloads them', () => {
+  it('lists only print faces in the manifest that preloads them, and all of them', () => {
     // `BUNDLED_FACES` in canvas-text-measurer.ts is the print side's manifest:
     // the faces asked for by name so a canvas is never measured against a
     // fallback. A canvas is the only thing that needs it — DOM text fetches its
@@ -113,21 +150,46 @@ describe('the print quarantine (ADR-0008 rule 9)', () => {
     const manifest = /const BUNDLED_FACES[^=]*=\s*\[(.*?)\n\];/s.exec(source)?.[1];
     expect(manifest, 'BUNDLED_FACES').toBeTruthy();
 
-    const families = [...(manifest ?? '').matchAll(/family:\s*'([^']+)'/g)].map((m) => m[1]);
-    expect(families.length).toBeGreaterThan(0);
+    const manifested = [...(manifest ?? '').matchAll(/family:\s*'([^']+)'/g)].map(
+      ([, family]) => family as string,
+    );
+    expect(manifested.length).toBeGreaterThan(0);
 
-    const printFaces = PRINT_FONT_STACK.split(',').map(firstFamily);
-    expect(families.filter((family) => !printFaces.includes(family as string))).toEqual([]);
+    // Nothing in the manifest that no Template can reach. A bundled face is a
+    // woff2 inlined into a double-clickable HTML file, so an unreachable one is
+    // weight with no way to see it.
+    const reachable = new Set(facesInUse().flatMap((face) => families(PRINT_FONT_STACKS[face])));
+    expect(manifested.filter((family) => !reachable.has(family))).toEqual([]);
+
+    // And nothing leading a stack that the manifest does not name. This is the
+    // half that shows on paper: a face nobody asked for by name is not loaded
+    // when the layout is measured, so the Part is fitted to the fallback's
+    // metrics and then drawn in the face that arrived late.
+    const manifestedSet = new Set(manifested);
+    for (const face of PRINT_FACES) {
+      expect(manifestedSet.has(firstFamily(PRINT_FONT_STACKS[face])), face).toBe(true);
+    }
   });
 
   it('builds every canvas font through the one function that knows the stack', () => {
-    // Measuring and drawing cannot disagree if neither of them owns the stack.
+    // Measuring and drawing cannot disagree if neither of them owns the stack —
+    // and now that a Template picks between stacks, that is also what stops
+    // them disagreeing about *which*. `fontFor` reads the face off the style
+    // both of them are handed, so there is no second place to get it wrong.
     expect(read('src/render/canvas-text-measurer.ts')).toContain("import { fontFor } from './raster.ts'");
 
     const declarations = renderModules().filter((path) =>
       /export const PRINT_FONT_STACK/.test(read(path)),
     );
     expect(declarations).toEqual([RASTER]);
+
+    // No Template may spell a stack out for itself: they name faces, and the
+    // names resolve in one place. A quoted family under `templates/` would be a
+    // stack no stylesheet is checked against.
+    const templateStacks = renderModules()
+      .filter((path) => path.includes('/templates/'))
+      .filter((path) => /font-family|['"][A-Z][A-Za-z0-9 ]+ Variable['"]/.test(read(path)));
+    expect(templateStacks, 'a Template may name a face, never a family').toEqual([]);
 
     // No module may set a canvas font from anything but a `fontFor` result.
     const assignments = renderModules().flatMap((path) =>

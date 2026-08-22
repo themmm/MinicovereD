@@ -9,9 +9,30 @@ import type { Mm, Point, Rect } from '../domain/units.ts';
  * the geometry can be asserted as data rather than as pixels.
  */
 
+/**
+ * One of the bundled print faces, named rather than spelled out.
+ *
+ * The layout model says *which* face; `PRINT_FONT_STACKS` in `raster.ts` is the
+ * only thing that knows what string a canvas is given for it (ADR-0008 rule 9).
+ * Splitting it this way is what lets a Template choose a face without any
+ * Template holding a font stack — and a name cannot drift from a stylesheet the
+ * way a copied stack can.
+ *
+ * The ids are voices rather than families, because that is what a Template is
+ * picking: `serif` is "the book one" and stays that whichever face fills it.
+ */
+export type PrintFace = 'sans' | 'serif' | 'slab' | 'grotesque' | 'condensed' | 'humanist';
+
 export interface TextStyle {
   readonly sizeMm: Mm;
   readonly weight: 400 | 600 | 700;
+  /**
+   * Required, and deliberately not defaulted: a forgotten face would fall
+   * silently back to the neutral sans, which is exactly the "declared and
+   * ignored" failure a per-Template stack can ship. Being part of the style is
+   * also what keeps measuring and drawing on the same face — both read this.
+   */
+  readonly face: PrintFace;
   readonly color: string;
   readonly align: 'left' | 'center' | 'right';
   /** Vertical anchor of `at.y`. `top` is the ascender line, `middle` the visual centre. */

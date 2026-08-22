@@ -17,7 +17,7 @@ import type { JCardContext, PartContext, Template } from './template.ts';
  * it. The counterpart to Full-bleed, where the artwork runs to the edges.
  */
 
-function drawFrontPanel({ release, params, measure }: PartContext, panel: Rect): DrawOp[] {
+function drawFrontPanel({ release, params, faces, measure }: PartContext, panel: Rect): DrawOp[] {
   const artSide = panel.width - 2 * PAD;
   const artTop = panel.y + PAD;
   const artBottom = artTop + artSide;
@@ -30,8 +30,8 @@ function drawFrontPanel({ release, params, measure }: PartContext, panel: Rect):
   const captionWidth = panel.width - 2 * PAD - logoColumn;
   const captionCentre = captionLeft + captionWidth / 2;
 
-  const artistStyle: TextStyle = { sizeMm: 4, weight: 700, color: params.inkColor, align: 'center', baseline: 'top' };
-  const albumStyle: TextStyle = { sizeMm: 3.2, weight: 400, color: params.inkColor, align: 'center', baseline: 'top' };
+  const artistStyle: TextStyle = { sizeMm: 4, weight: 700, face: faces.display, color: params.inkColor, align: 'center', baseline: 'top' };
+  const albumStyle: TextStyle = { sizeMm: 3.2, weight: 400, face: faces.display, color: params.inkColor, align: 'center', baseline: 'top' };
 
   return [
     { op: 'fill-rect', rect: panel, color: params.paperColor },
@@ -51,7 +51,7 @@ function drawFrontPanel({ release, params, measure }: PartContext, panel: Rect):
   ];
 }
 
-function drawLabel({ release, params, size, dimensions, measure }: PartContext): DrawOp[] {
+function drawLabel({ release, params, size, dimensions, faces, measure }: PartContext): DrawOp[] {
   const pad: Mm = 2.5;
   // The diagonal runs x = (width - notch) + y, so a square inset by `pad` on
   // every side would poke through it at the top right. Sizing the square to
@@ -60,8 +60,8 @@ function drawLabel({ release, params, size, dimensions, measure }: PartContext):
   const artSide = Math.min(size.width - 2 * pad, size.width - notchSize - pad);
   const artLeft = (size.width - artSide) / 2;
 
-  const artistStyle: TextStyle = { sizeMm: 2.8, weight: 700, color: params.inkColor, align: 'center', baseline: 'top' };
-  const albumStyle: TextStyle = { sizeMm: 2.4, weight: 400, color: params.inkColor, align: 'center', baseline: 'top' };
+  const artistStyle: TextStyle = { sizeMm: 2.8, weight: 700, face: faces.display, color: params.inkColor, align: 'center', baseline: 'top' };
+  const albumStyle: TextStyle = { sizeMm: 2.4, weight: 400, face: faces.display, color: params.inkColor, align: 'center', baseline: 'top' };
   const centreX = size.width / 2;
   const textWidth = size.width - 2 * pad;
 
@@ -84,6 +84,18 @@ export const CLASSIC_TEMPLATE: Template = {
   id: 'classic',
   name: 'Classic',
   description: 'Solid background, artwork as a square, type below it.',
+  /**
+   * A book: a serif over the artwork, a humanist for the reading, and the
+   * narrow grotesque on the Spine where every character costs width.
+   *
+   * Source Serif 4 rather than a Garamond because type here goes down to 2.4 mm
+   * and Sony's artwork spec puts the printable stroke floor at 0.15 mm
+   * (ADR-0008 rule 6) — an old-style face's hairlines fall under it and a
+   * low-contrast one engineered for text does not. Cabin below it is
+   * Gill-flavoured, which is the one humanist voice that does not read as a
+   * second helping of Noto.
+   */
+  faces: { display: 'serif', text: 'humanist', spine: 'condensed' },
   drawJCard: (context: JCardContext) => drawJCard(context, drawFrontPanel),
   drawBackCard,
   drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
