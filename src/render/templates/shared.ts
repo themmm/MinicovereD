@@ -15,10 +15,13 @@ import type { JCardContext, PartContext, PartDrawing, TemplateParams } from './t
  * Card; the Spine and the Inner Flap are the same design in both, driven by the
  * parameters.
  *
- * What is left here is either measurement or safety rather than design — how a
- * tracklist flows and when it is reported, how the Spine reports a line it had
- * to cut, what "no artwork yet" looks like. A Template that had its own copy of
- * any of those would be free to get it wrong somewhere no test is looking.
+ * The Spine and the Inner Flap are design, and are here because both Templates
+ * chose the same one. The tracklist and the placeholder are here for a stronger
+ * reason: neither is a design decision at all. How a list flows into columns,
+ * when it gives up size instead and when the collector is told about it is one
+ * rule for every Template (ticket 07 of v1), and "no artwork yet" has to look
+ * the same whichever Template is chosen. A Template holding its own copy of
+ * either would be free to get it wrong somewhere no test is looking.
  */
 
 export const PAD: Mm = 3;

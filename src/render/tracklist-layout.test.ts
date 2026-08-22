@@ -264,6 +264,24 @@ describe('a tracklist with playing times', () => {
     }
   });
 
+  it('takes the reserve off an untimed row too, so it cannot run under the times', () => {
+    // A Release with one untimed hidden track is ordinary, and a reserve taken
+    // only from the rows that have a time would set those rows short and let
+    // the others run straight through the column they left clear.
+    const long = 'A title far too long for sixty-three millimetres of column, honestly';
+    const mixed: Track[] = [
+      { position: 1, title: long, lengthMs: 200_000 },
+      { position: 1, title: long },
+    ];
+
+    const { lines } = layOutTracklist(mixed, BOX, STYLE, measurer);
+
+    expect(lines[1]?.duration).toBeUndefined();
+    expect(measurer.widthMm(lines[1]?.text ?? '', STYLE)).toBe(
+      measurer.widthMm(lines[0]?.text ?? '', STYLE),
+    );
+  });
+
   it('leaves a track with no time without a cell to draw', () => {
     const { lines } = layOutTracklist(
       [

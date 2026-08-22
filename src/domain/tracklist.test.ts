@@ -77,6 +77,14 @@ describe('a Track’s playing time, as it prints', () => {
     expect(formatTrackLength(4_265_000)).toBe('1:11:05');
   });
 
+  it('has nothing to print for a track with no whole second in it', () => {
+    // Guarding the input alone would let 400 ms through as `0:00`, which reads
+    // as a claim about a track rather than as the absence of one.
+    expect(formatTrackLength(400)).toBeUndefined();
+    expect(formatTrackLength(499)).toBeUndefined();
+    expect(formatTrackLength(500)).toBe('0:01');
+  });
+
   it('has nothing to print for a length that is not one', () => {
     // A Release typed in from a shelf has no times at all, and a zero would
     // print as a claim about one.
@@ -109,6 +117,19 @@ describe('editing a tracklist that came with playing times', () => {
     const edited = parseTracklist('Intro\nOne More Time\nAerodynamic', lookedUp);
 
     expect(edited.map((track) => track.lengthMs)).toEqual([undefined, 320840, 207533]);
+  });
+
+  it('gives two tracks of the same title the first one’s time', () => {
+    // The rule the doc-block states: a list with "Untitled" twice is real, and
+    // being consistent about it beats guessing which one moved where.
+    const twice = [
+      { position: 1, title: 'Untitled', lengthMs: 1000 },
+      { position: 2, title: 'Untitled', lengthMs: 2000 },
+    ];
+
+    expect(parseTracklist('Untitled\nUntitled', twice).map((track) => track.lengthMs)).toEqual([
+      1000, 1000,
+    ]);
   });
 
   it('has nothing to carry when the Release never had times', () => {

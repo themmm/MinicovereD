@@ -15,7 +15,7 @@ const DISCOVERY_MBID = '5ad66522-edce-3a77-b5fa-7956ee879239';
 
 /**
  * Recorded responses, replayed by URL. Anything the adapter asks for that is
- * not recorded fails the test loudly â that is what makes "never touches the
+ * not recorded fails the test loudly — that is what makes "never touches the
  * live network" a property of the suite rather than a promise.
  */
 interface Recording {
@@ -84,7 +84,7 @@ const adapterOver = (recordings: readonly Recording[] = ALL) => {
   return { adapter: createMetadataAdapter({ http, clock }), http, clock };
 };
 
-describe('MetadataAdapter â search', () => {
+describe('MetadataAdapter — search', () => {
   it('normalises a search hit into Release summaries', async () => {
     const { adapter } = adapterOver();
 
@@ -134,7 +134,7 @@ describe('MetadataAdapter â search', () => {
    * The query these build, read off the URL.
    *
    * The fixtures answer only recorded URLs, so a query nothing was recorded for
-   * is refused â which is the point of the harness. The URL is captured before
+   * is refused — which is the point of the harness. The URL is captured before
    * the refusal, so it is still the thing under test; `sent` throws away the
    * outcome and keeps the request.
    */
@@ -172,7 +172,7 @@ describe('MetadataAdapter â search', () => {
   });
 });
 
-describe('MetadataAdapter â release and tracklist', () => {
+describe('MetadataAdapter — release and tracklist', () => {
   it('normalises a release into the Release domain type', async () => {
     const { adapter } = adapterOver();
 
@@ -203,7 +203,7 @@ describe('MetadataAdapter â release and tracklist', () => {
 
   it('prefers the pressing’s own length to the recording’s', async () => {
     // A recording is shared between releases and a track belongs to one of
-    // them, so the two disagree by a second or so on real data â track 2 of
+    // them, so the two disagree by a second or so on real data — track 2 of
     // Discovery is 207533 on this pressing and 207626 on the recording. What
     // goes on the card is what is on the disc in the collector's hand.
     const { adapter } = adapterOver();
@@ -252,7 +252,7 @@ describe('MetadataAdapter â release and tracklist', () => {
   });
 });
 
-describe('MetadataAdapter â cover art', () => {
+describe('MetadataAdapter — cover art', () => {
   it('fetches the front cover and sizes it from the image itself', async () => {
     const { adapter } = adapterOver();
 
@@ -276,7 +276,7 @@ describe('MetadataAdapter â cover art', () => {
     const { adapter } = adapterOver([
       releaseLookup,
       // The Archive answers a release with no front cover with a server error,
-      // not a 404 â either way there is simply nothing to print.
+      // not a 404 — either way there is simply nothing to print.
       { match: (url) => url.includes('coverartarchive.org'), status: 500, body: 'no cover' },
     ]);
 
@@ -333,7 +333,7 @@ describe('MetadataAdapter â cover art', () => {
   });
 });
 
-describe('MetadataAdapter â rate limiting', () => {
+describe('MetadataAdapter — rate limiting', () => {
   it('waits out a 503 and tries again rather than reporting a missing album', async () => {
     let attempts = 0;
     const http: HttpClient = {
@@ -368,7 +368,7 @@ describe('MetadataAdapter â rate limiting', () => {
   });
 });
 
-describe('MetadataAdapter â throttled queue', () => {
+describe('MetadataAdapter — throttled queue', () => {
   it('processes the whole queue, reporting progress as it goes', async () => {
     const { adapter } = adapterOver();
     const progress: Array<{ done: number; total: number }> = [];

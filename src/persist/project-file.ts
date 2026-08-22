@@ -153,12 +153,17 @@ function readParams(value: unknown): TemplateParams {
     accentColor: colour('accentColor', DEFAULT_TEMPLATE_PARAMS.accentColor),
     showOverlayText: asBoolean(source['showOverlayText'], DEFAULT_TEMPLATE_PARAMS.showOverlayText),
     showLogo: asBoolean(source['showLogo'], DEFAULT_TEMPLATE_PARAMS.showLogo),
-    // A project written before this parameter existed has no such key, and every
-    // Front Panel in it was drawn as an inset square — which is why the fallback
-    // here is the default rather than `true`: v1 files carry `PROJECT_VERSION`
-    // 1, exactly as v1.1 files do, so there is nothing to tell the two apart.
-    // The design changes for those Releases, and the toggle is beside it.
-    insetArtwork: asBoolean(source['insetArtwork'], DEFAULT_TEMPLATE_PARAMS.insetArtwork),
+    // Not the default, which is the one fallback here that is not.
+    //
+    // A saved project has to reproduce its own design (ADR-0001), and every
+    // Front Panel written before v1.1 was drawn as an inset square. v1 and v1.1
+    // files both carry `PROJECT_VERSION` 1, so the version cannot tell them
+    // apart — but `writeProjectFile` serialises the whole params object, so
+    // every v1.1 file states this key one way or the other and only a v1 file
+    // omits it. The absence is the tell, and it means "square". A new design
+    // still bleeds, because that comes from `DEFAULT_TEMPLATE_PARAMS` rather
+    // than from here.
+    insetArtwork: asBoolean(source['insetArtwork'], true),
   };
 }
 

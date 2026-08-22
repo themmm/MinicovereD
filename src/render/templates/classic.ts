@@ -83,12 +83,14 @@ function drawFrontPanel({ release, params, faces, measure }: PartContext, panel:
     // inset, it is the margin around the square.
     { op: 'fill-rect', rect: panel, color: params.paperColor },
     artworkOrPlaceholder(release, art, params),
-    ...(params.showOverlayText
-      ? [
-          text(release.artist, { x: captionCentre, y: artBottom + ARTIST_GAP }, artistStyle, captionWidth, measure),
-          text(release.album, { x: captionCentre, y: artBottom + ALBUM_GAP }, albumStyle, captionWidth, measure),
-        ]
-      : []),
+    // Not gated on `showOverlayText`, which governs type drawn *over* artwork —
+    // the Full-bleed Front Panel and Label, as that parameter says. This
+    // caption is beside the artwork, exactly as the Classic Label's is, and was
+    // gated by an oversight that only became visible here: with the artwork
+    // bled, switching the toggle off left 14 mm of blank paper where the
+    // Release's name goes.
+    text(release.artist, { x: captionCentre, y: artBottom + ARTIST_GAP }, artistStyle, captionWidth, measure),
+    text(release.album, { x: captionCentre, y: artBottom + ALBUM_GAP }, albumStyle, captionWidth, measure),
     ...logoOp(
       params,
       { x: panel.x + panel.width - PAD - FRONT_LOGO_WIDTH, y: panel.y + panel.height - PAD },

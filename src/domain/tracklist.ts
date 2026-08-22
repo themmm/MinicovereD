@@ -50,18 +50,22 @@ export function formatTracklist(tracks: readonly Track[]): string {
  * is an hour of it. The leading unit is never padded, which is how a sleeve
  * prints a time and how a player shows one.
  *
- * Rounded to the nearest second rather than truncated, because MusicBrainz
- * rounds and MusicBrainz is where the number came from — a card that truncated
- * would disagree with the page the collector looked the release up on.
+ * Rounded to the nearest second rather than truncated, which is the smaller
+ * error: truncating is wrong by up to a whole second and always in the same
+ * direction, so a fourteen-track card would read as much as fourteen seconds
+ * short of the record.
  *
- * Anything that is not a positive finite number of milliseconds has no time to
- * print rather than `0:00`. A Release typed in from a shelf has none at all,
- * and a zero would print as a claim about one.
+ * Anything with no whole second in it has no time to print rather than `0:00`.
+ * A Release typed in from a shelf has no times at all, and a zero would read as
+ * a claim about a track rather than as the absence of one.
  */
 export function formatTrackLength(lengthMs: number | undefined): string | undefined {
-  if (lengthMs === undefined || !Number.isFinite(lengthMs) || lengthMs <= 0) return undefined;
+  if (lengthMs === undefined || !Number.isFinite(lengthMs)) return undefined;
 
+  // Checked after rounding, not before: 400 ms is a positive length and still
+  // rounds to no time at all, so guarding the input alone would print `0:00`.
   const total = Math.round(lengthMs / 1000);
+  if (total <= 0) return undefined;
   const pad = (value: number): string => String(value).padStart(2, '0');
   const seconds = total % 60;
   const minutes = Math.floor(total / 60) % 60;

@@ -57,6 +57,18 @@ const aDesign = (
 const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
 
 /**
+ * Every Template there is, read off the registry rather than listed here.
+ *
+ * The invariants below hold for all of them — a Template sets type only in its
+ * own faces, grounds its Back Card in a colour, keeps its heading clear of its
+ * list — and a third Template should have to satisfy them on the day it is
+ * added rather than on the day somebody remembers to extend this array. Where a
+ * test really is about Classic against Full-bleed it names both, which is then
+ * the signal that it wants revisiting.
+ */
+const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+
+/**
  * The one warning of a given kind on a Sheet, narrowed to its own shape.
  *
  * `SheetWarning` is a union, so a test that wants `trackCount` or `shown` has
@@ -878,7 +890,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     );
 
   it('sets every piece of type in a face the drawing Template names', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const faces = TEMPLATES[templateId].faces;
       const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, testMeasurer);
 
@@ -953,7 +965,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     // The failure this rules out is the expensive one: text fitted against one
     // face and drawn in another is trimmed to a width it never had, and nothing
     // about the layout looks wrong until it is on paper.
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { measure, asked } = recordingMeasurer();
       const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, measure);
 
@@ -1047,6 +1059,56 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
     );
   });
 
+  it('keeps the caption clear of the logo, which shares the band with it', () => {
+    // The collision the caption's own width arithmetic exists to prevent: the
+    // logo takes the bottom-right corner, so a caption measured against the
+    // whole panel runs straight through the mark.
+    const { panel, captions } = frontPanel({ showLogo: true });
+    // `FRONT_LOGO_WIDTH` and `PAD` in templates/shared.ts, which the seam does
+    // not export — stated here so the assertion says what it is holding.
+    const logoLeft = panel.x + panel.width - 3 - 9;
+
+    expect(captions).toHaveLength(2);
+    for (const op of captions) {
+      const half = testMeasurer.widthMm(op.text, op.style) / 2;
+      expect(op.at.x + half, op.text).toBeLessThanOrEqual(logoLeft);
+    }
+  });
+
+  it('captions the panel even when type over the artwork is switched off', () => {
+    // `showOverlayText` governs type drawn *over* artwork — the Full-bleed
+    // Front Panel and Label. This caption is beside it, and switching the
+    // toggle off used to leave the whole 14 mm band blank.
+    const { captions } = frontPanel({ showOverlayText: false });
+
+    expect(captions.map((op) => op.text)).toEqual(['Glen Campbell', 'Wichita Lineman']);
+  });
+
+  it('draws no negative rectangle on the smallest J-Card a project file may carry', () => {
+    // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. Unclamped, the
+    // bled artwork would be 13 mm shorter than nothing.
+    for (const insetArtwork of [false, true]) {
+      const [sheet] = renderSheets(
+        [
+          {
+            ...aDesign(aRelease({ artwork }), { params: { insetArtwork } }),
+            dimensions: {
+              ...DEFAULT_PART_DIMENSIONS,
+              jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+            },
+          },
+        ],
+        { ...A4_SHEET, parts: ['jcard'] },
+        testMeasurer,
+      );
+      const art = sheet?.placements[0]?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
+      if (art?.op !== 'image') throw new Error('no artwork');
+
+      expect(art.rect.width, `inset ${insetArtwork}: width`).toBeGreaterThanOrEqual(0);
+      expect(art.rect.height, `inset ${insetArtwork}: height`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it('leaves Full-bleed alone, whose artwork bleeds on all four edges anyway', () => {
     const [sheet] = renderSheets(
       [aDesign(aRelease({ artwork }), { templateId: 'fullbleed', params: { insetArtwork: true } })],
@@ -1063,6 +1125,9 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
 });
 
 describe('SheetRenderer — each Template draws its own tracklist', () => {
+  /** What every Template holds clear at the edges of a Part (`PAD` in templates/shared.ts). */
+  const PAD_MM = 3;
+
   /** A dark design, so reversed-out type is white in both Templates. */
   const DARK: Partial<TemplateParams> = {
     paperColor: '#fffbea',
@@ -1084,6 +1149,9 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
         lengthMs: 200_000 + index * 1000,
       })),
     });
+
+  /** A tracklist row: the numbered title, or the time set beside it. */
+  const isListLine = (op: TextOp): boolean => /^\d+\. /.test(op.text) || /^\d+:\d\d/.test(op.text);
 
   const backCard = (templateId: TemplateId, params = DARK, release = aRelease()) => {
     const [sheet] = renderSheets(
@@ -1118,7 +1186,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('reverses every line out of the ground it sits on', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const dark = backCard(templateId, DARK).texts.map((op) => op.style.color);
       const light = backCard(templateId, LIGHT).texts.map((op) => op.style.color);
 
@@ -1173,7 +1241,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('leaves the lonely hairline rule behind', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       expect(
         backCard(templateId).ops.filter((op) => op.op === 'line'),
         `${templateId} draws no rule`,
@@ -1199,7 +1267,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('sets each card only in the faces its own Template names', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const declared = Object.values(TEMPLATES[templateId].faces);
       const used = backCard(templateId).texts.map((op) => op.style.face);
 
@@ -1209,7 +1277,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('prints a playing time beside every track that has one', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { texts } = backCard(templateId, DARK, timed(10));
       const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
 
@@ -1220,14 +1288,14 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('prints no time at all for a Release that has none', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { texts } = backCard(templateId, DARK, aRelease());
       expect(texts.filter((op) => /^\d+:\d\d$/.test(op.text)), templateId).toEqual([]);
     }
   });
 
   it('keeps 25 timed tracks in two columns, times and all', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { texts } = backCard(templateId, DARK, timed(25));
       const lines = texts.filter((op) => /^\d+\. /.test(op.text));
       const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
@@ -1240,7 +1308,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   });
 
   it('shrinks and then warns from either Template, exactly as before', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const modest = backCard(templateId, DARK, timed(25));
       const enormous = backCard(templateId, DARK, timed(200));
 
@@ -1259,7 +1327,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     // The failure `layOutTracklist` hands the whole style back to prevent, one
     // cell over: a time drawn from a style the fit never saw is a time that
     // does not match the list it belongs to, and only paper shows it.
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { texts } = backCard(templateId, DARK, timed(200));
       const listSize = texts.find((op) => /^\d+\. /.test(op.text))?.style.sizeMm ?? 0;
       const timeSizes = [...new Set(texts.filter((op) => /^\d+:\d\d$/.test(op.text)).map((op) => op.style.sizeMm))];
@@ -1269,8 +1337,50 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
+  it('keeps the heading clear of the first track', () => {
+    // Every millimetre in the Back Card layout comments is load-bearing and
+    // none of them was pinned: a heading one line too low, or a list top one
+    // line too high, prints the album through track 1.
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, timed(10));
+      const heading = texts.filter((op) => !isListLine(op));
+      const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+
+      expect(heading.length, `${templateId} has a heading`).toBeGreaterThan(0);
+      expect(firstTrack, `${templateId} has a list`).toBeDefined();
+      const lowest = Math.max(...heading.map((op) => op.at.y + op.style.sizeMm));
+      expect(lowest, `${templateId} heading bottom`).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
+    }
+  });
+
+  it('keeps Full-bleed’s masthead inside the band drawn for it', () => {
+    // The band test above only bounds the bar at a third of the card, which is
+    // 26 mm of slack; this is the assertion that ties the two lines to it.
+    const { ops, texts } = backCard('fullbleed');
+    const band = ops.filter((op) => op.op === 'fill-rect')[1];
+    if (band?.op !== 'fill-rect') throw new Error('no band');
+
+    const heading = texts.filter((op) => !isListLine(op));
+    expect(heading).toHaveLength(2);
+    for (const op of heading) {
+      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(band.rect.height);
+    }
+  });
+
+  it('sets no line wider than the card it is on', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts, placement } = backCard(templateId, DARK, timed(10));
+      const room = placement.bounds.width - 2 * PAD_MM;
+
+      for (const op of texts) {
+        const width = testMeasurer.widthMm(op.text, op.style);
+        expect(width, `${templateId}: ${op.text}`).toBeLessThanOrEqual(room + 0.001);
+      }
+    }
+  });
+
   it('keeps every mark on the card, times included', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { texts, placement } = backCard(templateId, DARK, timed(70));
 
       for (const op of texts) {

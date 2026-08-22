@@ -189,9 +189,10 @@ const yearOf = (date: string | undefined): string | undefined => date?.slice(0, 
  * The pressing's own length first: a recording is shared between releases and
  * a track belongs to one of them, so what goes on the card is what is on the
  * disc in the collector's hand. Anything that is not a positive finite number
- * of milliseconds is treated as absent — MusicBrainz leaves the field off
- * rather than sending a zero, but a Release is normalised out of whatever is
- * actually there.
+ * of milliseconds is treated as absent, because a Release is normalised out of
+ * whatever is actually there rather than out of what the schema promises — the
+ * recorded fixtures already show real releases missing dates, labels and track
+ * titles.
  */
 function trackLengthMs(track: MbTrack): number | undefined {
   for (const candidate of [track.length, track.recording?.length]) {

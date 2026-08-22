@@ -33,8 +33,9 @@ const SHRINK_STEP = 0.96;
 /**
  * A bound on the search, not on the type. Shrinking is what stops a track from
  * being dropped, so the loop may not give up while tracks are still outside the
- * box — this only guarantees it terminates. 400 steps of 4% reaches 2.4 mm ->
- * 0.0002 mm, far past any list a MiniDisc could hold.
+ * box — this only guarantees it terminates. 400 steps of 4 % take 2.4 mm to
+ * 1.9e-7 mm; 2.4 mm is already past any list a MiniDisc could hold by step 230,
+ * where it reaches 0.0002 mm.
  */
 const MAX_SHRINK_STEPS = 400;
 

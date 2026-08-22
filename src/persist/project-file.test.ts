@@ -103,16 +103,29 @@ describe('reading a project file back', () => {
     expect(restored[1]).not.toHaveProperty('lengthMs');
   });
 
-  it('reads a design saved before the artwork could bleed', () => {
-    // v1 files carry version 1 and so do v1.1 files, so there is nothing in the
-    // format to tell them apart: an old project reopens with the new Front
-    // Panel, and the square is a toggle away.
+  it('reopens a design saved before the artwork could bleed as the square it was', () => {
+    // v1 and v1.1 files both carry version 1, so the version cannot separate
+    // them — but every v1.1 file states `insetArtwork`, so only a v1 file omits
+    // it. Reading the absence as "square" is what makes a saved project
+    // reproduce its own design across the change.
     const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
       designs: Array<{ params: Record<string, unknown> }>;
     };
     delete written.designs[0]?.params['insetArtwork'];
 
     const result = readProjectFile(JSON.stringify(written));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(true);
+  });
+
+  it('keeps a bleeding Front Panel bleeding, which the fallback must not overrule', () => {
+    // The other half: `false` is the value a v1.1 file has to be able to state,
+    // and a fallback of `true` reached by `??` rather than by a type check
+    // would swallow it.
+    const bleeding = { ...design, params: { ...design.params, insetArtwork: false } };
+    const result = readProjectFile(writeProjectFile([readyEntry(bleeding)], sheet));
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
