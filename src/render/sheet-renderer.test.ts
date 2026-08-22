@@ -11,6 +11,7 @@ import type {
   ReleaseDesign,
   SheetConfig,
   SheetLayout,
+  SheetWarning,
   TemplateId,
   TemplateParams,
   TextMeasurer,
@@ -51,6 +52,22 @@ const aDesign = (
 });
 
 const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
+
+/**
+ * The one warning of a given kind on a Sheet, narrowed to its own shape.
+ *
+ * `SheetWarning` is a union, so a test that wants `trackCount` or `shown` has
+ * to say which member it is holding — and asserting that exactly one was
+ * reported is the other half of what these tests are checking anyway.
+ */
+function onlyWarning<K extends SheetWarning['kind']>(
+  sheet: SheetLayout | undefined,
+  kind: K,
+): Extract<SheetWarning, { kind: K }> {
+  const found = (sheet?.warnings ?? []).filter((warning) => warning.kind === kind);
+  expect(found, `warnings of kind ${kind}`).toHaveLength(1);
+  return found[0] as Extract<SheetWarning, { kind: K }>;
+}
 
 const boundsOf = (sheet: SheetLayout, part: PartKind): Rect => {
   const placement = sheet.placements.find((candidate) => candidate.part === part);
@@ -654,13 +671,11 @@ describe('SheetRenderer — warnings about what was drawn', () => {
   });
 
   it('reports type that had to shrink past what a printer holds', () => {
-    const [warning, ...rest] = sheetFor(200)?.warnings ?? [];
+    const warning = onlyWarning(sheetFor(200), 'type-below-print-floor');
 
-    expect(rest).toEqual([]);
-    expect(warning?.kind).toBe('type-below-print-floor');
-    expect(warning?.releaseTitle).toBe('Everything At Once');
-    expect(warning?.trackCount).toBe(200);
-    expect(warning?.sizeMm).toBeLessThan(warning?.floorMm ?? 0);
+    expect(warning.releaseTitle).toBe('Everything At Once');
+    expect(warning.trackCount).toBe(200);
+    expect(warning.sizeMm).toBeLessThan(warning.floorMm);
   });
 
   it('warns once per Release, from the Back Card that carries the list', () => {
@@ -684,6 +699,124 @@ describe('SheetRenderer — warnings about what was drawn', () => {
         ),
       ],
       { ...A4_SHEET, parts: ['label'] },
+      testMeasurer,
+    );
+
+    expect(sheets[0]?.warnings).toBeUndefined();
+  });
+});
+
+describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
+  /*
+   * The Spine is one line by design, so a line that does not fit loses its end
+   * — the only warning here that reports missing content. The type does not
+   * shrink to buy room (SPINE_SIZE_MM in templates/shared.ts says why), so
+   * these check both halves of that decision: the report, and the size holding.
+   *
+   * `testMeasurer` gives every Latin character half an em, so at 2.9 mm each is
+   * 1.45 mm. The Spine has `79 - 2 * 3 - (4.2 + 3)` = 65.8 mm with the logo on
+   * and 73 mm with it off, which is 45 and 50 characters.
+   */
+  const TOO_LONG = 'Lift Your Skinny Fists Like Antennas to Heaven';
+  const spineOf = (sheet: SheetLayout | undefined): string => {
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const panels = jcard?.panels?.find((bounds) => bounds.panel === 'spine')?.rect;
+    if (!jcard || !panels) throw new Error('no Spine');
+    // The Spine's line is the one rotated text op inside the Spine panel.
+    const found = jcard.ops.find(
+      (op) =>
+        op.op === 'text' &&
+        op.style.rotationDeg === -90 &&
+        op.at.x > panels.x &&
+        op.at.x < panels.x + panels.width,
+    );
+    if (found?.op !== 'text') throw new Error('no Spine text');
+    return found.text;
+  };
+  const sheetFor = (
+    release: Partial<Release>,
+    overrides: { templateId?: TemplateId; params?: Partial<TemplateParams> } = {},
+  ): SheetLayout | undefined =>
+    renderSheets([aDesign(aRelease(release), overrides)], A4_SHEET, testMeasurer)[0];
+
+  it('says nothing when the whole line fits on the edge', () => {
+    // 'Glen Campbell — Wichita Lineman' is 31 characters, so 44.95 of 65.8 mm.
+    expect(sheetFor({})?.warnings).toBeUndefined();
+  });
+
+  it('reports the line it could not fit, and the one it drew instead', () => {
+    const sheet = sheetFor({ album: TOO_LONG });
+    const warning = onlyWarning(sheet, 'spine-truncated');
+
+    expect(warning.line).toBe(`Glen Campbell — ${TOO_LONG}`);
+    expect(warning.shown).not.toBe(warning.line);
+    expect(warning.shown.endsWith('…')).toBe(true);
+    expect(warning.releaseTitle).toBe(TOO_LONG);
+  });
+
+  it('describes the string that is actually on the Part', () => {
+    // The point of returning the warning with the drawing: the two cannot
+    // disagree, because the reported string is the drawn one.
+    const sheet = sheetFor({ album: TOO_LONG });
+
+    expect(onlyWarning(sheet, 'spine-truncated').shown).toBe(spineOf(sheet));
+  });
+
+  it('holds the type at 2.9 mm rather than shrinking toward Sony’s 2.469', () => {
+    // The decision itself. Shrinking to the 7 pt floor buys 17 % more
+    // characters and costs the shelf legibility 2.9 mm was chosen for, so the
+    // renderer reports instead of giving way — however far over the line is.
+    const barely = onlyWarning(
+      sheetFor({ album: 'Wichita Lineman and Other Songs' }),
+      'spine-truncated',
+    );
+    const hopeless = onlyWarning(sheetFor({ album: TOO_LONG.repeat(3) }), 'spine-truncated');
+
+    expect(barely.sizeMm).toBe(2.9);
+    expect(hopeless.sizeMm).toBe(2.9);
+  });
+
+  it('gives the line the logo’s room back when the logo is switched off', () => {
+    // 48 characters: 69.6 mm, over the 65.8 the logo leaves and under the 73
+    // it does not. Geometry, not a threshold — which is why it is asserted.
+    const album = 'Wichita Lineman, and Other Songs';
+    expect(`Glen Campbell — ${album}`).toHaveLength(48);
+
+    expect(onlyWarning(sheetFor({ album }), 'spine-truncated').kind).toBe('spine-truncated');
+    expect(sheetFor({ album }, { params: { showLogo: false } })?.warnings).toBeUndefined();
+  });
+
+  it('reports it from Full-bleed too, which draws the same Spine', () => {
+    const sheet = sheetFor({ album: TOO_LONG }, { templateId: 'fullbleed' });
+
+    expect(onlyWarning(sheet, 'spine-truncated').shown).toBe(spineOf(sheet));
+  });
+
+  it('says nothing for an empty line, however little room the edge has', () => {
+    // A project file may carry a 1 mm J-Card (`MIN_PART_MM`), which leaves the
+    // Spine a negative width — `ellipsise` then returns a bare ellipsis for
+    // anything at all, and a Release with nothing to say has lost nothing.
+    const sheets = renderSheets(
+      [
+        {
+          ...aDesign(aRelease({ artist: '', album: '' })),
+          dimensions: {
+            ...DEFAULT_PART_DIMENSIONS,
+            jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, height: 1 },
+          },
+        },
+      ],
+      { ...A4_SHEET, parts: ['jcard'] },
+      testMeasurer,
+    );
+
+    expect(sheets[0]?.warnings).toBeUndefined();
+  });
+
+  it('reports nothing when the job does not print the J-Card at all', () => {
+    const sheets = renderSheets(
+      [aDesign(aRelease({ album: TOO_LONG }))],
+      { ...A4_SHEET, parts: ['back-card', 'label'] },
       testMeasurer,
     );
 

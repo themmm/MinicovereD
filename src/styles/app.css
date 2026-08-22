@@ -49,7 +49,10 @@
   --aqua: #35a77c;
   --yellow: #dfa000;
   --red: #f85552;
+  /* The tinted fields those accents sit on, and Everforest Light's own
+     bg_yellow, bg_red and bg_green rather than a mix of ours. */
   --fill-warn: #faedcd;
+  --fill-error: #fde3da;
   --fill-ok: #e9f0e9;
 
   --radius: 8px;
@@ -857,6 +860,9 @@ a:focus-visible {
   margin: 0;
   padding: 0;
   max-width: 34ch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   opacity: calc(1 - var(--cond));
   max-height: calc(90px * (1 - var(--cond)));
   overflow: hidden;
@@ -865,14 +871,48 @@ a:focus-visible {
   transition: opacity 540ms var(--ease-zoom);
 }
 
-.spec__warning {
-  font-size: 11.5px;
+/*
+ * A note under a Part. Rule 2 again: ink on a tinted field with an accent bar,
+ * never accent-coloured text — so the three kinds differ by field and bar, and
+ * nothing is carried by colour alone. The words say which is which.
+ *
+ * Both fields need the --line-strong boundary the Sheet check's warnings have,
+ * and for the same reason: --fill-warn is 1.03:1 against the band and
+ * --fill-error 1.02, so without a bounded edge neither reads as a field. The
+ * bar is an inset shadow rather than a border, so switching kinds never moves
+ * the text. The bars themselves are reinforcement — yellow is 1.97:1 on its
+ * own tint and red 2.68, and Everforest Light has nothing stronger.
+ */
+.note {
   line-height: 1.45;
-  padding: 6px 9px 6px 12px;
-  background: var(--fill-warn);
-  border: 1px solid var(--line-strong);
   border-radius: var(--r);
+  padding: 6px 9px 6px 12px;
+}
+
+.note--warn,
+.note--error {
+  border: 1px solid var(--line-strong);
+}
+
+.note--warn {
+  background: var(--fill-warn);
   box-shadow: inset 3px 0 0 var(--yellow);
+}
+
+/* Red for the Spine, which is the one note reporting something the collector
+   will not find on the Part at all. 4.57:1 for the ink, so it still carries
+   text; red is also the strongest accent here at 2.73:1 on the band, where
+   yellow is 1.91. */
+.note--error {
+  background: var(--fill-error);
+  box-shadow: inset 3px 0 0 var(--red);
+}
+
+/* Not a warning at all — the Label's notch line is a fact about the Part, so
+   it gets no field, no bar and no indent, and stays in the chrome face beside
+   the caption it continues. */
+.note--plain {
+  padding: 0;
 }
 
 /*

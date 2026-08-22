@@ -49,11 +49,14 @@ const PART_LABELS: Readonly<Record<PartKind, string>> = {
  */
 const WARNING_HOME: Readonly<Record<SheetWarning['kind'], PartKind>> = {
   'type-below-print-floor': 'back-card',
+  'spine-truncated': 'jcard',
 };
 
 /** Warnings that are errors rather than cautions, and are shown as such. */
 const WARNING_SEVERITY: Readonly<Record<SheetWarning['kind'], 'warn' | 'error'>> = {
   'type-below-print-floor': 'warn',
+  // The only one that reports content the collector will not find on the Part.
+  'spine-truncated': 'error',
 };
 
 export interface PartBandOptions {
@@ -78,14 +81,31 @@ interface Specimen {
   readonly caption: HTMLElement;
 }
 
-/** How the warning reads on screen. The geometry stays geometry (layout.ts). */
+/**
+ * How the warning reads on screen. The geometry stays geometry (layout.ts).
+ *
+ * No Release named: the note already sits under the Part of the Release being
+ * looked at. The Sheet check has its own wording for the same warnings, and
+ * does name them, because it lists every Release at once.
+ */
 function describeWarning(warning: SheetWarning): string {
-  const { trackCount, sizeMm, floorMm } = warning;
-  return (
-    `${trackCount} tracks only fit at ${sizeMm.toFixed(2)} mm type, below the ` +
-    `${floorMm.toFixed(2)} mm a printer reliably holds. Every track is there, but they may ` +
-    `not be legible.`
-  );
+  switch (warning.kind) {
+    case 'type-below-print-floor':
+      return (
+        `${warning.trackCount} tracks only fit at ${warning.sizeMm.toFixed(2)} mm type, below the ` +
+        `${warning.floorMm.toFixed(2)} mm a printer reliably holds. Every track is there, but they ` +
+        `may not be legible.`
+      );
+    case 'spine-truncated':
+      // Not quoting what it says: the Spine is on screen an inch away, and the
+      // note has to fit a slot that is 90 px tall. The Sheet check, which has
+      // no Part beside it, quotes.
+      return (
+        `The Spine does not fit and its end is cut. The type stays at ` +
+        `${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the artist or the ` +
+        `album.`
+      );
+  }
 }
 
 /** 87.5 stays 87.5, 79 does not become 79.0. */
@@ -401,14 +421,18 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
       for (const warning of warnings.filter((candidate) => WARNING_HOME[candidate.kind] === part)) {
         specimen.notes.appendChild(
           el('li', {
-            class: `note note--${WARNING_SEVERITY[warning.kind]}`,
+            // `prose`: a warning is a sentence of English, and the Noto stack
+            // is what this page sets those in.
+            class: `micro prose note note--${WARNING_SEVERITY[warning.kind]}`,
             text: describeWarning(warning),
           }),
         );
       }
 
       const note = part === 'label' ? labelNote() : undefined;
-      if (note) specimen.notes.appendChild(el('li', { class: 'note note--plain', text: note }));
+      // No `prose`: this one is a fact about the Part, and belongs to the
+      // caption above it rather than to the warnings beside it.
+      if (note) specimen.notes.appendChild(el('li', { class: 'micro note note--plain', text: note }));
 
       // display: contents, so the three rows line up across the three columns
       // however tall any one caption or note turns out to be.
