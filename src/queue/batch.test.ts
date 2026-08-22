@@ -60,9 +60,15 @@ const requests = (...queries: Array<[string, string]>): BatchRequest[] =>
     query: { kind: 'fielded', artist, album },
   }));
 
-/** Lines that named no artist, which the field reads as release titles. */
+/**
+ * Lines that named no artist, which the field reads as release titles.
+ *
+ * The id is prefixed the way `parseBatchLines` prefixes it, so that it differs
+ * from the title — otherwise a progress line that fell back to the id would be
+ * indistinguishable from one that named the title.
+ */
 const titles = (...names: readonly string[]): BatchRequest[] =>
-  names.map((text) => ({ id: text, query: { kind: 'text', text } }));
+  names.map((text) => ({ id: `batch-${text}`, query: { kind: 'text', text } }));
 
 describe('resolving a batch into the queue', () => {
   it('resolves every entry and reports progress as it goes', async () => {

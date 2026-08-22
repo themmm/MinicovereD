@@ -7,9 +7,9 @@
  * anything in this session newer than what is arriving?
  *
  * The rule lives here rather than inline in the workspace because it is a
- * statement about the session and not about the DOM, and because getting it
- * wrong is invisible: the losing case is a race, and a race that is only
- * reasoned about is a race that is wrong.
+ * statement about the session and not about the DOM — and because what beats
+ * what is worth being able to assert directly, instead of inferring it from a
+ * browser doing two things at once.
  */
 
 /** What this session has already done that an arriving Project would undo. */
@@ -23,11 +23,13 @@ export interface SessionWork {
 /**
  * Why an import must be refused, or nothing if it may go ahead.
  *
- * Only a running Batch refuses one. A Batch adds Entries to the Queue for as
- * long as a minute, and a Project landing in the middle of one either gets
- * overwritten by the rest of the Batch or throws the Batch's work away —
- * which of the two depends on how far the lookups have got, and an outcome
- * that depends on timing is the worst kind of answer to give a collector.
+ * Only a running Batch refuses one, and not because the two would collide in
+ * mid-air. A Batch collects its Entries as it goes and hands them over in one
+ * piece when the last lookup returns, adding them to whatever Queue it finds
+ * at that moment. So a project opened while the lookups are still running is
+ * neither overwritten by the Batch nor overwrites it: the two are silently
+ * merged, and the collector is left with one Queue holding two sessions and
+ * nothing to say which Releases came from where.
  *
  * An edit deliberately does *not* refuse an import. The collector chose the
  * file with their own work in front of them; refusing that would make the
@@ -46,10 +48,9 @@ export function refuseImport(work: SessionWork): string | undefined {
  *
  * An edit beats it — the v1 rule: the saved copy is the collector's own older
  * work and they are already looking at the newer. A running Batch beats it for
- * the same reason and more sharply, because a Batch that finished after a
- * restore was applied would append its Entries to the restored Queue, and the
- * collector would be left with two sessions merged into one and no way to tell
- * which Releases came from where.
+ * the same reason, and by the same mechanism as an import: the Batch appends
+ * its Entries to whatever Queue exists when it finishes, so a restore applied
+ * while it runs is a restore the Batch then merges itself into.
  *
  * Refused silently, on purpose. The Batch is about to report what it added, and
  * a second sentence about a saved copy nobody asked for would bury it.

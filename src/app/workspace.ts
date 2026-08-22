@@ -115,7 +115,8 @@ export function createWorkspace(): Workspace {
 
   const projectControls = createProjectControls(project, (imported) => {
     // The file has been read and understood by now, and is still not applied:
-    // a Batch filling the Queue outranks it (see project-arrival.ts).
+    // a running Batch outranks it, because the Batch would append its Entries
+    // to this project's Queue when it finishes (see project-arrival.ts).
     const refused = refuseImport(sessionWork());
     if (refused) {
       projectControls.report(refused);

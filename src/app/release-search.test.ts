@@ -3,16 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { describeBatch, describeQuery, parseBatchLines, parseQuery } from './release-search.ts';
 
 /**
- * What each line asked for, flattened to a pair for the separator tests.
+ * The two fields each line named, for the tests that are about separators.
  *
- * A line that named no artist flattens to a blank artist and the whole line as
- * the release title — which is the claim itself, not a convenience: a title
- * never lands in the artist field.
+ * Throws rather than flattening when a line was not read as fielded. A reading
+ * of `{ kind: 'fielded', artist: '', album: line }` would satisfy any assertion
+ * about the fields alone, and it is exactly the shape the union is here to rule
+ * out — so the kind is checked even where the test is about something else.
  */
-const asked = (text: string): Array<[string, string]> =>
-  parseBatchLines(text).map(({ query }) =>
-    query.kind === 'fielded' ? [query.artist, query.album] : ['', query.text],
-  );
+const fields = (text: string): Array<[string, string]> =>
+  parseBatchLines(text).map(({ query }) => {
+    if (query.kind !== 'fielded') throw new Error(`read as ${query.kind}, not as two fields`);
+    return [query.artist, query.album];
+  });
 
 describe('reading a pasted batch', () => {
   it('takes one Release per line, as Artist — Album', () => {
@@ -23,7 +25,7 @@ describe('reading a pasted batch', () => {
   });
 
   it('accepts an en dash, a hyphen or a tab, because people paste all three', () => {
-    expect(asked('A – One\nB - Two\nC\tThree').map(([, album]) => album)).toEqual([
+    expect(fields('A – One\nB - Two\nC\tThree').map(([, album]) => album)).toEqual([
       'One',
       'Two',
       'Three',
@@ -31,14 +33,14 @@ describe('reading a pasted batch', () => {
   });
 
   it('splits at the first separator only, so a dash in the title survives', () => {
-    expect(asked('Godspeed You! Black Emperor — F♯A♯∞ — Deluxe Edition')[0]).toEqual([
+    expect(fields('Godspeed You! Black Emperor — F♯A♯∞ — Deluxe Edition')[0]).toEqual([
       'Godspeed You! Black Emperor',
       'F♯A♯∞ — Deluxe Edition',
     ]);
   });
 
   it('leaves a hyphenated name alone, since only a spaced dash separates', () => {
-    expect(asked('Jean-Michel Jarre — Oxygène')[0]).toEqual(['Jean-Michel Jarre', 'Oxygène']);
+    expect(fields('Jean-Michel Jarre — Oxygène')[0]).toEqual(['Jean-Michel Jarre', 'Oxygène']);
   });
 
   it('skips blank lines rather than searching for nothing', () => {
@@ -61,7 +63,7 @@ describe('reading a pasted batch', () => {
   });
 
   it('separates on a figure dash and a minus sign too, because people paste them', () => {
-    expect(asked('A ‒ One\nB − Two').map(([, album]) => album)).toEqual(['One', 'Two']);
+    expect(fields('A ‒ One\nB − Two').map(([, album]) => album)).toEqual(['One', 'Two']);
   });
 });
 
@@ -79,9 +81,9 @@ describe('a pasted line that names no artist', () => {
   });
 
   it('is a title, never an artist', () => {
-    expect(asked('Loveless\nSpiderland')).toEqual([
-      ['', 'Loveless'],
-      ['', 'Spiderland'],
+    expect(parseBatchLines('Loveless\nSpiderland').map(({ query }) => query)).toEqual([
+      { kind: 'text', text: 'Loveless' },
+      { kind: 'text', text: 'Spiderland' },
     ]);
   });
 

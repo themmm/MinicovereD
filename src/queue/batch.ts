@@ -17,13 +17,18 @@ import type { QueueEntry } from './release-queue.ts';
  */
 
 /**
- * What one line of the search field asked for.
+ * What one line asked for, as a search.
  *
- * Two readings and no third: a line names both fields, or it names a release
- * title. There is deliberately no reading that names an artist and nothing
- * else — a line with no separator is a title, and a plain `artist` string
- * could not tell that case from a real artist, which is how a pasted
- * `Loveless` came to be searched for as a band.
+ * A line names both fields, or it names a release title. There is deliberately
+ * no third reading that names an artist and nothing else — a line with no
+ * separator is a title, and a plain `artist` string could not tell that case
+ * from a real artist, which is how a pasted `Loveless` came to be searched for
+ * as a band.
+ *
+ * An MBID is not one of these, because it is not a search. The field resolves
+ * one directly and decides that before it gets here; a paste does not, so an
+ * MBID among several lines is searched as a title. That is what v1 did with it
+ * too, and closing it is a ticket of its own.
  */
 export type LineQuery =
   | { readonly kind: 'fielded'; readonly artist: string; readonly album: string }

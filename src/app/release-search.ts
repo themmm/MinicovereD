@@ -77,7 +77,8 @@ export function parseBatchLines(text: string): BatchRequest[] {
 export type ParsedQuery =
   | { readonly kind: 'empty' }
   | { readonly kind: 'mbid'; readonly mbid: string }
-  // The two readings one line has, spelled the same way here as in a batch.
+  // How a line is searched, once the field has ruled out an MBID. Spelled the
+  // same way here as in a batch, because it is the same reading.
   | LineQuery
   | { readonly kind: 'batch'; readonly requests: readonly BatchRequest[] };
 
@@ -154,11 +155,12 @@ export interface ReleaseSearch {
   /** Marks the row whose Release is the one on screen. */
   markInUse(releaseId: string): void;
   /**
-   * Whether a Batch is filling the Queue right now.
+   * Whether a Batch is running right now.
    *
-   * The panel's other waits are its own business. This one is not: a Batch adds
-   * Entries to the Queue for as long as a minute, and a project arriving in the
-   * middle of one would replace a Queue that is still being filled. See
+   * The panel's other waits are its own business. This one is not: a Batch hands
+   * its Entries over in one piece when the last lookup returns, and adds them to
+   * whatever Queue it finds then — so a project applied while the lookups are
+   * still running is not replaced by the Batch, it is merged with it. See
    * `project-arrival.ts`, which is what asks.
    */
   isBatchRunning(): boolean;
@@ -298,9 +300,11 @@ export function createReleaseSearch(
     const parsed = parseQuery(pasted);
     if (parsed.kind !== 'batch') return;
     event.preventDefault();
-    // One at a time. Two overlapping Batches would interleave their lookups
-    // into the Queue, and `isBatchRunning` — which the workspace trusts to hold
-    // an import off — could only describe whichever of them finished first.
+    // One at a time, and not only Batch against Batch: `run` and `pick` already
+    // refuse while the panel is waiting, and there is one status line for all of
+    // them to narrate into. Two Batches would be the worse case, because
+    // `isBatchRunning` — which the workspace trusts to hold an import off —
+    // could only describe whichever of them finished first.
     if (busy()) {
       status.textContent = 'Still working on the last one. Wait for it to finish, then paste again.';
       return;
