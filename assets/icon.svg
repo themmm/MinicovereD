@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges" role="img" aria-label="MinicovereD">
+  <!--
+    The Icon (ADR-0011): the Mark placed on a ground, which is what a favicon
+    and an app icon are (CONTEXT.md separates the two). The ground is what makes
+    it legible on a dark browser tab bar, where the bare Mark all but vanishes.
+
+    The path is assets/mark.svg's, unchanged. `mark.test.ts` fails if it drifts.
+  -->
+  <path d="M0 0h16v16H0z" fill="#5c6a72"/>
+  <path d="M2 4h2v10H2zM5 2h9v10H5z" fill="#fdf6e3"/>
+</svg>

@@ -1,4 +1,5 @@
-import logoUrl from '../../assets/logo.svg';
+import iconUrl from '../../assets/icon.svg';
+import markUrl from '../../assets/mark.svg';
 import { watchOfflineReadiness } from '../pwa/offline-readiness.ts';
 import type { OfflineState } from '../pwa/offline-readiness.ts';
 import { createAboutDialog } from './about-dialog.ts';
@@ -21,10 +22,16 @@ const OFFLINE_LABELS: Readonly<Record<OfflineState, string>> = {
   ready: 'Ready offline',
 };
 
-/** Set from script so the one bundled logo also serves both builds as the tab icon. */
+/**
+ * Set from script, so the bundled asset serves both builds as the tab icon —
+ * a path in `index.html` would be a file the single-file build has to fetch.
+ *
+ * The Icon, not the Mark: a favicon needs a ground. The bare Mark is ink, and
+ * ink on a dark browser tab bar is very nearly nothing (ADR-0011).
+ */
 function installFavicon(): void {
   document.head.appendChild(
-    el('link', { attrs: { rel: 'icon', type: 'image/svg+xml', href: logoUrl } }),
+    el('link', { attrs: { rel: 'icon', type: 'image/svg+xml', href: iconUrl } }),
   );
 }
 
@@ -58,9 +65,10 @@ export function mountShell(root: HTMLElement): void {
   const header = el(
     'header',
     { class: 'top' },
-    // The Mark's slot. Drawing the Mark is its own task (ADR-0009), so what
-    // sits here is the asset that ships today.
-    el('img', { class: 'top__mark', attrs: { src: logoUrl, alt: '', width: 19, height: 19 } }),
+    // 16, not 19: the Mark is sixteen modules, so 16 px is one module to the
+    // pixel and anything else anti-aliases the edges grid construction exists
+    // to keep (ADR-0011, and ADR-0008 rule 5).
+    el('img', { class: 'top__mark', attrs: { src: markUrl, alt: '', width: 16, height: 16 } }),
     el('span', { class: 'top__wm', text: 'MinicovereD' }),
     workspace.find,
     workspace.reopen,

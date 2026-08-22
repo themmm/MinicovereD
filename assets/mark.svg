@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges" role="img" aria-label="MinicovereD">
+  <!--
+    The Mark (ADR-0011). A J-Card, hinged: the Spine dropped two modules beside
+    the Front Panel. Sixteen modules, M/H/V/Z only, no curve and no anti-alias,
+    so a 16 px rendering is one module to the pixel.
+
+    The same path is in assets/icon.svg, which is this figure placed on a ground.
+    `mark.test.ts` fails if the two ever differ.
+  -->
+  <path d="M2 4h2v10H2zM5 2h9v10H5z" fill="#5c6a72"/>
+</svg>

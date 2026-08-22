@@ -168,9 +168,12 @@ body {
   padding: 16px 0 14px;
 }
 
+/* 16, and not a pixel more or less: the Mark is sixteen modules, so this is
+   the one size that renders one module to the pixel. 19 was 1.1875, which
+   anti-aliases the edges the grid exists to keep (ADR-0011). */
 .top__mark {
-  width: 19px;
-  height: 19px;
+  width: 16px;
+  height: 16px;
   flex: none;
 }
 
