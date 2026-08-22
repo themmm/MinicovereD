@@ -214,13 +214,27 @@ export function createSheetPreview({ actions = [] }: SheetPreviewOptions = {}): 
   };
 }
 
-/** The wording lives here, not in the geometry that noticed the problem. */
+/**
+ * The wording lives here, not in the geometry that noticed the problem.
+ *
+ * Every Release is named, because this list collects the warnings of all of
+ * them; the band's own notes sit under one Part and do not need to.
+ */
 function describeWarning(warning: SheetWarning): string {
-  const { releaseTitle, trackCount, sizeMm, floorMm } = warning;
-  return (
-    `${releaseTitle}: ${trackCount} tracks only fit at ${sizeMm.toFixed(2)} mm type, below the ` +
-    `${floorMm.toFixed(2)} mm a printer reliably holds. Every track is there, but they may not be legible.`
-  );
+  switch (warning.kind) {
+    case 'type-below-print-floor':
+      return (
+        `${warning.releaseTitle}: ${warning.trackCount} tracks only fit at ` +
+        `${warning.sizeMm.toFixed(2)} mm type, below the ${warning.floorMm.toFixed(2)} mm a printer ` +
+        `reliably holds. Every track is there, but they may not be legible.`
+      );
+    case 'spine-truncated':
+      return (
+        `${warning.releaseTitle}: the Spine does not fit and reads “${warning.shown}”. The type ` +
+        `stays at ${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the ` +
+        `artist or the album instead.`
+      );
+  }
 }
 
 function download(bytes: Uint8Array, fileName: string): void {

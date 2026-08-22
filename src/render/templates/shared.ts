@@ -1,6 +1,6 @@
 import type { Release } from '../../domain/release.ts';
 import type { Mm, Point, Rect } from '../../domain/units.ts';
-import type { DrawOp, TextStyle } from '../layout.ts';
+import type { DrawOp, TextOp, TextStyle } from '../layout.ts';
 import { readableInkFor, withAlpha } from '../colors.ts';
 import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise } from '../text.ts';
@@ -8,7 +8,7 @@ import { layOutTracklist } from '../tracklist-layout.ts';
 import { PRINT_FLOOR_MM } from '../tracklist-layout.ts';
 import type { TracklistLayout } from '../tracklist-layout.ts';
 import type { TextMeasurer } from '../text.ts';
-import type { PartContext, PartDrawing, TemplateParams } from './template.ts';
+import type { JCardContext, PartContext, PartDrawing, TemplateParams } from './template.ts';
 
 /**
  * The pieces every Template shares. Classic and Full-bleed differ in how the
@@ -28,7 +28,7 @@ export function text(
   style: TextStyle,
   maxWidthMm: Mm,
   measure: TextMeasurer,
-): DrawOp {
+): TextOp {
   return { op: 'text', text: ellipsise(content, style, maxWidthMm, measure), at, style };
 }
 
@@ -88,16 +88,42 @@ function placeholderColor(params: TemplateParams): string {
 }
 
 /**
+ * The size the Spine's one line is set at, and stays at.
+ *
+ * Sony's artwork specification recommends 7 pt — 2.469 mm — for a 4–7 mm edge
+ * (ADR-0008 rule 6); 2.9 mm is above it, deliberately, because the Spine is
+ * the one Part read at arm's length from a shelf. When the line does not fit,
+ * this does not give way: shrinking all the way to Sony's own floor buys 17 %
+ * more characters, which rescues a line that was just over and does nothing at
+ * all for one that is 70 % over — measured on real Noto Sans metrics, "Sufjan
+ * Stevens — Illinois: Come On Feel the Illinoise" fits at 2.469 and "Godspeed
+ * You! Black Emperor — Lift Your Skinny Fists Like Antennas to Heaven" is
+ * still half again too long. Trading the legibility the Spine exists for, in
+ * exchange for two more words some of the time, is the wrong trade. So the
+ * type holds and the truncation is reported instead (`SpineTruncated`).
+ *
+ * This is where the Spine parts company with the tracklist, which flows, then
+ * shrinks toward `PRINT_FLOOR_MM`, then warns (ticket 07). That floor is a
+ * different number for a different reason — 5 pt, "a printer can hold this" —
+ * and is not this one.
+ */
+const SPINE_SIZE_MM: Mm = 2.9;
+
+/**
  * The Spine: a solid bar of the accent colour with one line of type rotated to
  * read up the case edge, and the logo below it when enabled.
+ *
+ * Returns a drawing rather than bare ops because it is the one shared piece
+ * that can lose content: the line is one line by design, so anything past the
+ * edge is cut rather than wrapped.
  */
-export function drawSpine({ release, params, measure }: PartContext, panel: Rect): DrawOp[] {
+export function drawSpine({ release, params, measure }: PartContext, panel: Rect): PartDrawing {
   // The bar is the collector's accent colour, so the ink on it has to be
   // chosen rather than configured: dark paper on a dark accent would otherwise
   // put invisible type on the one Part that has to be read from a shelf.
   const ink = readableInkFor(params.accentColor);
   const style: TextStyle = {
-    sizeMm: 2.9,
+    sizeMm: SPINE_SIZE_MM,
     weight: 600,
     color: ink,
     align: 'center',
@@ -117,17 +143,61 @@ export function drawSpine({ release, params, measure }: PartContext, panel: Rect
     -90,
   );
 
-  return [
+  const line = spineLine(release);
+  const drawn = text(
+    line,
+    { x: centreX, y: panel.y + (panel.height - logoLength) / 2 },
+    style,
+    panel.height - 2 * PAD - logoLength,
+    measure,
+  );
+  const ops: DrawOp[] = [
     { op: 'fill-rect', rect: panel, color: params.accentColor },
-    text(
-      spineLine(release),
-      { x: centreX, y: panel.y + (panel.height - logoLength) / 2 },
-      style,
-      panel.height - 2 * PAD - logoLength,
-      measure,
-    ),
+    drawn,
     ...logo,
   ];
+
+  // Compared against the op that was built rather than re-measured, so the
+  // warning cannot describe a Spine other than the one on the Part. An empty
+  // line has nothing to lose, whatever `ellipsise` hands back for a panel too
+  // small to hold even that — a project file may carry a 1 mm J-Card.
+  return line === '' || drawn.text === line
+    ? { ops }
+    : {
+        ops,
+        warnings: [
+          {
+            kind: 'spine-truncated',
+            releaseId: release.id,
+            releaseTitle: release.album || release.artist || release.id,
+            line,
+            shown: drawn.text,
+            sizeMm: style.sizeMm,
+          },
+        ],
+      };
+}
+
+/**
+ * The J-Card, which is one design in both Templates but for the Front Panel.
+ *
+ * Shared rather than written out twice, because the Spine now has a warning to
+ * hand back and a Template that spread its ops and forgot its warnings would
+ * drop the report without failing anything.
+ */
+export function drawJCard(
+  context: JCardContext,
+  drawFrontPanel: (context: PartContext, panel: Rect) => DrawOp[],
+): PartDrawing {
+  const spine = drawSpine(context, context.panels.spine);
+  return {
+    ops: [
+      ...drawInnerFlap(context, context.panels['inner-flap']),
+      ...spine.ops,
+      ...drawFrontPanel(context, context.panels['front-panel']),
+    ],
+    ...(spine.warnings ? { warnings: spine.warnings } : {}),
+  };
 }
 
 /** The Inner Flap: blank but for the supplementary info, read up the fold. */
