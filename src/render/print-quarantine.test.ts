@@ -184,7 +184,9 @@ describe('the print quarantine (ADR-0008 rule 9)', () => {
     // be a `color` cannot quietly become one either, because every accent in
     // this palette fails 4.5:1 as text.
     const css = read(APP_CSS).replace(/\/\*[\s\S]*?\*\//g, '');
-    const allowed = ['var(--ink)', 'var(--shell-ink)', 'var(--surface)', 'inherit', 'currentColor'];
+    // Two: the ink, and the paper that the one filled control sets its label in.
+    // `--shell-ink` was a third until the ink header band went away with it.
+    const allowed = ['var(--ink)', 'var(--surface)', 'inherit', 'currentColor'];
 
     const used = [...css.matchAll(/(?<![-\w])color:\s*([^;]+);/g)].map((m) => (m[1] ?? '').trim());
     expect(used.length).toBeGreaterThan(0);

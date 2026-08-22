@@ -6,9 +6,13 @@ import { el } from './dom.ts';
 import { createWorkspace } from './workspace.ts';
 
 /**
- * The app chrome: header, workspace, footer. The workspace owns everything
- * about designing and printing; the shell itself only owns branding, the
- * about/licenses dialog and the offline-readiness indicator.
+ * The app chrome: one header row, the result list, the workspace, a footer.
+ *
+ * The header is a light row on the page rather than a band of its own colour
+ * (ADR-0010). Search is permanent in it and is the widest thing there, being
+ * the entry point — which is only possible if the row is 68 px of mark,
+ * wordmark, field and state, and nothing else. A tagline and a 34 px logo were
+ * what used to make that impossible.
  */
 
 const OFFLINE_LABELS: Readonly<Record<OfflineState, string>> = {
@@ -33,45 +37,60 @@ export function mountShell(root: HTMLElement): void {
     about.showModal();
   };
 
-  const offlinePill = el('span', {
-    class: 'status-pill',
-    text: OFFLINE_LABELS.preparing,
-    attrs: { 'data-state': 'preparing', role: 'status' },
-  });
+  /**
+   * The state of the offline copy, as a dot and a word.
+   *
+   * The dot is an accent doing what rule 2 allows — a graphic, not a label —
+   * and the word beside it is what actually says the state, so nothing here is
+   * carried by colour alone.
+   */
+  const stateDot = el('span', { class: 'dot' });
+  const stateLabel = el('span', { text: OFFLINE_LABELS.preparing });
+  const state = el(
+    'span',
+    { class: 'state', attrs: { 'data-state': 'preparing', role: 'status' } },
+    stateDot,
+    stateLabel,
+  );
+
+  const workspace = createWorkspace();
 
   const header = el(
     'header',
-    { class: 'shell-header' },
-    el('img', {
-      class: 'shell-header__logo',
-      attrs: { src: logoUrl, alt: '', width: 34, height: 34 },
-    }),
-    el(
-      'div',
-      { class: 'shell-header__titles' },
-      el('h1', { class: 'shell-header__title', text: 'MinicovereD' }),
-      el('p', {
-        class: 'shell-header__tagline',
-        text: 'Print-accurate MiniDisc J-Cards, Back Cards and Labels',
-      }),
-    ),
-    offlinePill,
-    el('button', { class: 'button button--onshell', text: 'About & licenses', on: { click: openAbout } }),
+    { class: 'top' },
+    // The Mark's slot. Drawing the Mark is its own task (ADR-0009), so what
+    // sits here is the asset that ships today.
+    el('img', { class: 'top__mark', attrs: { src: logoUrl, alt: '', width: 19, height: 19 } }),
+    el('span', { class: 'top__wm', text: 'MinicovereD' }),
+    workspace.find,
+    workspace.reopen,
+    state,
+    el('button', { class: 'button', text: 'About', attrs: { type: 'button' }, on: { click: openAbout } }),
   );
-
-  const main = el('main', { class: 'shell-main' }, createWorkspace());
 
   const footer = el(
     'footer',
     { class: 'shell-footer' },
-    'MinicovereD · MIT licensed · works offline, stores nothing outside this device. ',
-    el('a', { text: 'Bundled fonts and libraries', attrs: { href: '#' }, on: { click: openAbout } }),
+    el(
+      'div',
+      { class: 'wrap' },
+      'MinicovereD · MIT licensed · works offline, stores nothing outside this device. ',
+      el('a', { text: 'Bundled fonts and libraries', attrs: { href: '#' }, on: { click: openAbout } }),
+    ),
   );
 
-  root.append(header, main, footer, about);
+  // The result list is full-bleed, directly under the header, so it expands
+  // across the page rather than inside a column.
+  root.append(
+    el('div', { class: 'top-wrap' }, el('div', { class: 'wrap' }, header)),
+    workspace.hits,
+    el('main', { class: 'shell-main' }, el('div', { class: 'wrap' }, workspace.main)),
+    footer,
+    about,
+  );
 
-  watchOfflineReadiness((state) => {
-    offlinePill.textContent = OFFLINE_LABELS[state];
-    offlinePill.setAttribute('data-state', state);
+  watchOfflineReadiness((offline) => {
+    stateLabel.textContent = OFFLINE_LABELS[offline];
+    state.setAttribute('data-state', offline);
   });
 }

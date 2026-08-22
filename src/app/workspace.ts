@@ -17,6 +17,7 @@ import {
 } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
+import { EXPORT_DPI } from '../render/raster.ts';
 import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
 import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
@@ -31,7 +32,7 @@ import { createQueuePanel } from './queue-panel.ts';
 import { createReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
 import { createSheetControls } from './sheet-controls.ts';
-import { createSheetPreview } from './sheet-preview.ts';
+import { createSheetPreview, PREVIEW_DPI } from './sheet-preview.ts';
 
 /**
  * The workspace, laid out as ADR-0010 decides: search, the Release being
@@ -57,7 +58,18 @@ const DEFAULT_DESIGN = {
   dimensions: DEFAULT_PART_DIMENSIONS,
 } as const satisfies Omit<ReleaseDesign, 'release'>;
 
-export function createWorkspace(): HTMLElement {
+export interface Workspace {
+  /** The search form. Lives in the header, because it is the entry point. */
+  readonly find: HTMLElement;
+  /** Reopens a closed result list. Beside the field. */
+  readonly reopen: HTMLButtonElement;
+  /** The result list, full-bleed under the header. */
+  readonly hits: HTMLElement;
+  /** Everything else. */
+  readonly main: HTMLElement;
+}
+
+export function createWorkspace(): Workspace {
   // Nothing until the collector has something. A first visit is the empty
   // state; a returning one is whatever this browser saved.
   let queue: QueueEntry[] = [];
@@ -77,7 +89,7 @@ export function createWorkspace(): HTMLElement {
   const store = createIndexedDbStore();
 
   const calibrationButton = el('button', {
-    class: 'button button--tiny',
+    class: 'button',
     text: 'Calibration sheet',
     attrs: { type: 'button' },
     on: {
@@ -94,8 +106,10 @@ export function createWorkspace(): HTMLElement {
       },
     },
   });
-  const preview = createSheetPreview({ actions: [calibrationButton] });
-  const partBand = createPartBand();
+  const preview = createSheetPreview();
+  // Export sits in the band's head, beside the Parts it exports — not at the
+  // bottom of a page the collector has to scroll to find (ADR-0010).
+  const partBand = createPartBand({ actions: [preview.exportButton] });
 
   const projectControls = createProjectControls(project, (imported) => {
     applyProject(imported);
@@ -147,9 +161,15 @@ export function createWorkspace(): HTMLElement {
    * Not decoration: with the controls folded away, this is the only thing
    * saying which of several queued Releases the Parts below belong to.
    */
-  const heroTitle = el('h2', { class: 'hero__title' });
-  const heroMeta = el('p', { class: 'hero__meta' });
-  const hero = el('section', { class: 'hero' }, heroTitle, heroMeta);
+  const heroTitle = el('h2', { class: 'display' });
+  const heroMeta = el('div', { class: 'hero__meta' });
+  const hero = el(
+    'section',
+    { class: 'hero' },
+    el('p', { class: 'eyebrow hero__eyebrow' }, el('span', { class: 'eyebrow__num', text: 'Release' })),
+    heroTitle,
+    heroMeta,
+  );
 
   /**
    * The folds are built once and only their contents are replaced, so that a
@@ -168,7 +188,23 @@ export function createWorkspace(): HTMLElement {
   preview.onSummary((summary) => outputFold.setSummary(summary));
 
   const folds = el('div', { class: 'folds' }, metadataFold.element, designFold.element, outputFold.element);
-  const actions = el('div', { class: 'actions' }, preview.exportButton);
+  /**
+   * The end of the page: the two things that put ink on paper, the two that move
+   * a project, and the sentence that says the preview and the print are one
+   * renderer — which is the claim the whole app rests on.
+   */
+  const actions = el(
+    'div',
+    { class: 'actions' },
+    calibrationButton,
+    projectControls.exportButton,
+    projectControls.openButton,
+    el('span', {
+      class: 'micro prose actions__note',
+      text: `Same renderer as the PDF — ${PREVIEW_DPI} DPI here, ${EXPORT_DPI} on export, identical geometry.`,
+    }),
+    projectControls.element,
+  );
 
   /** Everything that is a view of a selected Release, hidden together when there is none. */
   const designSurface = el('div', { class: 'workspace__design' }, hero, partBand.element, folds, actions);
@@ -188,10 +224,10 @@ export function createWorkspace(): HTMLElement {
         fileNameFor(queue),
         queue.length === 0 ? 'No Sheets yet — start with a Release.' : undefined,
       );
-      partBand.show(sheets, entry?.design.release.id ?? '');
+      partBand.show(sheets, entry);
     } catch (error) {
       preview.showProblem(errorMessage(error));
-      partBand.show([], '');
+      partBand.show([], undefined);
     }
   }
 
@@ -225,14 +261,18 @@ export function createWorkspace(): HTMLElement {
       heroMeta.textContent = '';
       return;
     }
-    const { artist, album, year, tracks } = entry.design.release;
+    const { artist, album, year, notes, tracks, id } = entry.design.release;
     heroTitle.textContent = album || 'Untitled Release';
+    clear(heroMeta);
     const facts = [
       artist || 'Unknown artist',
       year ? String(year) : '',
+      notes ?? '',
       `${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`,
-    ].filter(Boolean);
-    heroMeta.textContent = facts.join(' · ');
+      // A looked-up Release is named by its MBID, one started by hand is not.
+      id.startsWith('hand-') ? 'by hand' : `MusicBrainz ${id.slice(0, 4)}…${id.slice(-4)}`,
+    ].filter((fact) => fact.length > 0);
+    for (const fact of facts) heroMeta.appendChild(el('span', { text: fact }));
   }
 
   /**
@@ -324,7 +364,7 @@ export function createWorkspace(): HTMLElement {
     changed();
   });
 
-  outputControls.append(sheetControls.element, projectControls.element);
+  outputControls.append(sheetControls.element);
 
   /**
    * First on the page, because onboarding below the fold is not onboarding.
@@ -333,10 +373,9 @@ export function createWorkspace(): HTMLElement {
    */
   const emptyState = createEmptyState(startReleaseByHand);
 
-  const element = el(
+  const main = el(
     'div',
     { class: 'workspace' },
-    el('div', { class: 'workspace__find' }, search),
     emptyState.element,
     queuePanel.element,
     designSurface,
@@ -454,7 +493,7 @@ export function createWorkspace(): HTMLElement {
     })
     .finally(() => emptyState.setRestoring(false));
 
-  return element;
+  return { find: search.find, reopen: search.reopen, hits: search.hits, main };
 }
 
 /** Names the file after the queue: one Release by name, several by count. */

@@ -52,14 +52,10 @@
   --fill-warn: #faedcd;
   --fill-ok: #e9f0e9;
 
-  /* The shell band is ink, so its text is paper: the same 5.18:1 pair as the
-     filled control, inverted. --shell-line is the one border that sits on ink,
-     and 70 % paper is where it clears 3:1 (3.46) — 55 % does not (2.76). */
-  --shell: var(--ink);
-  --shell-ink: var(--surface);
-  --shell-line: color-mix(in srgb, var(--surface) 70%, transparent);
-
   --radius: 8px;
+  /* The register's own corner: 5 px, small enough that a 1 px hairline still
+     reads as a straight edge at the scale these controls are drawn. */
+  --r: 5px;
   --gap: 16px;
 
   /* Two curves, because the two movements are not the same movement. Most
@@ -105,9 +101,7 @@ body {
 body {
   background: var(--page);
   color: var(--ink);
-  font-family: var(--font-chrome);
-  font-size: 15px;
-  line-height: 1.5;
+  font: 400 13.5px/1.55 var(--font-chrome);
   /* A tool whose every field is a millimetre wants its digits to line up. */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -119,49 +113,302 @@ body {
   flex-direction: column;
 }
 
-/* ---------------------------------------------------------------- shell -- */
+/* ------------------------------------------------------------- the page -- */
 
-.shell-header {
-  display: flex;
-  align-items: center;
-  gap: var(--gap);
-  padding: 12px 20px;
-  background: var(--shell);
-  color: var(--shell-ink);
+/*
+ * One measure for everything, so the header, the results, the Parts and the
+ * folds all begin at the same left edge. The band and the result list are
+ * full-bleed and carry their own `.wrap` inside, because their background has
+ * to reach the window while their content does not.
+ */
+.wrap {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 0 30px;
 }
 
-.shell-header__logo {
-  width: 34px;
-  height: 34px;
+/* Prose is set in the Part's face, not the chrome's: a paragraph of English is
+   what the Noto stack is for, and a monospace paragraph is a wall. */
+.prose {
+  font-family: var(--font-print);
+}
+
+.micro {
+  font-size: 11.5px;
+}
+
+/* The one piece of display type on the page, and the only thing that says
+   which of several queued Releases the Parts below belong to. */
+.display {
+  margin: 0;
+  font-size: clamp(26px, 3.6vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+/* ------------------------------------------------------------ the header -- */
+
+/*
+ * 68 px: mark, wordmark, the field, the state, About. Nothing else fits, and
+ * that is the point — search is permanent here and is the widest thing in it
+ * (ADR-0010), which a tagline and a 34 px logo made impossible.
+ */
+.top-wrap {
+  border-bottom: 1px solid var(--line);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 14px;
+}
+
+.top__mark {
+  width: 19px;
+  height: 19px;
   flex: none;
 }
 
-.shell-header__titles {
-  flex: 1;
-  min-width: 0;
-}
-
-.shell-header__title {
-  margin: 0;
-  font-size: 17px;
+.top__wm {
+  white-space: nowrap;
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
 }
 
-/* Rule 1: the tagline is the same paper as the title, and the 4.5 px of size
-   between them is the hierarchy. The grey it used to be was 2.56:1. */
-.shell-header__tagline {
+.find {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  flex: 1 1 420px;
+  max-width: 620px;
+  margin: 0 6px;
+}
+
+.find__box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.find__box svg {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
+}
+
+/*
+ * Scoped to its box, not left bare. `.field__input` sets `padding: 7px 10px`
+ * further down the sheet at the same specificity, so a bare `.find__input`
+ * lost the argument and the magnifier ran under the placeholder. One class is
+ * not more important than another just because it is more specific in intent.
+ */
+.find__box > .find__input {
+  padding-left: 34px;
+  min-height: 38px;
+  font-size: 13.5px;
+}
+
+.find__reopen {
+  white-space: nowrap;
+}
+
+.find__reopen[hidden] {
+  display: none;
+}
+
+/*
+ * The state of the offline copy. The dot is an accent doing what rule 2 allows
+ * — a graphic — and the word beside it is what says the state, so the colour is
+ * reinforcement and never the message.
+ */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--yellow);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--yellow) 22%, transparent);
+}
+
+.state[data-state='ready'] .dot {
+  background: var(--aqua);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--aqua) 22%, transparent);
+}
+
+.state[data-state='unsupported'] .dot {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 22%, transparent);
+}
+
+/* ----------------------------------------------------------- the results -- */
+
+/*
+ * The list expands rather than appears: 0fr to 1fr is animatable where height
+ * to auto is not. Same mechanism as a fold, same reason the clip carries the
+ * overflow and the paint containment.
+ */
+.hits {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.hits[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.hits:not([data-open]) {
+  border-bottom-color: transparent;
+}
+
+.hits__clip {
+  overflow: hidden;
+  min-height: 0;
+  contain: paint;
+}
+
+.hits__inner {
+  padding: 14px 0 16px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 220ms var(--ease) 60ms,
+    transform 220ms var(--ease) 60ms;
+}
+
+.hits[data-open] .hits__inner {
+  opacity: 1;
+  transform: none;
+}
+
+.hits__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.hits__eyebrow {
+  flex: 1;
+}
+
+.hits__note {
+  margin: 10px 0 0;
+  max-width: 78ch;
+}
+
+/* What the field was read as, before a request is spent on it. */
+.parse {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+}
+
+.rows {
+  list-style: none;
   margin: 0;
-  font-size: 12.5px;
+  padding: 0;
+}
+
+/*
+ * A result row. The bar at its left edge is the accent as a graphic; the row is
+ * marked as in use by that bar and by a word, never by colour alone.
+ */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px 9px 13px;
+  cursor: pointer;
+  position: relative;
+  transition: background 150ms var(--ease);
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--blue);
+  transform: scaleY(0);
+  transition: transform 150ms var(--ease);
+}
+
+.row:hover {
+  background: var(--sunken);
+}
+
+.row:hover::before,
+.row[aria-current='true']::before {
+  transform: scaleY(1);
+}
+
+.row[aria-current='true'] {
+  background: var(--sunken);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.row b {
+  grid-column: 1;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.row span {
+  grid-column: 1;
+  font-size: 11.5px;
+}
+
+/*
+ * The "in use" badge. Declared after `.row span` on purpose: `.row span` is
+ * (0,1,1) and would otherwise outrank a bare `.use` at (0,1,0) further up the
+ * sheet, which is how every row came to show its badge at once.
+ */
+.row .use {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+}
+
+.row[aria-current='true'] .use {
+  opacity: 1;
 }
 
 .shell-main {
   flex: 1;
-  padding: 24px 20px 40px;
+  padding: 0 0 40px;
 }
 
 .shell-footer {
-  padding: 14px 20px 22px;
+  padding: 14px 0 22px;
   font-size: 12.5px;
   border-top: 1px solid var(--line);
 }
@@ -229,7 +476,7 @@ a:focus-visible {
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 7px 13px;
   cursor: pointer;
 }
@@ -247,37 +494,6 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
-.button--onshell {
-  background: transparent;
-  border-color: var(--shell-line);
-  color: var(--shell-ink);
-}
-
-.button--onshell:hover {
-  border-color: var(--shell-ink);
-  background: color-mix(in srgb, var(--surface) 12%, transparent);
-}
-
-.status-pill {
-  font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--shell-line);
-  white-space: nowrap;
-}
-
-/*
- * Ready is a light chip on the ink band — 4.82:1 for its edge and the same
- * for its ink text — with the accent doing what rule 2 allows: an aqua dot,
- * which is redundant reinforcement rather than the message. The pill's own
- * label names the state, so nothing here is carried by colour alone.
- */
-.status-pill[data-state='ready'] {
-  border-color: var(--aqua);
-  background: var(--fill-ok);
-  color: var(--ink);
-}
-
 /* ------------------------------------------------------------ workspace -- */
 
 /*
@@ -289,19 +505,13 @@ a:focus-visible {
  * with two-thirds of the preview area showing empty paper — Parts pack to the
  * top-left, and the paper does not care what is being designed.
  */
+/* One measure, `.wrap`, shared with the header, the results and the footer.
+   Its own max-width here was a second measure by 40 px, which is the kind of
+   drift that is invisible until two edges are meant to line up. */
 .workspace {
   display: flex;
   flex-direction: column;
-  gap: var(--gap);
-  max-width: 1180px;
-  margin: 0 auto;
-}
-
-/* The entry point, so the widest thing up here (ADR-0010 item 6). */
-.workspace__find > .panel {
-  border: 0;
-  background: none;
-  padding: 0;
+  gap: 0;
 }
 
 /*
@@ -495,6 +705,15 @@ a:focus-visible {
  * its descendant selector scored higher and silently beat the zoom — the same
  * trap as a `.row span` that outranks a `.use` further up the sheet.
  */
+/*
+ * Actual size. 3.7795 px is the nominal CSS millimetre — what a browser calls a
+ * millimetre — so this is a sanity check against a ruler, not a promise. Only
+ * the calibration sheet settles what a printer really does.
+ */
+.band[data-scale] {
+  --mm: 3.7795px;
+}
+
 .band[data-focus] {
   --mm: min(clamp(5px, 1.15vw, 13.5px), calc(56vh / 79));
   --cond: 0;
@@ -529,7 +748,16 @@ a:focus-visible {
   background: var(--line);
 }
 
-.band__note {
+/*
+ * The eyebrow's loud half and its quiet half. Rule 1 forbids doing this with a
+ * lighter grey — and the prototype's opacity is a lighter grey by another route,
+ * measured at 1.95:1 — so the difference is weight, case and size instead.
+ */
+.eyebrow__num {
+  font-weight: 600;
+}
+
+.eyebrow__tail {
   font-weight: 400;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -643,7 +871,7 @@ a:focus-visible {
   padding: 6px 9px 6px 12px;
   background: var(--fill-warn);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   box-shadow: inset 3px 0 0 var(--yellow);
 }
 
@@ -719,20 +947,19 @@ a:focus-visible {
   padding: 26px 0 22px;
 }
 
-.hero__title {
-  margin: 0;
+.hero__eyebrow {
+  margin-bottom: 13px;
+}
+
+.hero .display {
   max-width: 24ch;
-  font-size: clamp(26px, 3.6vw, 44px);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.02;
 }
 
 .hero__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 5px 20px;
-  margin: 13px 0 0;
+  margin-top: 13px;
   font-size: 12px;
 }
 
@@ -852,6 +1079,52 @@ a:focus-visible {
   background: none;
   border-radius: 0;
   padding: 0;
+  /* The key column. Every label lines up at 138 px whatever it says, which is
+     what makes a fold of fields read as a table of settings rather than a
+     stack of boxes. */
+  display: grid;
+  grid-template-columns: 138px minmax(0, 1fr);
+  gap: 11px 20px;
+  align-items: center;
+}
+
+/*
+ * A field is a label wrapping its own input, so it cannot be a row of the grid
+ * on its own — subgrid lets it borrow the parent's columns instead. The
+ * alternative was rewriting five control modules to emit key/value siblings,
+ * which is a lot of churn for a column.
+ */
+.fold__pad .panel > .field,
+.fold__pad .panel > .field-row,
+.fold__pad .panel > .field-buttons,
+.fold__pad .panel > .toggles,
+.fold__pad .panel > .swatches,
+.fold__pad .panel > .panel__title,
+.fold__pad .panel > .panel__hint,
+.fold__pad .panel > p {
+  grid-column: 1 / -1;
+}
+
+.fold__pad .panel > .field {
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  margin: 0;
+}
+
+.fold__pad .field__label {
+  margin: 0;
+  align-self: center;
+}
+
+/* A tracklist is tall, so its label sits at the top of it rather than halfway
+   down the side. */
+.fold__pad .panel > .field:has(> .field__input--area) {
+  align-items: start;
+}
+
+.fold__pad .panel > .field:has(> .field__input--area) .field__label {
+  padding-top: 9px;
 }
 
 .fold__pad .panel__title {
@@ -859,6 +1132,11 @@ a:focus-visible {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.fold__pad .panel__hint,
+.fold__pad .field__note {
+  max-width: 68ch;
 }
 
 .output__controls {
@@ -886,6 +1164,13 @@ a:focus-visible {
   gap: 10px;
   flex-wrap: wrap;
   padding: 22px 0 10px;
+}
+
+/* The claim the whole app rests on, stated where the printing happens. */
+.actions__note {
+  margin-left: auto;
+  max-width: 46ch;
+  text-align: right;
 }
 
 @media (max-width: 900px) {
@@ -928,7 +1213,7 @@ a:focus-visible {
   color: var(--ink);
   background: var(--sunken);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
 }
 
 .field__input:hover {
@@ -1009,7 +1294,7 @@ label.button {
 
 .preview__frame {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 12px;
   display: flex;
   justify-content: center;
@@ -1073,7 +1358,7 @@ label.button {
   color: var(--ink);
   background: var(--fill-warn);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 7px 10px 7px 13px;
   box-shadow: inset 3px 0 0 var(--yellow);
 }
@@ -1086,44 +1371,80 @@ label.button {
 
 /* ------------------------------------------------------------ the queue -- */
 
+.queue-panel {
+  padding: 18px 0 4px;
+}
+
+.queue-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.queue-panel__head .eyebrow {
+  flex: 1 1 240px;
+}
+
 .queue {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   max-height: 260px;
   overflow: auto;
 }
 
 .queue__row {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 6px;
+  border-bottom: 1px solid var(--line);
 }
 
-/* Red is the one accent strong enough to be the boundary itself: 3.04:1 on the
-   panel, where aqua and yellow are 2.60 and 2.12. */
-.queue__row--failed .queue__pick {
-  border-color: var(--red);
-  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+/* Red is the one accent strong enough to carry the row itself: 3.04:1 on the
+   page, where aqua and yellow are 2.60 and 2.12. */
+.queue__row--failed {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
 }
 
+.queue__row--failed .queue__pick::before {
+  background: var(--red);
+  transform: scaleY(1);
+}
+
+/* A row, not a box: the list is separated by hairlines and the current entry is
+   marked by a bar, which is the accent doing the one thing it may. */
 .queue__pick {
   font: inherit;
   flex: 1;
   min-width: 0;
   text-align: left;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
+  padding: 7px 10px 7px 13px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
+  position: relative;
+  transition: background 150ms var(--ease);
+}
+
+.queue__pick::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--blue);
+  transform: scaleY(0);
+  transition: transform 150ms var(--ease);
+}
+
+.queue__pick:hover::before,
+.queue__pick[aria-current='true']::before {
+  transform: scaleY(1);
 }
 
 .queue__pick:hover {
-  border-color: var(--ink);
   background: var(--sunken);
 }
 
@@ -1133,8 +1454,7 @@ label.button {
 }
 
 .queue__pick[aria-current='true'] {
-  border-color: var(--blue);
-  box-shadow: inset 3px 0 0 var(--blue);
+  background: var(--sunken);
 }
 
 .queue__title {
@@ -1159,6 +1479,15 @@ label.button {
 
 /* WCAG 2.2 SC 2.5.8: 24 x 24 CSS px is the floor for a pointer target, and the
    queue's reorder and remove controls were 25 x 22. */
+/* Icon-only, and still 24 px of target (WCAG 2.2 SC 2.5.8). */
+.button--icon {
+  padding: 3px 9px;
+  min-height: 24px;
+  min-width: 24px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .button--tiny {
   padding: 4px 8px;
   font-size: 12px;
@@ -1193,7 +1522,7 @@ label.button {
   text-align: left;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   background: var(--surface);
   cursor: pointer;
 }
@@ -1297,7 +1626,7 @@ label.button {
 
 .credit {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 10px 12px;
   margin-bottom: 8px;
   background: var(--sunken);
@@ -1344,7 +1673,7 @@ label.button {
   padding: 6px 9px 6px 12px;
   background: var(--fill-warn);
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--r);
   box-shadow: inset 3px 0 0 var(--yellow);
 }
 

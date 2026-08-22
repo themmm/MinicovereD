@@ -7,18 +7,42 @@ import type { QueueEntry } from '../queue/release-queue.ts';
 import { clear, el } from './dom.ts';
 
 /**
- * Search MusicBrainz, pick a pressing, and hand the resolved Release to the
- * form — where every field stays editable, because database errors should not
- * end up on paper.
+ * One field, and the entry point to everything (ADR-0010 item 6).
+ *
+ * It reads four things, and says which one it read before spending a request:
+ * `Artist — Album`, a bare title, a MusicBrainz MBID or URL, and several lines
+ * at once. There is one convention for all of them, because there was already
+ * one — the batch rule below — and a second would be a second thing to learn.
  */
 
 /**
- * `Artist — Album` per line; an en or em dash, a hyphen, or a tab all separate.
+ * The separator, and the only one.
  *
- * Only the *first* separator splits the line: “F♯A♯∞ — Deluxe Edition” is one
- * album title, and a spaced dash is the only kind that separates, so
- * Jean-Michel Jarre keeps his name. Em, en and figure dashes, the minus sign
- * and a hyphen all separate, because people paste all of them.
+ * Only a *spaced* dash or a tab separates, and only the first one on the line.
+ * That is what keeps `Jean-Michel Jarre` whole and `F♯A♯∞ — Deluxe Edition` one
+ * title. Em, en and figure dashes and the minus sign all count, because people
+ * paste all of them.
+ */
+const SEPARATOR = /^(.*?)(?:\s+[—–‒−-]\s+|\t+)(.*)$/;
+
+/** A MusicBrainz identifier, on its own or inside a URL pasted from the site. */
+const MBID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * `Artist — Album`, or nothing if the line names no artist.
+ *
+ * The absence is the point: a line with no separator is a title, and the
+ * caller has to treat it as one rather than guessing which field it belongs in.
+ */
+function splitLine(line: string): { artist: string; album: string } | undefined {
+  const match = SEPARATOR.exec(line);
+  if (!match) return undefined;
+  const [, artist = '', album = ''] = match;
+  return { artist: artist.trim(), album: album.trim() };
+}
+
+/**
+ * `Artist — Album` per line.
  *
  * The id is the line itself, not its position in the paste: a line that could
  * not be looked up becomes a Release under this id, and the same line twice is
@@ -30,9 +54,63 @@ export function parseBatchLines(text: string): BatchRequest[] {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => {
-      const [, artist = line, album = ''] = /^(.*?)(?:\s+[—–‒−-]\s+|\t+)(.*)$/.exec(line) ?? [];
-      return { id: `batch-${line}`, artist: artist.trim(), album: album.trim() };
+      const split = splitLine(line);
+      return {
+        id: `batch-${line}`,
+        artist: split?.artist ?? line,
+        album: split?.album ?? '',
+      };
     });
+}
+
+/** What the field was read as. Shown to the collector before a request is spent. */
+export type ParsedQuery =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'mbid'; readonly mbid: string }
+  | { readonly kind: 'fielded'; readonly artist: string; readonly album: string }
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'batch'; readonly requests: readonly BatchRequest[] };
+
+/**
+ * Reads the field, using the same rule the batch has always used.
+ *
+ * An MBID wins over everything, because it identifies a pressing exactly and
+ * there is nothing to search for. Several lines are a batch. One line either
+ * names an artist or does not, and a line that does not is a title — never an
+ * artist, which is the case a two-field form could not express.
+ */
+export function parseQuery(raw: string): ParsedQuery {
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) return { kind: 'empty' };
+  if (lines.length > 1) return { kind: 'batch', requests: parseBatchLines(raw) };
+
+  const line = lines[0] ?? '';
+  const mbid = MBID.exec(line);
+  if (mbid?.[0]) return { kind: 'mbid', mbid: mbid[0].toLowerCase() };
+
+  const split = splitLine(line);
+  if (split && split.artist && split.album) return { kind: 'fielded', ...split };
+  return { kind: 'text', text: line };
+}
+
+/** How the reading reads, so the collector can correct it before it costs a request. */
+export function describeQuery(parsed: ParsedQuery): string {
+  switch (parsed.kind) {
+    case 'empty':
+      return '';
+    case 'mbid':
+      return `MBID · fetching ${parsed.mbid} directly, no search`;
+    case 'fielded':
+      return `Artist and release · artist “${parsed.artist}” and release “${parsed.album}”`;
+    case 'text':
+      return `Release title · searching for “${parsed.text}”`;
+    case 'batch':
+      return `Batch · ${parsed.requests.length} lines, one request a second`;
+  }
 }
 
 /**
@@ -57,80 +135,231 @@ export function describeBatch(added: number, duplicates: number, failed: number)
   return `${clauses.join('; ')}.`;
 }
 
+export interface ReleaseSearch {
+  /** The form. Lives in the header, and is the widest thing in it. */
+  readonly find: HTMLElement;
+  /** The result list, which expands under the header across the full width. */
+  readonly hits: HTMLElement;
+  /** Reopens a list that was closed. Sits in the header beside the field. */
+  readonly reopen: HTMLButtonElement;
+  /** Marks the row whose Release is the one on screen. */
+  markInUse(releaseId: string): void;
+}
+
 export function createReleaseSearch(
   adapter: MetadataAdapter,
   onResolved: (release: Release) => void,
   /** Adds the entries to the queue and answers which of them were new. */
   onBatchResolved: (entries: readonly QueueEntry[]) => readonly QueueEntry[],
-): HTMLElement {
-  const artist = el('input', {
-    class: 'field__input',
-    attrs: { type: 'search', id: 'search-artist', placeholder: 'Daft Punk' },
+): ReleaseSearch {
+  const input = el('input', {
+    class: 'field__input find__input',
+    attrs: {
+      type: 'search',
+      id: 'q',
+      'aria-label': 'Search MusicBrainz',
+      placeholder: 'Artist — Album, an album title, or a MusicBrainz MBID',
+    },
   });
-  const album = el('input', {
-    class: 'field__input',
-    attrs: { type: 'search', id: 'search-album', placeholder: 'Discovery' },
-  });
+
+  const parseLine = el('p', { class: 'parse', attrs: { role: 'status' } });
   const status = el('p', { class: 'search__status', attrs: { role: 'status' }, text: '' });
-  const results = el('ul', { class: 'results' });
-  const submit = el('button', { class: 'button button--primary', text: 'Search', attrs: { type: 'submit' } });
+  const rows = el('ul', { class: 'rows' });
+  const countLabel = el('span', { class: 'eyebrow__num' });
+
+  const submit = el('button', {
+    class: 'button button--primary',
+    text: 'Search',
+    attrs: { type: 'submit' },
+  });
+
+  const reopen = el('button', {
+    class: 'button find__reopen',
+    attrs: { type: 'button', hidden: 'true' },
+    on: { click: () => setOpen(true) },
+  });
+
+  const closeButton = el('button', {
+    class: 'button button--icon',
+    text: '×',
+    attrs: { type: 'button', 'aria-label': 'Close the result list', title: 'Close — Esc' },
+    on: { click: () => setOpen(false) },
+  });
+
+  const hits = el(
+    'div',
+    { class: 'hits' },
+    el(
+      'div',
+      { class: 'hits__clip' },
+      el(
+        'div',
+        { class: 'wrap' },
+        el(
+          'div',
+          { class: 'hits__inner' },
+          el(
+            'div',
+            { class: 'hits__bar' },
+            el(
+              'p',
+              { class: 'eyebrow hits__eyebrow' },
+              countLabel,
+              el('span', {
+                class: 'eyebrow__tail',
+                text: 'MusicBrainz · 1 request/s (ADR-0006)',
+              }),
+            ),
+            closeButton,
+          ),
+          parseLine,
+          rows,
+          el('p', {
+            class: 'micro prose hits__note',
+            text:
+              'Picking a Release fills every field below; nothing you edited by hand is ' +
+              'overwritten. The list stays open — pick again if this is the wrong pressing.',
+          }),
+          status,
+        ),
+      ),
+    ),
+  );
 
   let busy = false;
+  let found: readonly ReleaseSummary[] = [];
+  let inUse = '';
 
   /**
-   * The one place that decides whether this panel is working. Everything it
-   * can start is disabled together — a batch running with the Search button
-   * still lit is a button that silently does nothing.
+   * The list stays open after a pick, and closes only when it is asked to.
+   *
+   * The first guess is often the wrong pressing, and correcting it must not cost
+   * a second search — which at one request a second is the difference between
+   * fixing a mistake and waiting for permission to.
    */
+  function setOpen(open: boolean): void {
+    hits.toggleAttribute('data-open', open);
+    reopen.toggleAttribute('hidden', open || found.length === 0);
+    if (!open && found.length > 0) input.focus();
+  }
+
   function setBusy(active: boolean, message: string): void {
     busy = active;
     submit.toggleAttribute('disabled', active);
-    batchButton.toggleAttribute('disabled', active);
-    results.toggleAttribute('inert', active);
+    rows.toggleAttribute('inert', active);
     status.textContent = message;
   }
 
-  async function search(): Promise<void> {
+  function showParse(): void {
+    parseLine.textContent = describeQuery(parseQuery(input.value));
+  }
+  input.addEventListener('input', showParse);
+
+  /**
+   * A pasted shelf.
+   *
+   * One field cannot hold several lines — an `<input>` collapses them to
+   * spaces, so `A — B\nC — D` would arrive as one nonsense query and the batch
+   * would be unreachable. The paste is where the lines still exist, so that is
+   * where the batch is read: paste several and they are looked up as several,
+   * paste one and it lands in the field like any other typing.
+   *
+   * This is also the gesture the feature was for. Nobody types a collection in.
+   */
+  input.addEventListener('paste', (event) => {
+    const pasted = event.clipboardData?.getData('text') ?? '';
+    const parsed = parseQuery(pasted);
+    if (parsed.kind !== 'batch') return;
+    event.preventDefault();
+    input.value = '';
+    parseLine.textContent = describeQuery(parsed);
+    void lookUpBatch(parsed.requests);
+  });
+
+  function renderRows(): void {
+    clear(rows);
+    for (const summary of found) {
+      const facts = [
+        summary.year,
+        summary.label,
+        summary.country,
+        summary.trackCount ? `${summary.trackCount} tracks` : undefined,
+      ].filter((fact): fact is string => !!fact);
+
+      const row = el(
+        'button',
+        {
+          class: 'row',
+          attrs: {
+            type: 'button',
+            ...(summary.mbid === inUse ? { 'aria-current': 'true' } : {}),
+          },
+          on: { click: () => void pick(summary) },
+        },
+        el('b', { text: `${summary.artist} — ${summary.album}` }),
+        el('span', { text: facts.join(' · ') }),
+        el('span', { class: 'use', text: 'in use' }),
+      );
+      rows.appendChild(el('li', {}, row));
+    }
+    countLabel.textContent = `${found.length} ${found.length === 1 ? 'Release' : 'Releases'}`;
+    reopen.textContent = `${found.length} ${found.length === 1 ? 'hit' : 'hits'}`;
+  }
+
+  async function run(): Promise<void> {
     if (busy) return;
-    const query = { artist: artist.value.trim(), album: album.value.trim() };
-    if (!query.artist && !query.album) {
-      setBusy(false, 'Type an artist or an album to search for.');
+    const parsed = parseQuery(input.value);
+    showParse();
+
+    if (parsed.kind === 'empty') {
+      setOpen(true);
+      setBusy(false, 'Type an artist and a release, a title, or an MBID.');
+      return;
+    }
+    if (parsed.kind === 'batch') {
+      await lookUpBatch(parsed.requests);
+      return;
+    }
+    if (parsed.kind === 'mbid') {
+      await fetchDirectly(parsed.mbid);
       return;
     }
 
-    clear(results);
+    const query =
+      parsed.kind === 'fielded'
+        ? { artist: parsed.artist, album: parsed.album }
+        : { text: parsed.text };
+
+    found = [];
+    renderRows();
+    setOpen(true);
     setBusy(true, 'Searching MusicBrainz…');
     try {
-      const found = await adapter.search(query);
-      setBusy(false, describe(found));
-      for (const summary of found.releases) results.appendChild(resultRow(summary));
+      const results = await adapter.search(query);
+      found = results.releases;
+      renderRows();
+      setBusy(false, describe(results));
     } catch (error) {
       setBusy(false, `Search failed: ${errorMessage(error)}`);
     }
   }
 
-  function resultRow(summary: ReleaseSummary): HTMLElement {
-    const facts = [
-      summary.year,
-      summary.country,
-      summary.trackCount ? `${summary.trackCount} tracks` : undefined,
-      summary.label,
-    ].filter((fact): fact is string => !!fact);
-
-    return el(
-      'li',
-      { class: 'result' },
-      el(
-        'button',
-        {
-          class: 'result__pick',
-          attrs: { type: 'button' },
-          on: { click: () => void pick(summary) },
-        },
-        el('span', { class: 'result__title', text: `${summary.artist} — ${summary.album}` }),
-        el('span', { class: 'result__facts', text: facts.join(' · ') }),
-      ),
-    );
+  /** An MBID names one pressing, so there is nothing to search and nothing to choose. */
+  async function fetchDirectly(mbid: string): Promise<void> {
+    setOpen(true);
+    setBusy(true, `Fetching ${mbid}…`);
+    try {
+      const release = await adapter.resolve(mbid);
+      onResolved(release);
+      setBusy(
+        false,
+        `Filled in “${release.album}”${
+          release.artwork ? ' with cover art' : ' — no cover art on file'
+        }. Every field stays editable.`,
+      );
+    } catch (error) {
+      setBusy(false, `Could not fetch that MBID: ${errorMessage(error)}`);
+    }
   }
 
   async function pick(summary: ReleaseSummary): Promise<void> {
@@ -166,34 +395,11 @@ export function createReleaseSearch(
     );
   }
 
-  const batchInput = el('textarea', {
-    class: 'field__input field__input--area',
-    attrs: {
-      rows: 4,
-      id: 'search-batch',
-      placeholder: 'Daft Punk — Discovery\nCornelius — Fantasma\nGlen Campbell — Wichita Lineman',
-    },
-  });
-
-  const batchButton = el('button', {
-    class: 'button',
-    text: 'Look up all',
-    attrs: { type: 'button' },
-    on: { click: () => void lookUpBatch() },
-  });
-
-  async function lookUpBatch(): Promise<void> {
-    if (busy) return;
-    const wanted = parseBatchLines(batchInput.value);
-    if (wanted.length === 0) {
-      setBusy(false, 'Put one Release per line, as “Artist — Album”.');
-      return;
-    }
-
-    clear(results);
-    setBusy(true, `Looking up ${wanted.length} Releases, one a second…`);
+  async function lookUpBatch(requests: readonly BatchRequest[]): Promise<void> {
+    setOpen(true);
+    setBusy(true, `Looking up ${requests.length} Releases, one a second…`);
     try {
-      const entries = await resolveBatchIntoQueue(adapter, wanted, (progress) => {
+      const entries = await resolveBatchIntoQueue(adapter, requests, (progress) => {
         status.textContent = progress.current
           ? `Looking up ${progress.current} — ${progress.done} of ${progress.total} done…`
           : `Looked up ${progress.done} of ${progress.total}.`;
@@ -207,63 +413,83 @@ export function createReleaseSearch(
           added.filter((entry) => entry.status === 'failed').length,
         ),
       );
-      batchInput.value = '';
+      input.value = '';
+      showParse();
     } catch (error) {
       setBusy(false, `That batch failed: ${errorMessage(error)}`);
     }
   }
 
-  const form = el(
+  const find = el(
     'form',
     {
-      class: 'panel',
+      class: 'find',
       on: {
         submit: (event) => {
           event.preventDefault();
-          void search();
+          void run();
         },
       },
     },
-    el('h2', { class: 'panel__title', text: 'Find a Release' }),
-    el('p', {
-      class: 'panel__hint',
-      text: 'Metadata and cover art come from MusicBrainz and the Cover Art Archive. No account, no API key.',
-    }),
     el(
-      'div',
-      { class: 'field-row' },
-      el(
-        'label',
-        { class: 'field', attrs: { for: 'search-artist' } },
-        el('span', { class: 'field__label', text: 'Artist' }),
-        artist,
-      ),
-      el(
-        'label',
-        { class: 'field', attrs: { for: 'search-album' } },
-        el('span', { class: 'field__label', text: 'Album' }),
-        album,
-      ),
+      'span',
+      { class: 'find__box' },
+      // Lucide's search glyph, vendored as inline SVG (ADR-0008): geometry from
+      // a set, so the stroke weight and terminals match everything else.
+      magnifier(),
+      input,
     ),
     submit,
-    el(
-      'label',
-      { class: 'field', attrs: { for: 'search-batch' } },
-      el('span', { class: 'field__label', text: 'Or look up a batch — one Release per line' }),
-      batchInput,
-    ),
-    batchButton,
-    status,
-    results,
   );
 
-  return form;
+  hits.addEventListener('keydown', (event) => {
+    if ((event as KeyboardEvent).key === 'Escape') setOpen(false);
+  });
+  input.addEventListener('keydown', (event) => {
+    if ((event as KeyboardEvent).key === 'Escape' && hits.hasAttribute('data-open')) {
+      setOpen(false);
+      event.stopPropagation();
+    }
+  });
+
+  return {
+    find,
+    hits,
+    reopen,
+    markInUse(releaseId) {
+      if (inUse === releaseId) return;
+      inUse = releaseId;
+      for (const row of rows.querySelectorAll('.row')) row.removeAttribute('aria-current');
+      const index = found.findIndex((summary) => summary.mbid === releaseId);
+      if (index >= 0) rows.children[index]?.firstElementChild?.setAttribute('aria-current', 'true');
+    },
+  };
+}
+
+function magnifier(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '14');
+  svg.setAttribute('height', '14');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2.2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('cx', '11');
+  circle.setAttribute('cy', '11');
+  circle.setAttribute('r', '7');
+  const handle = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  handle.setAttribute('d', 'm20 20-4.3-4.3');
+  svg.append(circle, handle);
+  return svg;
 }
 
 /** Says how many matched, and admits when the list is only the closest few. */
 function describe({ releases, total }: SearchResults): string {
   if (releases.length === 0) {
-    return 'No releases matched. Try fewer words, or enter the Release by hand below.';
+    return 'No releases matched. Try fewer words, or start a Release by hand.';
   }
   const noun = total === 1 ? 'release' : 'releases';
   return total > releases.length

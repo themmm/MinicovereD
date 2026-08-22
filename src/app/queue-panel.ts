@@ -22,25 +22,42 @@ export interface QueuePanel {
 
 export function createQueuePanel(actions: QueueActions): QueuePanel {
   const list = el('ol', { class: 'queue' });
-  const summary = el('p', { class: 'panel__hint' });
+  const summary = el('span', { class: 'eyebrow__tail' });
 
   // The only route to a Release the database has never heard of, once the
   // empty state has been left behind — and the only one at all without a
   // network, which is the state this app promises to keep working in.
   const addByHand = el('button', {
-    class: 'button',
+    class: 'button button--tiny',
     text: 'Add a Release by hand',
     attrs: { type: 'button', id: 'add-by-hand' },
     on: { click: () => actions.addByHand() },
   });
 
+  /*
+   * The selection surface, as a list rather than a card (ADR-0010).
+   *
+   * It sits between the results and the Release being designed, and a card with
+   * its own title, hint and padding put 209 px there — which pushed the Parts
+   * band, the thing the page exists for, below the fold. An eyebrow and hairline
+   * rows say the same thing in a third of the height, and it is the same list
+   * idiom the results use.
+   */
   const element = el(
     'section',
-    { class: 'panel' },
-    el('h2', { class: 'panel__title', text: 'Queue' }),
-    summary,
+    { class: 'queue-panel' },
+    el(
+      'div',
+      { class: 'queue-panel__head' },
+      el(
+        'p',
+        { class: 'eyebrow' },
+        el('span', { class: 'eyebrow__num', text: 'Queue' }),
+        summary,
+      ),
+      addByHand,
+    ),
     list,
-    addByHand,
   );
 
   function row(entry: QueueEntry, index: number, count: number, selected: boolean): HTMLElement {
@@ -143,7 +160,7 @@ export function createQueuePanel(actions: QueueActions): QueuePanel {
       // empty state when there is nothing queued.
       summary.textContent = `${queue.length} ${
         queue.length === 1 ? 'Release' : 'Releases'
-      } queued${failed > 0 ? `, ${failed} still needing a hand` : ''}. Select one to edit it.`;
+      } queued${failed > 0 ? `, ${failed} still needing a hand` : ''} · select one to edit it`;
 
       for (const [index, entry] of queue.entries()) {
         list.appendChild(row(entry, index, queue.length, entry.design.release.id === selectedId));

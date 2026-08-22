@@ -19,7 +19,7 @@ import { clear, el } from './dom.ts';
  */
 
 /** Sharp enough on screen without rasterising eight megapixels per keystroke. */
-const PREVIEW_DPI = 140;
+export const PREVIEW_DPI = 140;
 
 /** Firefox and Safari need the anchor in the document and the URL alive after the click. */
 const DOWNLOAD_URL_LIFETIME_MS = 30_000;
