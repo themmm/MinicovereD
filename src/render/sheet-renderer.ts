@@ -22,9 +22,9 @@ import type {
 } from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
-export type { SheetLayout, PartPlacement, Guide, DrawOp, TextStyle, SheetWarning } from './layout.ts';
+export type { SheetLayout, PartPlacement, Guide, DrawOp, PrintFace, TextStyle, TextOp, SheetWarning } from './layout.ts';
 export type { TextMeasurer } from './text.ts';
-export type { TemplateId, TemplateParams, Template } from './templates/template.ts';
+export type { TemplateId, TemplateParams, TemplateFaces, Template } from './templates/template.ts';
 export { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
 export { TEMPLATES };
 
@@ -120,6 +120,9 @@ function drawPart(
     params: design.params,
     dimensions: design.dimensions,
     size,
+    // Taken from the Template that is about to draw, so the shared pieces set
+    // the Spine and the tracklist in its faces without asking which it is.
+    faces: template.faces,
     measure,
   };
 

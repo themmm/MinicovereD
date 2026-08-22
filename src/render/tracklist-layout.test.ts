@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { Track } from '../domain/release.ts';
 import { layOutTracklist, PRINT_FLOOR_MM } from './tracklist-layout.ts';
 import type { TextMeasurer } from './text.ts';
+import type { TextStyle } from './layout.ts';
 
 /**
  * Deterministic metrics: half an em per Latin character, a full em per CJK one,
@@ -20,28 +21,52 @@ const measurer: TextMeasurer = {
  */
 const BOX = { x: 3, y: 13.6, width: 63, height: 62.4 };
 const BASE_SIZE = 2.4;
+/**
+ * What a Template hands in. The face and weight are whichever it chose — the
+ * fitting rules are the same for all of them, and the measurer above is
+ * face-blind on purpose, so these assertions stay about columns and sizes
+ * rather than about anybody's metrics.
+ */
+const STYLE: TextStyle = {
+  sizeMm: BASE_SIZE,
+  weight: 400,
+  face: 'sans',
+  color: '#141414',
+  align: 'left',
+  baseline: 'top',
+};
 
 const tracks = (count: number, title = 'Track'): Track[] =>
   Array.from({ length: count }, (_, index) => ({ position: index + 1, title: `${title} ${index + 1}` }));
 
 const layout = (count: number, title?: string) =>
-  layOutTracklist(tracks(count, title), BOX, BASE_SIZE, measurer);
+  layOutTracklist(tracks(count, title), BOX, STYLE, measurer);
 
 describe('laying out a tracklist', () => {
   it('keeps a short list in one column at full size', () => {
-    const { columns, sizeMm, lines } = layout(10);
+    const { columns, style, lines } = layout(10);
 
     expect(columns).toBe(1);
-    expect(sizeMm).toBe(BASE_SIZE);
+    expect(style.sizeMm).toBe(BASE_SIZE);
     expect(lines).toHaveLength(10);
   });
 
   it('flows a 25-track Release into two columns without shrinking', () => {
-    const { columns, sizeMm, lines } = layout(25);
+    const { columns, style, lines } = layout(25);
 
     expect(columns).toBe(2);
-    expect(sizeMm).toBe(BASE_SIZE);
+    expect(style.sizeMm).toBe(BASE_SIZE);
     expect(lines).toHaveLength(25);
+  });
+
+  it('hands back the style it fitted, so the caller cannot draw in another', () => {
+    // The whole reason the style travels rather than the size: every field the
+    // measurer reads has to be identical on both sides of the fit, and only the
+    // size is allowed to have moved.
+    const { style } = layout(60);
+
+    expect(style.sizeMm).toBeLessThan(BASE_SIZE);
+    expect({ ...style, sizeMm: BASE_SIZE }).toEqual(STYLE);
   });
 
   it('splits the columns so the first fills before the second starts', () => {
@@ -61,7 +86,7 @@ describe('laying out a tracklist', () => {
     const long = layout(60);
 
     expect(long.lines).toHaveLength(60);
-    expect(long.sizeMm).toBeLessThan(BASE_SIZE);
+    expect(long.style.sizeMm).toBeLessThan(BASE_SIZE);
     expect(long.columns).toBe(2);
   });
 
@@ -77,12 +102,12 @@ describe('laying out a tracklist', () => {
 
   it('keeps every line inside the box it was given', () => {
     for (const count of [10, 25, 60]) {
-      const { lines, sizeMm } = layout(count);
+      const { lines, style } = layout(count);
 
       for (const line of lines) {
         expect(line.at.x, `${count}: left`).toBeGreaterThanOrEqual(BOX.x - 0.001);
         expect(line.at.y, `${count}: top`).toBeGreaterThanOrEqual(BOX.y - 0.001);
-        expect(line.at.y + sizeMm, `${count}: bottom`).toBeLessThanOrEqual(BOX.y + BOX.height + 0.001);
+        expect(line.at.y + style.sizeMm, `${count}: bottom`).toBeLessThanOrEqual(BOX.y + BOX.height + 0.001);
       }
     }
   });
@@ -92,10 +117,10 @@ describe('laying out a tracklist', () => {
     // off the bottom of the box — where the Part clip eats it, which is
     // truncation wearing a different hat.
     for (const count of [130, 500, 2000]) {
-      const { lines, sizeMm } = layout(count);
+      const { lines, style } = layout(count);
 
       expect(lines, `${count} tracks`).toHaveLength(count);
-      const lowest = Math.max(...lines.map((line) => line.at.y + sizeMm));
+      const lowest = Math.max(...lines.map((line) => line.at.y + style.sizeMm));
       expect(lowest, `${count} tracks stay in the box`).toBeLessThanOrEqual(BOX.y + BOX.height + 0.001);
     }
   });
@@ -117,7 +142,7 @@ describe('laying out a tracklist in other scripts', () => {
       { position: 3, title: 'カタカナ' },
     ];
 
-    const { lines } = layOutTracklist(japanese, BOX, BASE_SIZE, measurer);
+    const { lines } = layOutTracklist(japanese, BOX, STYLE, measurer);
 
     expect(lines.map((line) => line.text)).toEqual([
       '1. 東京は夜の七時',
@@ -134,7 +159,7 @@ describe('laying out a tracklist in other scripts', () => {
       layOutTracklist(
         Array.from({ length: 30 }, (_, index) => ({ position: index + 1, title })),
         BOX,
-        BASE_SIZE,
+        STYLE,
         measurer,
       );
     const latin = sixteen('Abcdefghijklmnop');
@@ -152,7 +177,7 @@ describe('laying out a tracklist in other scripts', () => {
   it('never cuts a surrogate pair in half when trimming', () => {
     const emoji: Track[] = [{ position: 1, title: '🎵'.repeat(60) }];
 
-    const [line] = layOutTracklist(emoji, BOX, BASE_SIZE, measurer).lines;
+    const [line] = layOutTracklist(emoji, BOX, STYLE, measurer).lines;
     const text = line?.text ?? '';
 
     // A trim by code unit would leave a high surrogate with nothing after it,

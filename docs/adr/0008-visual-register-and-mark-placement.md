@@ -50,7 +50,14 @@ that is the point of adopting a named palette rather than inventing one.
 `wght` axis: **40,404 + 15,196 = 55,600 bytes (54.3 KiB)**, or +2.28 % on the single-file build (ADR-0002). The variable
 axis costs the same as two static weights and delivers all of them. No italic — the chrome has none. No Greek, Cyrillic
 or Vietnamese — chrome labels are English, and user-typed text falls through the stack to the Noto faces already
-bundled. Body copy on a Part stays Noto Sans (rule 6 unaffected).
+bundled. Body copy on a Part is **not** set in this face and never was, which is the whole of rule 9.
+
+Amended by ticket 02 of v2: a Part is no longer set in Noto Sans either. Five more OFL faces are bundled — Source Serif 4,
+Bitter, Space Grotesk, Archivo Narrow and Cabin, Latin + Latin-ext, 280,420 bytes measured — and a Template names three of
+them by role (display, text, spine). Rule 6 is unaffected in the way that matters: every one of them is an outline face,
+and the serif was chosen *because* it is low-contrast, since an old-style face's hairlines at the 2.4 mm the tracklist
+sets fall under Sony's 0.15 mm printable-stroke floor. Noto Sans stays the fallback every print stack ends with, which is
+what renders a Cyrillic title and a Japanese tracklist in faces that ship Latin only.
 
 **Icons: Lucide** (ISC), as a source of geometry only — the glyphs actually used are vendored as inline SVG, so there is
 no runtime dependency and one attribution entry. Six hand-drawn icons would be six inconsistent icons; a set supplies

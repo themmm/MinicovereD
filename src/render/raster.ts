@@ -1,7 +1,7 @@
 import type { Mm, Point } from '../domain/units.ts';
 import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
-import type { DrawOp, Guide, PartPlacement, SheetLayout, TextStyle } from './layout.ts';
+import type { DrawOp, Guide, PartPlacement, PrintFace, SheetLayout, TextStyle } from './layout.ts';
 
 /**
  * Draws a Sheet layout onto a canvas. This is the one place that knows about
@@ -27,20 +27,35 @@ const GUIDE_HALO_WIDTH_MM: Mm = 0.5;
 const FOLD_DASH_MM: readonly [Mm, Mm] = [1.6, 1.2];
 
 /**
- * The type a Part is set in, and the print side of the quarantine (ADR-0008
- * rule 9). This module is the single source of it: `canvas-text-measurer.ts`
- * imports `fontFor` rather than restating the stack, so measuring and drawing
- * cannot disagree.
+ * The type a Part can be set in, and the print side of the quarantine (ADR-0008
+ * rule 9). One stack per bundled face; a Template picks the *names* and this
+ * module is the single source of the strings. `canvas-text-measurer.ts` imports
+ * `fontFor` rather than restating any of them, so measuring and drawing cannot
+ * disagree even now that they could disagree about which face.
  *
- * `--font-print` in `src/styles/fonts.css` has to read exactly the same, and a
- * test asserts it — the duplication is unavoidable, because a canvas cannot
- * read a custom property, so the only alternative to a check is drift. The
- * chrome face has no business here and a test keeps it out.
+ * `--font-print-<face>` in `src/styles/fonts.css` has to read exactly the same
+ * for every face here, and a test asserts each pair — the duplication is
+ * unavoidable, because a canvas cannot read a custom property, so the only
+ * alternative to a check is drift. The chrome face has no business in any of
+ * them and a test keeps it out of all of them.
+ *
+ * Every stack falls through to the Noto pair before it reaches a generic
+ * keyword, and that is not politeness: the five new faces ship Latin and
+ * Latin-ext only, so Noto Sans is what renders a Cyrillic title and Noto Sans
+ * JP is what makes a Japanese tracklist print at all. A face is a voice for the
+ * type it can set, never a limit on what the Part may say.
  */
-export const PRINT_FONT_STACK = "'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif";
+export const PRINT_FONT_STACKS: Readonly<Record<PrintFace, string>> = {
+  sans: "'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif",
+  serif: "'Source Serif 4 Variable', 'Noto Sans Variable', 'Noto Sans JP', serif",
+  slab: "'Bitter Variable', 'Noto Sans Variable', 'Noto Sans JP', serif",
+  grotesque: "'Space Grotesk Variable', 'Noto Sans Variable', 'Noto Sans JP', sans-serif",
+  condensed: "'Archivo Narrow Variable', 'Noto Sans Variable', 'Noto Sans JP', sans-serif",
+  humanist: "'Cabin Variable', 'Noto Sans Variable', 'Noto Sans JP', sans-serif",
+};
 
 export function fontFor(style: TextStyle, scale: number): string {
-  return `${style.weight} ${style.sizeMm * scale}px ${PRINT_FONT_STACK}`;
+  return `${style.weight} ${style.sizeMm * scale}px ${PRINT_FONT_STACKS[style.face]}`;
 }
 
 /**

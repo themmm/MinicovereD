@@ -106,6 +106,12 @@ function placeholderColor(params: TemplateParams): string {
  * shrinks toward `PRINT_FLOOR_MM`, then warns (ticket 07). That floor is a
  * different number for a different reason — 5 pt, "a printer can hold this" —
  * and is not this one.
+ *
+ * The measurements above are Noto Sans', which the Spine is no longer
+ * necessarily set in: `TemplateFaces.spine` is the Template's choice, and a
+ * condensed face is the other lever on the same problem. It is the lever worth
+ * pulling, because narrowing the letters costs none of the size the Spine is
+ * read at, where shrinking the type costs exactly that.
  */
 const SPINE_SIZE_MM: Mm = 2.9;
 
@@ -117,7 +123,7 @@ const SPINE_SIZE_MM: Mm = 2.9;
  * that can lose content: the line is one line by design, so anything past the
  * edge is cut rather than wrapped.
  */
-export function drawSpine({ release, params, measure }: PartContext, panel: Rect): PartDrawing {
+export function drawSpine({ release, params, faces, measure }: PartContext, panel: Rect): PartDrawing {
   // The bar is the collector's accent colour, so the ink on it has to be
   // chosen rather than configured: dark paper on a dark accent would otherwise
   // put invisible type on the one Part that has to be read from a shelf.
@@ -125,6 +131,7 @@ export function drawSpine({ release, params, measure }: PartContext, panel: Rect
   const style: TextStyle = {
     sizeMm: SPINE_SIZE_MM,
     weight: 600,
+    face: faces.spine,
     color: ink,
     align: 'center',
     baseline: 'middle',
@@ -201,11 +208,14 @@ export function drawJCard(
 }
 
 /** The Inner Flap: blank but for the supplementary info, read up the fold. */
-export function drawInnerFlap({ release, params, measure }: PartContext, panel: Rect): DrawOp[] {
+export function drawInnerFlap({ release, params, faces, measure }: PartContext, panel: Rect): DrawOp[] {
   const caption = [release.year, release.notes].filter(Boolean).join(' · ');
   const style: TextStyle = {
     sizeMm: 2.6,
     weight: 400,
+    // A caption, so the body face rather than the display one — and it folds
+    // inside the case, where nothing has to carry a voice from a shelf.
+    face: faces.text,
     color: params.inkColor,
     align: 'center',
     baseline: 'middle',
@@ -231,12 +241,22 @@ export function drawInnerFlap({ release, params, measure }: PartContext, panel: 
 const TRACK_SIZE_MM: Mm = 2.4;
 
 /** Where the tracklist sits on the Back Card, and how it had to fit. */
-function backCardTracklist({ release, size, measure }: PartContext): TracklistLayout {
+function backCardTracklist({ release, params, size, faces, measure }: PartContext): TracklistLayout {
   const listTop = PAD + 8.6 + 2;
+  // The style goes in whole and comes back fitted, so the list is drawn with the
+  // very object it was trimmed against rather than with a second copy of it.
+  const style: TextStyle = {
+    sizeMm: TRACK_SIZE_MM,
+    weight: 400,
+    face: faces.text,
+    color: params.inkColor,
+    align: 'left',
+    baseline: 'top',
+  };
   return layOutTracklist(
     release.tracks,
     { x: PAD, y: listTop, width: size.width - 2 * PAD, height: size.height - listTop - PAD },
-    TRACK_SIZE_MM,
+    style,
     measure,
   );
 }
@@ -247,10 +267,11 @@ function backCardTracklist({ release, size, measure }: PartContext): TracklistLa
  * and size rather than being given them.
  */
 export function drawBackCard(context: PartContext): PartDrawing {
-  const { release, params, size, measure } = context;
+  const { release, params, size, faces, measure } = context;
   const contentWidth = size.width - 2 * PAD;
-  const albumStyle: TextStyle = { sizeMm: 3.2, weight: 700, color: params.inkColor, align: 'left', baseline: 'top' };
-  const artistStyle: TextStyle = { sizeMm: 2.6, weight: 400, color: params.inkColor, align: 'left', baseline: 'top' };
+  // The two heading lines are display type; the list under the rule is not.
+  const albumStyle: TextStyle = { sizeMm: 3.2, weight: 700, face: faces.display, color: params.inkColor, align: 'left', baseline: 'top' };
+  const artistStyle: TextStyle = { sizeMm: 2.6, weight: 400, face: faces.display, color: params.inkColor, align: 'left', baseline: 'top' };
 
   const ruleY = PAD + 8.6;
   const ops: DrawOp[] = [
@@ -267,16 +288,9 @@ export function drawBackCard(context: PartContext): PartDrawing {
   ];
 
   const tracklist = backCardTracklist(context);
-  const trackStyle: TextStyle = {
-    sizeMm: tracklist.sizeMm,
-    weight: 400,
-    color: params.inkColor,
-    align: 'left',
-    baseline: 'top',
-  };
 
   for (const line of tracklist.lines) {
-    ops.push({ op: 'text', text: line.text, at: line.at, style: trackStyle });
+    ops.push({ op: 'text', text: line.text, at: line.at, style: tracklist.style });
   }
 
   // Reported from where it was measured, so the warning always describes the
@@ -290,7 +304,7 @@ export function drawBackCard(context: PartContext): PartDrawing {
             releaseId: release.id,
             releaseTitle: release.album || release.artist || release.id,
             trackCount: release.tracks.length,
-            sizeMm: tracklist.sizeMm,
+            sizeMm: tracklist.style.sizeMm,
             floorMm: PRINT_FLOOR_MM,
           },
         ],

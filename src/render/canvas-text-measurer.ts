@@ -41,6 +41,12 @@ export function createCanvasTextMeasurer(): TextMeasurer {
  * it ships as. One character per subset is what forces the browser to fetch
  * that subset; anything it is not asked for stays unloaded and silently falls
  * back to whatever the system has.
+ *
+ * Print faces only, and every one of them: this is the list a canvas measures
+ * against, so a face a Template can select but that is missing here would be
+ * laid out on the fallback's metrics and then drawn in itself. The chrome
+ * joining this list would be a leak rather than an optimisation (ADR-0008
+ * rule 9), and both halves are asserted in `print-quarantine.test.ts`.
  */
 const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
   {
@@ -49,6 +55,14 @@ const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
     sample: 'Aä Łź α ᾰ Б Ԑ ế अ',
   },
   { family: 'Noto Sans JP', sample: '東' },
+  // The five voices, Latin and Latin-ext only — the two subsets each is
+  // declared with in `fonts.css`. The sample spans both ranges, which is what
+  // makes the browser fetch both rather than only the one it happens to need.
+  { family: 'Source Serif 4 Variable', sample: 'Aä Łź' },
+  { family: 'Bitter Variable', sample: 'Aä Łź' },
+  { family: 'Space Grotesk Variable', sample: 'Aä Łź' },
+  { family: 'Archivo Narrow Variable', sample: 'Aä Łź' },
+  { family: 'Cabin Variable', sample: 'Aä Łź' },
 ];
 
 /**

@@ -158,6 +158,10 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     copyright: 'Copyright 2022 The Noto Project Authors',
     url: 'https://fontsource.org/fonts/noto-sans',
     packageName: '@fontsource-variable/noto-sans',
+    note:
+      'The fallback every print stack ends with, and a face in its own right. The five voices ' +
+      'below ship Latin and Latin-ext only, so this is what renders a Cyrillic or Greek title in ' +
+      'any of them.',
   },
   {
     name: 'Noto Sans JP',
@@ -167,6 +171,86 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     copyright: 'Copyright Google Inc.',
     url: 'https://fontsource.org/fonts/noto-sans-jp',
     packageName: '@fontsource/noto-sans-jp',
+    note:
+      'Behind Noto Sans in every print stack, and the reason a Japanese tracklist prints at all. ' +
+      'One weight covers the whole axis; bold CJK is synthesised rather than shipping a second ' +
+      'megabyte.',
+  },
+  // The five print voices (ticket 02). Every one is bundled as its Latin and
+  // Latin-ext subsets only, roman, on one `wght` axis; the sizes are the
+  // measured woff2 bytes of exactly the files `fonts.css` names, because a
+  // budget stated from a table is not a budget.
+  {
+    name: 'Source Serif 4',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    // Fontsource's bundled LICENSE names only "Google Inc."; the typeface is
+    // Adobe's and the OFL notice that travels with it is theirs, so both are
+    // stated rather than whichever is shorter.
+    copyright:
+      'Copyright 2014–2023 Adobe (https://adobe.com), with Reserved Font Name ' +
+      '“Source”; redistributed by Google Inc.',
+    url: 'https://fontsource.org/fonts/source-serif-4',
+    packageName: '@fontsource-variable/source-serif-4',
+    note:
+      'Classic’s display face. A low-contrast serif engineered for text rather than an ' +
+      'old-style one, because a Part sets type down to 2.4 mm and Sony’s artwork spec puts ' +
+      'the printable stroke floor at 0.15 mm (ADR-0008 rule 6). 92,864 bytes.',
+  },
+  {
+    name: 'Bitter',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    copyright: 'Copyright 2011 The Bitter Project Authors (https://github.com/solmatas/BitterPro)',
+    url: 'https://fontsource.org/fonts/bitter',
+    packageName: '@fontsource-variable/bitter',
+    note:
+      'Full-bleed’s body face. A slab’s blunt stems survive being reversed out of a ' +
+      'colour ground, which is what v2 does to the tracklist. 66,788 bytes.',
+  },
+  {
+    name: 'Space Grotesk',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    copyright:
+      'Copyright 2020 The Space Grotesk Project Authors ' +
+      '(https://github.com/floriankarsten/space-grotesk)',
+    url: 'https://fontsource.org/fonts/space-grotesk',
+    packageName: '@fontsource-variable/space-grotesk',
+    note:
+      'Full-bleed’s display and Spine face. A squared grotesque with no humanist warmth at ' +
+      'all, which is the sharpest contrast available with the Noto fallback behind it. ' +
+      '41,228 bytes.',
+  },
+  {
+    name: 'Archivo Narrow',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    copyright:
+      'Copyright 2019 The Archivo Narrow Project Authors ' +
+      '(https://github.com/Omnibus-Type/ArchivoNarrow)',
+    url: 'https://fontsource.org/fonts/archivo-narrow',
+    packageName: '@fontsource-variable/archivo-narrow',
+    note:
+      'Classic’s Spine face, and bought for width rather than for taste: the Spine is one ' +
+      'line on 5.5 mm that gets cut when it will not fit, and narrowing the letters costs none ' +
+      'of the size it is read at. 35,228 bytes.',
+  },
+  {
+    name: 'Cabin',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    copyright: 'Copyright 2018 The Cabin Project Authors (https://github.com/impallari/Cabin)',
+    url: 'https://fontsource.org/fonts/cabin',
+    packageName: '@fontsource-variable/cabin',
+    note:
+      'Classic’s body face. Humanist on a Gill Sans skeleton — the one humanist voice ' +
+      'here that does not read as a second helping of Noto Sans. 44,312 bytes.',
   },
   {
     name: 'JetBrains Mono',

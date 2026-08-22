@@ -42,7 +42,15 @@ export interface TracklistLine {
 export interface TracklistLayout {
   readonly lines: readonly TracklistLine[];
   readonly columns: 1 | 2;
-  readonly sizeMm: Mm;
+  /**
+   * The style the lines were actually fitted against, with `sizeMm` at whatever
+   * the fit settled on. The caller draws with this object rather than building
+   * its own, because every field of it is a measurement input: a second literal
+   * anywhere is a way for trimming and drawing to disagree, and the disagreement
+   * only shows on paper. Handing `face` down fixed one field; handing the style
+   * down fixes all of them.
+   */
+  readonly style: TextStyle;
   /** True once the type had to go below what a printer reliably holds. */
   readonly belowPrintFloor: boolean;
 }
@@ -72,14 +80,24 @@ function chooseFit(
   return { columns: 2, sizeMm };
 }
 
+/**
+ * Fits `tracks` into `box`, starting from `style` and shrinking only its size.
+ *
+ * The whole style comes in and the fitted style goes back out, rather than a
+ * bare size: trimming *is* measurement, so anything the measurer reads has to
+ * be the same on both sides of it. A list fitted at one weight or in one face
+ * and drawn at another is cut to a width it never had, and nothing about the
+ * layout looks wrong until the Part is on paper.
+ */
 export function layOutTracklist(
   tracks: readonly Track[],
   box: Rect,
-  baseSizeMm: Mm,
+  style: TextStyle,
   measure: TextMeasurer,
 ): TracklistLayout {
+  const baseSizeMm = style.sizeMm;
   if (tracks.length === 0) {
-    return { lines: [], columns: 1, sizeMm: baseSizeMm, belowPrintFloor: false };
+    return { lines: [], columns: 1, style, belowPrintFloor: false };
   }
 
   const { columns, sizeMm } = chooseFit(tracks.length, box, baseSizeMm);
@@ -89,19 +107,13 @@ export function layOutTracklist(
 
   // Trimming happens against the column, not the box: a title that would fit
   // the full width still has to fit the half it actually gets.
-  const style: TextStyle = {
-    sizeMm,
-    weight: 400,
-    color: '#000000',
-    align: 'left',
-    baseline: 'top',
-  };
+  const fitted: TextStyle = { ...style, sizeMm };
 
   const lines = tracks.map((track, index): TracklistLine => {
     const column = Math.min(columns - 1, Math.floor(index / perColumn));
     const row = index - column * perColumn;
     return {
-      text: ellipsise(`${track.position}. ${track.title}`, style, columnWidth, measure),
+      text: ellipsise(`${track.position}. ${track.title}`, fitted, columnWidth, measure),
       at: {
         x: box.x + column * (columnWidth + COLUMN_GAP),
         y: box.y + row * lineHeight,
@@ -109,5 +121,5 @@ export function layOutTracklist(
     };
   });
 
-  return { lines, columns, sizeMm, belowPrintFloor: sizeMm < PRINT_FLOOR_MM };
+  return { lines, columns, style: fitted, belowPrintFloor: sizeMm < PRINT_FLOOR_MM };
 }

@@ -6,9 +6,11 @@ import { DEFAULT_PART_DIMENSIONS, jCardSize, PART_KINDS } from '../domain/parts.
 import type { PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
-import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from './sheet-renderer.ts';
+import { DEFAULT_TEMPLATE_PARAMS, renderSheets, TEMPLATES } from './sheet-renderer.ts';
 import type {
+  PrintFace,
   ReleaseDesign,
+  TextOp,
   SheetConfig,
   SheetLayout,
   SheetWarning,
@@ -16,6 +18,7 @@ import type {
   TemplateParams,
   TextMeasurer,
 } from './sheet-renderer.ts';
+
 
 /**
  * A deterministic stand-in for the browser's text metrics: half an em per Latin
@@ -821,5 +824,139 @@ describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
     );
 
     expect(sheets[0]?.warnings).toBeUndefined();
+  });
+});
+
+describe('SheetRenderer — the Template’s faces reach the paper', () => {
+  /**
+   * A measurer that answers differently per face, which is the only way this
+   * seam can tell a stack that was chosen from one that was declared and
+   * ignored.
+   *
+   * The factors are deliberately further apart than the real faces: measured in
+   * a browser, Archivo Narrow sets the Spine's line 20.4 % narrower than Noto
+   * Sans, where `condensed` here is 42 % narrower than `grotesque`. Exaggerating
+   * it is what keeps the assertions below about plumbing rather than about
+   * metrics — a real-metric margin this test cannot see would make a failure
+   * look like a rounding accident.
+   */
+  const FACE_WIDTH: Readonly<Record<PrintFace, number>> = {
+    sans: 0.5,
+    serif: 0.5,
+    slab: 0.55,
+    grotesque: 0.6,
+    condensed: 0.35,
+    humanist: 0.5,
+  };
+
+  /** Every question the layout asked, so what was measured can be compared to what was drawn. */
+  const recordingMeasurer = (): { measure: TextMeasurer; asked: Array<[string, PrintFace]> } => {
+    const asked: Array<[string, PrintFace]> = [];
+    return {
+      asked,
+      measure: {
+        widthMm: (text, style) => {
+          asked.push([text, style.face]);
+          return [...text].length * style.sizeMm * FACE_WIDTH[style.face];
+        },
+      },
+    };
+  };
+
+  const textOpsOf = (sheet: SheetLayout | undefined, part: PartKind): TextOp[] =>
+    (sheet?.placements.find((placement) => placement.part === part)?.ops ?? []).flatMap((op) =>
+      op.op === 'text' ? [op] : [],
+    );
+
+  it('sets every piece of type in a face the drawing Template names', () => {
+    for (const templateId of ['classic', 'fullbleed'] as const) {
+      const faces = TEMPLATES[templateId].faces;
+      const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, testMeasurer);
+
+      const used = new Set(
+        PART_KINDS.flatMap((part) => textOpsOf(sheet, part)).map((op) => op.style.face),
+      );
+      expect(used.size, `${templateId} draws type at all`).toBeGreaterThan(0);
+      expect(
+        [...used].filter((face) => !Object.values(faces).includes(face)),
+        `${templateId} may only set type in its own faces`,
+      ).toEqual([]);
+    }
+  });
+
+  it('gives each role the face it was assigned', () => {
+    const { display, text, spine } = TEMPLATES.classic.faces;
+    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+
+    // The Spine is the one line on the J-Card that reads sideways up the edge.
+    const spineOp = textOpsOf(sheet, 'jcard').find(
+      (op) => op.style.rotationDeg === -90 && op.text.startsWith('Glen Campbell — '),
+    );
+    expect(spineOp?.style.face, 'the Spine').toBe(spine);
+
+    // The Front Panel's caption is display type; the tracklist under the rule is not.
+    const upright = textOpsOf(sheet, 'jcard').filter((op) => !op.style.rotationDeg);
+    expect(upright.length, 'the Front Panel is captioned').toBeGreaterThan(0);
+    expect(upright.map((op) => op.style.face), 'the Front Panel').toEqual(
+      upright.map(() => display),
+    );
+
+    const tracks = textOpsOf(sheet, 'back-card').filter((op) => /^\d+\. /.test(op.text));
+    expect(tracks.length, 'tracks were drawn').toBe(3);
+    expect(tracks.map((op) => op.style.face), 'the tracklist').toEqual(tracks.map(() => text));
+
+    // Classic is the Template whose three roles are three different faces, so
+    // this also says the roles are not quietly collapsing into one.
+    expect(new Set([display, text, spine]).size).toBe(3);
+  });
+
+  it('measures the same Release to different widths under two Templates', () => {
+    // The proof that a stack reached the paper rather than being declared:
+    // Classic sets the Spine in the narrow face and keeps a 48-character line
+    // that Full-bleed's wider one has to cut. Same Release, same 5.5 mm edge,
+    // same 2.9 mm type — only the face differs.
+    const album = 'Wichita Lineman, and Other Songs';
+    expect(`Glen Campbell — ${album}`).toHaveLength(48);
+
+    const sheetFor = (templateId: TemplateId): SheetLayout | undefined => {
+      const [sheet] = renderSheets(
+        [aDesign(aRelease({ album }), { templateId })],
+        { ...A4_SHEET, parts: ['jcard'] },
+        recordingMeasurer().measure,
+      );
+      return sheet;
+    };
+
+    const classic = sheetFor('classic');
+    const fullbleed = sheetFor('fullbleed');
+    const spineTextOf = (sheet: SheetLayout | undefined): string | undefined =>
+      textOpsOf(sheet, 'jcard').find(
+        (op) => op.style.rotationDeg === -90 && op.text.startsWith('Glen Campbell'),
+      )?.text;
+
+    expect(spineTextOf(classic), 'the narrow face keeps the line').toBe(`Glen Campbell — ${album}`);
+    expect(spineTextOf(fullbleed), 'the wide one cuts it').toMatch(/…$/);
+    expect(classic?.warnings).toBeUndefined();
+    expect(onlyWarning(fullbleed, 'spine-truncated').shown).toBe(spineTextOf(fullbleed));
+  });
+
+  it('measures in the face it then draws in', () => {
+    // The failure this rules out is the expensive one: text fitted against one
+    // face and drawn in another is trimmed to a width it never had, and nothing
+    // about the layout looks wrong until it is on paper.
+    for (const templateId of ['classic', 'fullbleed'] as const) {
+      const { measure, asked } = recordingMeasurer();
+      const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, measure);
+
+      const measured = new Set(asked.map(([text, face]) => `${face} ${text}`));
+      const drawn = PART_KINDS.flatMap((part) => textOpsOf(sheet, part));
+      expect(drawn.length, `${templateId} drew type`).toBeGreaterThan(0);
+      expect(
+        drawn
+          .filter((op) => !measured.has(`${op.style.face} ${op.text}`))
+          .map((op) => `${op.style.face}: ${op.text}`),
+        `${templateId} drew type it never measured in that face`,
+      ).toEqual([]);
+    }
   });
 });

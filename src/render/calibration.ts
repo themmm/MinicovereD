@@ -5,7 +5,7 @@ import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import { packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
 import type { Mm, Point, Rect } from '../domain/units.ts';
-import type { DrawOp, Guide, SheetLayout, TextStyle } from './layout.ts';
+import type { DrawOp, Guide, PrintFace, SheetLayout, TextStyle } from './layout.ts';
 import { ellipsise } from './text.ts';
 import type { TextMeasurer } from './text.ts';
 
@@ -29,6 +29,16 @@ const INK = '#141414';
 const RULE = '#8a8a8a';
 const RULE_WIDTH: Mm = 0.2;
 const CAPTION_SIZE: Mm = 3;
+/**
+ * Nothing on this sheet belongs to a Release, so no Template chose its type.
+ * The neutral sans is right twice over: this page is an instrument rather than a
+ * design, and it is the one stack that renders every script in a single face.
+ * Every stack falls through to the same Noto pair, so any of them could set a
+ * Cyrillic Label preset name — but the five voices would set the Latin half in
+ * themselves and the rest in Noto, and a ruler should not change typeface
+ * halfway down.
+ */
+const CALIBRATION_FACE: PrintFace = 'sans';
 const CAPTION_GAP: Mm = 1.2;
 const CAPTION_LINE: Mm = 3.8;
 /** Name on one line, size on the next: a 35 mm Label has no room for both. */
@@ -68,6 +78,7 @@ const caption = (text: string, at: Point, measure: TextMeasurer, maxWidthMm: Mm)
   const style: TextStyle = {
     sizeMm: CAPTION_SIZE,
     weight: 400,
+    face: CALIBRATION_FACE,
     color: INK,
     align: 'left',
     baseline: 'top',
@@ -79,7 +90,7 @@ const heading = (text: string, at: Point, sizeMm: Mm, weight: 400 | 700): DrawOp
   op: 'text',
   text,
   at,
-  style: { sizeMm, weight, color: INK, align: 'left', baseline: 'top' },
+  style: { sizeMm, weight, face: CALIBRATION_FACE, color: INK, align: 'left', baseline: 'top' },
 });
 
 /** What a calibration figure needs beyond a rectangle. */

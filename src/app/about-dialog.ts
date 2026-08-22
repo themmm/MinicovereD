@@ -1,5 +1,6 @@
 import { ATTRIBUTIONS, DATA_SOURCES, licenseTextFor } from '../attribution/attributions.ts';
 import type { Attribution, AttributionKind } from '../attribution/attributions.ts';
+import type { PrintFace } from '../render/sheet-renderer.ts';
 import { el } from './dom.ts';
 
 /**
@@ -16,31 +17,45 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
 
 /**
  * Lines that only render completely from the bundled fonts — the offline
- * typography proof, and now of both stacks rather than one.
+ * typography proof, and of every stack rather than one.
  *
  * The boundary is the point (ADR-0008 rule 9): the chrome is set in JetBrains
- * Mono and a Part is set in the Noto stack, and these two things are not the
- * same typeface on purpose. Showing only the chrome would prove the half that
- * never reaches paper.
+ * Mono and a Part is set in one of the print faces, and those are not the same
+ * typeface on purpose. Showing only the chrome would prove the half that never
+ * reaches paper.
+ *
+ * Each print face gets its own line, named by its voice and set in itself,
+ * because that is the only thing here that can actually go wrong offline: a
+ * face that failed to load renders in a fallback and still looks like type.
+ *
+ * Two of the lines are chosen for their characters rather than their voice. The
+ * humanist one carries Ł, ź and Č, which are Latin-ext: the five voices ship
+ * that subset themselves, so seeing those glyphs in Cabin rather than in Noto
+ * is what says the second subset arrived. The Japanese and bold lines are the
+ * opposite case — no voice ships CJK, so those prove the Noto fallback every
+ * print stack ends with.
  */
 const FONT_SPECIMEN: ReadonlyArray<{
-  script: string;
+  label: string;
   sample: string;
   weight?: 'bold';
-  stack: 'chrome' | 'print';
+  stack: 'chrome' | PrintFace;
 }> = [
-  { script: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
-  { script: 'A Part', sample: 'Wichita Lineman — Glen Campbell', stack: 'print' },
-  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'print' },
-  { script: 'Accents', sample: 'Rêveries · Canción · Sinnöver · Ángel', stack: 'print' },
-  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'print' },
-  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'print' },
+  { label: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
+  { label: 'Sans', sample: 'Wichita Lineman — Glen Campbell', stack: 'sans' },
+  { label: 'Serif', sample: 'Rêveries · Canción · Ángel · Sinnöver', stack: 'serif' },
+  { label: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
+  { label: 'Grotesque', sample: 'Lift Your Skinny Fists Like Antennas', stack: 'grotesque' },
+  { label: 'Condensed', sample: 'Ascenseur pour l’échafaud · Şafak', stack: 'condensed' },
+  { label: 'Humanist', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
+  { label: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'sans' },
+  { label: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'sans' },
 ];
 
 function fontSpecimen(): HTMLElement {
   const list = el('dl', { class: 'specimen' });
   for (const row of FONT_SPECIMEN) {
-    list.appendChild(el('dt', { text: row.script }));
+    list.appendChild(el('dt', { text: row.label }));
     list.appendChild(
       el('dd', {
         text: row.sample,
