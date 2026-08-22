@@ -4,7 +4,13 @@ import { APP_VERSION } from '../version.ts';
 import { imageSize } from './image-size.ts';
 import { systemClock } from './http.ts';
 import type { Clock, HttpClient, HttpResponse } from './http.ts';
-import type { MbArtistCredit, MbLabelInfo, MbRelease, MbSearchResponse } from './musicbrainz-types.ts';
+import type {
+  MbArtistCredit,
+  MbLabelInfo,
+  MbRelease,
+  MbSearchResponse,
+  MbTrack,
+} from './musicbrainz-types.ts';
 
 /**
  * MetadataAdapter: MusicBrainz release search, release + tracklist fetch and
@@ -177,15 +183,42 @@ function labelNote(labelInfo: readonly MbLabelInfo[] | undefined): string | unde
 
 const yearOf = (date: string | undefined): string | undefined => date?.slice(0, 4) || undefined;
 
+/**
+ * A track's playing time, or nothing.
+ *
+ * The pressing's own length first: a recording is shared between releases and
+ * a track belongs to one of them, so what goes on the card is what is on the
+ * disc in the collector's hand. Anything that is not a positive finite number
+ * of milliseconds is treated as absent, because a Release is normalised out of
+ * whatever is actually there rather than out of what the schema promises — the
+ * recorded fixtures already show real releases missing dates, labels and track
+ * titles.
+ */
+function trackLengthMs(track: MbTrack): number | undefined {
+  for (const candidate of [track.length, track.recording?.length]) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 function tracksOf(release: MbRelease): Track[] {
   // A track with no title anywhere still occupies its position, so it gets a
   // visible placeholder rather than a numbered blank line on the Back Card.
-  const titles = (release.media ?? []).flatMap((medium) =>
-    (medium.tracks ?? []).map((track) => track.title || track.recording?.title || '[untitled]'),
+  const found = (release.media ?? []).flatMap((medium) =>
+    (medium.tracks ?? []).map((track) => ({
+      title: track.title || track.recording?.title || '[untitled]',
+      lengthMs: trackLengthMs(track),
+    })),
   );
   // Numbered by position in the printed list, so a two-disc Release still
   // reads 1..n down the Back Card.
-  return titles.map((title, index) => ({ position: index + 1, title }));
+  return found.map(({ title, lengthMs }, index) => ({
+    position: index + 1,
+    title,
+    ...(lengthMs !== undefined ? { lengthMs } : {}),
+  }));
 }
 
 function toRelease(mbid: string, payload: MbRelease): Release {

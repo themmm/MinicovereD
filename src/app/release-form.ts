@@ -76,8 +76,11 @@ export function createReleaseForm(release: Release, onChange: (edit: ReleaseEdit
     },
     on: {
       input: (event) => {
-        const tracks = parseTracklist((event.target as HTMLTextAreaElement).value);
-        onChange((current) => ({ ...current, tracks }));
+        const typed = (event.target as HTMLTextAreaElement).value;
+        // Parsed against the Release as it stands rather than from the text
+        // alone: the textarea shows titles and nothing else, so a lookup's
+        // playing times would go the moment a typo was fixed.
+        onChange((current) => ({ ...current, tracks: parseTracklist(typed, current.tracks) }));
       },
     },
   });

@@ -16,13 +16,13 @@ const design: ReleaseDesign = {
     year: '1968',
     notes: 'Capitol · ST-103',
     tracks: [
-      { position: 1, title: 'Wichita Lineman' },
+      { position: 1, title: 'Wichita Lineman', lengthMs: 187_000 },
       { position: 2, title: '東京は夜の七時' },
     ],
     artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 400 },
   },
   templateId: 'fullbleed',
-  params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false },
+  params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
   dimensions: {
     ...DEFAULT_PART_DIMENSIONS,
     label: { width: 36.4, height: 53.1, notch: false, notchSize: 6 },
@@ -76,6 +76,62 @@ describe('reading a project file back', () => {
     expect(designs[0]?.release.tracks[1]?.title).toBe('東京は夜の七時');
   });
 
+  it('carries each track’s playing time, and the absence of one', () => {
+    // A saved project has to reproduce its own design (ADR-0001), and from v1.1
+    // the Back Card sets a duration column — a reader that dropped the times
+    // would reopen the file as a different Part.
+    const { designs } = roundTrip();
+
+    expect(designs[0]?.release.tracks[0]?.lengthMs).toBe(187_000);
+    expect(designs[0]?.release.tracks[1]).not.toHaveProperty('lengthMs');
+  });
+
+  it('refuses a playing time that is not one', () => {
+    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
+      designs: Array<{ release: { tracks: Array<Record<string, unknown>> } }>;
+    };
+    const tracks = written.designs[0]?.release.tracks ?? [];
+    if (tracks[0]) tracks[0]['lengthMs'] = 'four minutes';
+    if (tracks[1]) tracks[1]['lengthMs'] = -5;
+
+    const result = readProjectFile(JSON.stringify(written));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    const restored = designsOf(result.project)[0]?.release.tracks ?? [];
+    expect(restored[0]).not.toHaveProperty('lengthMs');
+    expect(restored[1]).not.toHaveProperty('lengthMs');
+  });
+
+  it('reopens a design saved before the artwork could bleed as the square it was', () => {
+    // v1 and v1.1 files both carry version 1, so the version cannot separate
+    // them — but every v1.1 file states `insetArtwork`, so only a v1 file omits
+    // it. Reading the absence as "square" is what makes a saved project
+    // reproduce its own design across the change.
+    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
+      designs: Array<{ params: Record<string, unknown> }>;
+    };
+    delete written.designs[0]?.params['insetArtwork'];
+
+    const result = readProjectFile(JSON.stringify(written));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(true);
+  });
+
+  it('keeps a bleeding Front Panel bleeding, which the fallback must not overrule', () => {
+    // The other half: `false` is the value a v1.1 file has to be able to state,
+    // and a fallback of `true` reached by `??` rather than by a type check
+    // would swallow it.
+    const bleeding = { ...design, params: { ...design.params, insetArtwork: false } };
+    const result = readProjectFile(writeProjectFile([readyEntry(bleeding)], sheet));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(false);
+  });
+
   it('restores the Sheet configuration, paper and all', () => {
     const { sheet: restored } = roundTrip();
 
@@ -96,6 +152,7 @@ describe('reading a project file back', () => {
     expect(designs[0]?.templateId).toBe('fullbleed');
     expect(designs[0]?.params.accentColor).toBe('#7c2d12');
     expect(designs[0]?.params.showLogo).toBe(false);
+    expect(designs[0]?.params.insetArtwork).toBe(true);
   });
 
   it('carries a whole queue, in order', () => {

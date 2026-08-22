@@ -6,14 +6,22 @@ import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise } from '../text.ts';
 import { layOutTracklist } from '../tracklist-layout.ts';
 import { PRINT_FLOOR_MM } from '../tracklist-layout.ts';
-import type { TracklistLayout } from '../tracklist-layout.ts';
 import type { TextMeasurer } from '../text.ts';
 import type { JCardContext, PartContext, PartDrawing, TemplateParams } from './template.ts';
 
 /**
  * The pieces every Template shares. Classic and Full-bleed differ in how the
- * Front Panel and the Label carry the artwork; the Spine, the Inner Flap and
- * the Back Card are the same design in both, driven by the parameters.
+ * Front Panel and the Label carry the artwork and in how each sets its own Back
+ * Card; the Spine and the Inner Flap are the same design in both, driven by the
+ * parameters.
+ *
+ * The Spine and the Inner Flap are design, and are here because both Templates
+ * chose the same one. The tracklist and the placeholder are here for a stronger
+ * reason: neither is a design decision at all. How a list flows into columns,
+ * when it gives up size instead and when the collector is told about it is one
+ * rule for every Template (ticket 07 of v1), and "no artwork yet" has to look
+ * the same whichever Template is chosen. A Template holding its own copy of
+ * either would be free to get it wrong somewhere no test is looking.
  */
 
 export const PAD: Mm = 3;
@@ -238,59 +246,51 @@ export function drawInnerFlap({ release, params, faces, measure }: PartContext, 
 }
 
 /** Type size the tracklist starts at, before any of it has to give way. */
-const TRACK_SIZE_MM: Mm = 2.4;
+export const TRACK_SIZE_MM: Mm = 2.4;
 
-/** Where the tracklist sits on the Back Card, and how it had to fit. */
-function backCardTracklist({ release, params, size, faces, measure }: PartContext): TracklistLayout {
-  const listTop = PAD + 8.6 + 2;
+/**
+ * The tracklist, fitted into `box` and turned into marks, plus the warning when
+ * it had to shrink past what a printer holds.
+ *
+ * Still shared, even though `drawBackCard` no longer is. Nothing here is a
+ * design decision: how a list flows into columns, when it gives up size instead,
+ * where the times sit and when the collector is told about any of it is one rule
+ * for every Template (ticket 07 of v1), and a Template free to reimplement it
+ * would be free to get the warning wrong. What each Template decides for itself
+ * is the box, the colour and the face — which is what this takes.
+ *
+ * `ink` rather than `params.inkColor`, because both Templates now ground the
+ * card in a colour the collector chose and reverse the list out of it, so the
+ * readable ink is a fact about that ground rather than a parameter.
+ */
+export function drawTracklist(
+  { release, faces, measure }: PartContext,
+  box: Rect,
+  ink: string,
+): PartDrawing {
   // The style goes in whole and comes back fitted, so the list is drawn with the
   // very object it was trimmed against rather than with a second copy of it.
   const style: TextStyle = {
     sizeMm: TRACK_SIZE_MM,
     weight: 400,
     face: faces.text,
-    color: params.inkColor,
+    color: ink,
     align: 'left',
     baseline: 'top',
   };
-  return layOutTracklist(
-    release.tracks,
-    { x: PAD, y: listTop, width: size.width - 2 * PAD, height: size.height - listTop - PAD },
-    style,
-    measure,
-  );
-}
+  const tracklist = layOutTracklist(release.tracks, box, style, measure);
 
-/**
- * The Back Card: album, artist, a rule, and the tracklist — which is the one
- * Part whose content has no upper bound, so the list decides its own columns
- * and size rather than being given them.
- */
-export function drawBackCard(context: PartContext): PartDrawing {
-  const { release, params, size, faces, measure } = context;
-  const contentWidth = size.width - 2 * PAD;
-  // The two heading lines are display type; the list under the rule is not.
-  const albumStyle: TextStyle = { sizeMm: 3.2, weight: 700, face: faces.display, color: params.inkColor, align: 'left', baseline: 'top' };
-  const artistStyle: TextStyle = { sizeMm: 2.6, weight: 400, face: faces.display, color: params.inkColor, align: 'left', baseline: 'top' };
-
-  const ruleY = PAD + 8.6;
-  const ops: DrawOp[] = [
-    { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: params.paperColor },
-    text(release.album, { x: PAD, y: PAD }, albumStyle, contentWidth, measure),
-    text(release.artist, { x: PAD, y: PAD + 4.2 }, artistStyle, contentWidth, measure),
-    {
-      op: 'line',
-      from: { x: PAD, y: ruleY },
-      to: { x: size.width - PAD, y: ruleY },
-      color: params.accentColor,
-      widthMm: 0.2,
-    },
-  ];
-
-  const tracklist = backCardTracklist(context);
-
+  const ops: DrawOp[] = [];
   for (const line of tracklist.lines) {
     ops.push({ op: 'text', text: line.text, at: line.at, style: tracklist.style });
+    if (line.duration) {
+      ops.push({
+        op: 'text',
+        text: line.duration.text,
+        at: line.duration.at,
+        style: tracklist.durationStyle,
+      });
+    }
   }
 
   // Reported from where it was measured, so the warning always describes the

@@ -57,6 +57,18 @@ const aDesign = (
 const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
 
 /**
+ * Every Template there is, read off the registry rather than listed here.
+ *
+ * The invariants below hold for all of them — a Template sets type only in its
+ * own faces, grounds its Back Card in a colour, keeps its heading clear of its
+ * list — and a third Template should have to satisfy them on the day it is
+ * added rather than on the day somebody remembers to extend this array. Where a
+ * test really is about Classic against Full-bleed it names both, which is then
+ * the signal that it wants revisiting.
+ */
+const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+
+/**
  * The one warning of a given kind on a Sheet, narrowed to its own shape.
  *
  * `SheetWarning` is a union, so a test that wants `trackCount` or `shown` has
@@ -345,13 +357,14 @@ describe('SheetRenderer — Template parameters', () => {
       return op.rect;
     };
 
-    // Classic insets the artwork as a square inside the Front Panel;
-    // Full-bleed runs it to the panel's edges. Same Release, same Sheet.
-    const inset = artworkRect(classic);
+    // Both bleed across the Front Panel's width; only Full-bleed takes the
+    // bottom edge as well, because Classic spends it on the caption band.
+    // Same Release, same Sheet.
+    const banded = artworkRect(classic);
     const bleed = artworkRect(fullbleed);
 
-    expectMm(inset.width, 62, 'Classic artwork width');
-    expectMm(inset.height, 62, 'Classic artwork height');
+    expectMm(banded.width, 68, 'Classic artwork width');
+    expectMm(banded.height, 65, 'Classic artwork height');
     expectMm(bleed.width, 68, 'Full-bleed artwork width');
     expectMm(bleed.height, 79, 'Full-bleed artwork height');
   });
@@ -361,9 +374,17 @@ describe('SheetRenderer — Template parameters', () => {
       params: { paperColor: '#eaffea', inkColor: '#003300', accentColor: '#007700' },
     });
 
+    // Across all three Parts rather than the Back Card alone, which used to
+    // carry all three colours and now grounds itself in one of them.
     const colours = new Set(
-      opsFor(green, 'back-card').flatMap((op) =>
-        op.op === 'fill-rect' ? [op.color] : op.op === 'text' ? [op.style.color] : op.op === 'line' ? [op.color] : [],
+      PART_KINDS.flatMap((part) =>
+        opsFor(green, part).flatMap((op) =>
+          op.op === 'fill-rect' || op.op === 'fill-polygon'
+            ? [op.color]
+            : op.op === 'text'
+              ? [op.style.color]
+              : [],
+        ),
       ),
     );
 
@@ -869,7 +890,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     );
 
   it('sets every piece of type in a face the drawing Template names', () => {
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const faces = TEMPLATES[templateId].faces;
       const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, testMeasurer);
 
@@ -944,7 +965,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     // The failure this rules out is the expensive one: text fitted against one
     // face and drawn in another is trimmed to a width it never had, and nothing
     // about the layout looks wrong until it is on paper.
-    for (const templateId of ['classic', 'fullbleed'] as const) {
+    for (const templateId of TEMPLATE_IDS) {
       const { measure, asked } = recordingMeasurer();
       const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, measure);
 
@@ -957,6 +978,425 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
           .map((op) => `${op.style.face}: ${op.text}`),
         `${templateId} drew type it never measured in that face`,
       ).toEqual([]);
+    }
+  });
+});
+
+describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () => {
+  const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
+
+  const frontPanel = (params: Partial<TemplateParams> = {}) => {
+    const [sheet] = renderSheets(
+      [aDesign(aRelease({ artwork }), { params })],
+      { ...A4_SHEET, parts: ['jcard'] },
+      testMeasurer,
+    );
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
+    if (!jcard || !panel) throw new Error('no Front Panel');
+
+    const art = jcard.ops.find((op) => op.op === 'image' && op.role === 'artwork');
+    if (art?.op !== 'image') throw new Error('no artwork on the J-Card');
+    const captions = jcard.ops.flatMap((op) =>
+      op.op === 'text' && !op.style.rotationDeg && op.at.x >= panel.x ? [op] : [],
+    );
+    return { panel, art: art.rect, captions, ops: jcard.ops };
+  };
+
+  it('runs the artwork to the top, the left and the right of the panel', () => {
+    const { panel, art } = frontPanel();
+
+    expectMm(art.x, panel.x, 'artwork left');
+    expectMm(art.y, panel.y, 'artwork top');
+    expectMm(art.x + art.width, panel.x + panel.width, 'artwork right');
+  });
+
+  it('stops it short of the bottom, which is the edge the type needs', () => {
+    // No bleed allowance anywhere: the artwork edge is the cut line, so the
+    // fourth edge is given up rather than shared.
+    const { panel, art, captions } = frontPanel();
+
+    const artBottom = art.y + art.height;
+    expect(artBottom).toBeLessThan(panel.y + panel.height);
+    expect(captions.length, 'artist and album are on the panel').toBe(2);
+    for (const caption of captions) {
+      expect(caption.at.y, caption.text).toBeGreaterThanOrEqual(artBottom);
+    }
+  });
+
+  it('paints the panel with paper first, so the band under the artwork is paper', () => {
+    const { panel, ops } = frontPanel({ paperColor: '#fffbea' });
+
+    const paper = ops.find(
+      (op) =>
+        op.op === 'fill-rect' &&
+        op.color === '#fffbea' &&
+        Math.abs(op.rect.x - panel.x) < 0.001 &&
+        Math.abs(op.rect.width - panel.width) < 0.001,
+    );
+    expect(paper, 'a paper fill covering the whole panel').toBeDefined();
+  });
+
+  it('draws the old inset square again when the design asks for one', () => {
+    // v1's Front Panel, kept reachable rather than deleted: a square inset by
+    // the same 3 mm on all four sides, type below it.
+    const { panel, art } = frontPanel({ insetArtwork: true });
+
+    expectMm(art.width, art.height, 'the inset artwork is square');
+    expectMm(art.x - panel.x, 3, 'left inset');
+    expectMm(art.y - panel.y, 3, 'top inset');
+    expectMm(panel.x + panel.width - (art.x + art.width), 3, 'right inset');
+  });
+
+  it('captions the panel identically either way, at the default dimensions', () => {
+    // Which is why the parameter is a fair comparison rather than a different
+    // design: at 68 × 79 the bled artwork ends exactly where the square did.
+    const bled = frontPanel();
+    const inset = frontPanel({ insetArtwork: true });
+
+    expect(bled.captions.map((op) => [op.text, op.at.y, op.style.sizeMm])).toEqual(
+      inset.captions.map((op) => [op.text, op.at.y, op.style.sizeMm]),
+    );
+  });
+
+  it('keeps the caption clear of the logo, which shares the band with it', () => {
+    // The collision the caption's own width arithmetic exists to prevent: the
+    // logo takes the bottom-right corner, so a caption measured against the
+    // whole panel runs straight through the mark.
+    const { panel, captions } = frontPanel({ showLogo: true });
+    // `FRONT_LOGO_WIDTH` and `PAD` in templates/shared.ts, which the seam does
+    // not export — stated here so the assertion says what it is holding.
+    const logoLeft = panel.x + panel.width - 3 - 9;
+
+    expect(captions).toHaveLength(2);
+    for (const op of captions) {
+      const half = testMeasurer.widthMm(op.text, op.style) / 2;
+      expect(op.at.x + half, op.text).toBeLessThanOrEqual(logoLeft);
+    }
+  });
+
+  it('captions the panel even when type over the artwork is switched off', () => {
+    // `showOverlayText` governs type drawn *over* artwork — the Full-bleed
+    // Front Panel and Label. This caption is beside it, and switching the
+    // toggle off used to leave the whole 14 mm band blank.
+    const { captions } = frontPanel({ showOverlayText: false });
+
+    expect(captions.map((op) => op.text)).toEqual(['Glen Campbell', 'Wichita Lineman']);
+  });
+
+  it('draws no negative rectangle on the smallest J-Card a project file may carry', () => {
+    // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. Unclamped, the
+    // bled artwork would be 13 mm shorter than nothing.
+    for (const insetArtwork of [false, true]) {
+      const [sheet] = renderSheets(
+        [
+          {
+            ...aDesign(aRelease({ artwork }), { params: { insetArtwork } }),
+            dimensions: {
+              ...DEFAULT_PART_DIMENSIONS,
+              jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+            },
+          },
+        ],
+        { ...A4_SHEET, parts: ['jcard'] },
+        testMeasurer,
+      );
+      const art = sheet?.placements[0]?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
+      if (art?.op !== 'image') throw new Error('no artwork');
+
+      expect(art.rect.width, `inset ${insetArtwork}: width`).toBeGreaterThanOrEqual(0);
+      expect(art.rect.height, `inset ${insetArtwork}: height`).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('leaves Full-bleed alone, whose artwork bleeds on all four edges anyway', () => {
+    const [sheet] = renderSheets(
+      [aDesign(aRelease({ artwork }), { templateId: 'fullbleed', params: { insetArtwork: true } })],
+      { ...A4_SHEET, parts: ['jcard'] },
+      testMeasurer,
+    );
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
+    const art = jcard?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
+    if (!panel || art?.op !== 'image') throw new Error('no artwork on the Front Panel');
+
+    expect(art.rect).toEqual(panel);
+  });
+});
+
+describe('SheetRenderer — each Template draws its own tracklist', () => {
+  /** What every Template holds clear at the edges of a Part (`PAD` in templates/shared.ts). */
+  const PAD_MM = 3;
+
+  /** A dark design, so reversed-out type is white in both Templates. */
+  const DARK: Partial<TemplateParams> = {
+    paperColor: '#fffbea',
+    inkColor: '#101820',
+    accentColor: '#7a2f18',
+  };
+  /** And a light one, where reversing out means dark type instead. */
+  const LIGHT: Partial<TemplateParams> = {
+    paperColor: '#ffffff',
+    inkColor: '#f3ead8',
+    accentColor: '#ffd966',
+  };
+
+  const timed = (count: number): Release =>
+    aRelease({
+      tracks: Array.from({ length: count }, (_, index) => ({
+        position: index + 1,
+        title: `Track ${index + 1}`,
+        lengthMs: 200_000 + index * 1000,
+      })),
+    });
+
+  /** A tracklist row: the numbered title, or the time set beside it. */
+  const isListLine = (op: TextOp): boolean => /^\d+\. /.test(op.text) || /^\d+:\d\d/.test(op.text);
+
+  const backCard = (templateId: TemplateId, params = DARK, release = aRelease()) => {
+    const [sheet] = renderSheets(
+      [aDesign(release, { templateId, params })],
+      { ...A4_SHEET, parts: ['back-card'] },
+      testMeasurer,
+    );
+    const placement = sheet?.placements.find((each) => each.part === 'back-card');
+    if (!placement) throw new Error('no Back Card');
+    const texts = placement.ops.flatMap((op) => (op.op === 'text' ? [op] : []));
+    return { sheet, placement, ops: placement.ops, texts };
+  };
+
+  it('grounds the Back Card in a colour the Release chose, edge to edge', () => {
+    for (const [templateId, colour] of [
+      ['classic', DARK.accentColor],
+      ['fullbleed', DARK.inkColor],
+    ] as const) {
+      const { ops, placement } = backCard(templateId);
+      const ground = ops[0];
+
+      expect(ground?.op, templateId).toBe('fill-rect');
+      if (ground?.op !== 'fill-rect') throw new Error('no ground');
+      expect(ground.color, templateId).toBe(colour);
+      expect(ground.rect, templateId).toEqual({
+        x: 0,
+        y: 0,
+        width: placement.bounds.width,
+        height: placement.bounds.height,
+      });
+    }
+  });
+
+  it('reverses every line out of the ground it sits on', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const dark = backCard(templateId, DARK).texts.map((op) => op.style.color);
+      const light = backCard(templateId, LIGHT).texts.map((op) => op.style.color);
+
+      expect(dark.length, templateId).toBeGreaterThan(0);
+      expect([...new Set(dark)], `${templateId} on a dark ground`).toEqual(['#ffffff']);
+      expect([...new Set(light)], `${templateId} on a light ground`).toEqual(['#111111']);
+    }
+  });
+
+  it('bands Full-bleed’s heading and leaves Classic’s bare', () => {
+    // The structural half of the difference, which colour alone would not
+    // catch: Classic is one flat ground, Full-bleed is a ground plus a bar.
+    const classicFills = backCard('classic').ops.filter((op) => op.op === 'fill-rect');
+    const { ops, placement } = backCard('fullbleed');
+    const fullbleedFills = ops.filter((op) => op.op === 'fill-rect');
+
+    expect(classicFills, 'Classic grounds the card and stops').toHaveLength(1);
+    expect(fullbleedFills, 'Full-bleed grounds it and bands the top').toHaveLength(2);
+
+    const band = fullbleedFills[1];
+    if (band?.op !== 'fill-rect') throw new Error('no band');
+    expect(band.color).toBe(DARK.accentColor);
+    expect(band.rect.x).toBe(0);
+    expect(band.rect.y).toBe(0);
+    expect(band.rect.width).toBe(placement.bounds.width);
+    expect(band.rect.height).toBeLessThan(placement.bounds.height / 3);
+  });
+
+  it('chooses the ink per ground, not once for the whole card', () => {
+    // A light accent over a dark ink is the case a single `readableInkFor` call
+    // cannot survive: Full-bleed's band wants dark type and its list wants
+    // white, from the same two parameters.
+    const MIXED: Partial<TemplateParams> = {
+      paperColor: '#ffffff',
+      inkColor: '#101820',
+      accentColor: '#ffd966',
+    };
+    const isTrack = (op: TextOp): boolean => /^\d+\. /.test(op.text);
+
+    const fullbleed = backCard('fullbleed', MIXED).texts;
+    expect(fullbleed.filter((op) => !isTrack(op)).map((op) => op.style.color)).toEqual([
+      '#111111',
+      '#111111',
+    ]);
+    expect([...new Set(fullbleed.filter(isTrack).map((op) => op.style.color))]).toEqual(['#ffffff']);
+
+    // Classic has one ground, so it has one ink — which is the contrast that
+    // makes the assertion above about the band rather than about luck.
+    expect([...new Set(backCard('classic', MIXED).texts.map((op) => op.style.color))]).toEqual([
+      '#111111',
+    ]);
+  });
+
+  it('leaves the lonely hairline rule behind', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      expect(
+        backCard(templateId).ops.filter((op) => op.op === 'line'),
+        `${templateId} draws no rule`,
+      ).toEqual([]);
+    }
+  });
+
+  it('draws two visibly different cards for one Release', () => {
+    const classic = backCard('classic');
+    const fullbleed = backCard('fullbleed');
+
+    // Different ground, so the two cards are not the same colour.
+    expect(classic.ops[0]).not.toEqual(fullbleed.ops[0]);
+    // Different alignment: a title page centres its heading, a poster ranges it left.
+    const alignments = (card: { texts: TextOp[] }) => [
+      ...new Set(card.texts.filter((op) => !/^\d+\./.test(op.text)).map((op) => op.style.align)),
+    ];
+    expect(alignments(classic)).toEqual(['center']);
+    expect(alignments(fullbleed)).toEqual(['left']);
+    // And different type, which is what ticket 02 bought.
+    const faces = (card: { texts: TextOp[] }) => new Set(card.texts.map((op) => op.style.face));
+    expect([...faces(classic)].some((face) => !faces(fullbleed).has(face))).toBe(true);
+  });
+
+  it('sets each card only in the faces its own Template names', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const declared = Object.values(TEMPLATES[templateId].faces);
+      const used = backCard(templateId).texts.map((op) => op.style.face);
+
+      expect(used.length, templateId).toBeGreaterThan(0);
+      expect(used.filter((face) => !declared.includes(face)), templateId).toEqual([]);
+    }
+  });
+
+  it('prints a playing time beside every track that has one', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, timed(10));
+      const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
+
+      expect(times, `${templateId} sets ten times`).toHaveLength(10);
+      expect(times.map((op) => op.text), templateId).toContain('3:20');
+      expect([...new Set(times.map((op) => op.style.align))], templateId).toEqual(['right']);
+    }
+  });
+
+  it('prints no time at all for a Release that has none', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, aRelease());
+      expect(texts.filter((op) => /^\d+:\d\d$/.test(op.text)), templateId).toEqual([]);
+    }
+  });
+
+  it('keeps 25 timed tracks in two columns, times and all', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, timed(25));
+      const lines = texts.filter((op) => /^\d+\. /.test(op.text));
+      const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
+
+      expect(lines, `${templateId} keeps every track`).toHaveLength(25);
+      expect(times, `${templateId} keeps every time`).toHaveLength(25);
+      expect(new Set(lines.map((op) => op.at.x)).size, `${templateId} columns`).toBe(2);
+      expect(new Set(times.map((op) => op.at.x)).size, `${templateId} time columns`).toBe(2);
+    }
+  });
+
+  it('shrinks and then warns from either Template, exactly as before', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const modest = backCard(templateId, DARK, timed(25));
+      const enormous = backCard(templateId, DARK, timed(200));
+
+      expect(modest.sheet?.warnings, `${templateId} at 25`).toBeUndefined();
+      const warning = onlyWarning(enormous.sheet, 'type-below-print-floor');
+      expect(warning.trackCount, templateId).toBe(200);
+      expect(warning.sizeMm, templateId).toBeLessThan(warning.floorMm);
+
+      const smaller = enormous.texts.filter((op) => /^\d+\. /.test(op.text))[0]?.style.sizeMm ?? 0;
+      const bigger = modest.texts.filter((op) => /^\d+\. /.test(op.text))[0]?.style.sizeMm ?? 0;
+      expect(smaller, `${templateId} shrank`).toBeLessThan(bigger);
+    }
+  });
+
+  it('sets the times at the size the list shrank to, not the size it started at', () => {
+    // The failure `layOutTracklist` hands the whole style back to prevent, one
+    // cell over: a time drawn from a style the fit never saw is a time that
+    // does not match the list it belongs to, and only paper shows it.
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, timed(200));
+      const listSize = texts.find((op) => /^\d+\. /.test(op.text))?.style.sizeMm ?? 0;
+      const timeSizes = [...new Set(texts.filter((op) => /^\d+:\d\d$/.test(op.text)).map((op) => op.style.sizeMm))];
+
+      expect(listSize, `${templateId} shrank`).toBeLessThan(2.4);
+      expect(timeSizes, `${templateId} sets its times at the fitted size`).toEqual([listSize]);
+    }
+  });
+
+  it('keeps the heading clear of the first track', () => {
+    // Every millimetre in the Back Card layout comments is load-bearing and
+    // none of them was pinned: a heading one line too low, or a list top one
+    // line too high, prints the album through track 1.
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts } = backCard(templateId, DARK, timed(10));
+      const heading = texts.filter((op) => !isListLine(op));
+      const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+
+      expect(heading.length, `${templateId} has a heading`).toBeGreaterThan(0);
+      expect(firstTrack, `${templateId} has a list`).toBeDefined();
+      const lowest = Math.max(...heading.map((op) => op.at.y + op.style.sizeMm));
+      expect(lowest, `${templateId} heading bottom`).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
+    }
+  });
+
+  it('keeps Full-bleed’s masthead inside the band drawn for it', () => {
+    // The band test above only bounds the bar at a third of the card, which is
+    // 26 mm of slack; this is the assertion that ties the two lines to it.
+    const { ops, texts } = backCard('fullbleed');
+    const band = ops.filter((op) => op.op === 'fill-rect')[1];
+    if (band?.op !== 'fill-rect') throw new Error('no band');
+
+    const heading = texts.filter((op) => !isListLine(op));
+    expect(heading).toHaveLength(2);
+    for (const op of heading) {
+      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(band.rect.height);
+    }
+
+    // And the list starts below the band, which is the other edge of it: a bar
+    // grown past the list top prints the first tracks inside the masthead, and
+    // both of them still look right on their own.
+    const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+    expect(firstTrack, 'the list was drawn').toBeDefined();
+    expect(band.rect.height).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
+  });
+
+  it('sets no line wider than the card it is on', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts, placement } = backCard(templateId, DARK, timed(10));
+      const room = placement.bounds.width - 2 * PAD_MM;
+
+      for (const op of texts) {
+        const width = testMeasurer.widthMm(op.text, op.style);
+        expect(width, `${templateId}: ${op.text}`).toBeLessThanOrEqual(room + 0.001);
+      }
+    }
+  });
+
+  it('keeps every mark on the card, times included', () => {
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts, placement } = backCard(templateId, DARK, timed(70));
+
+      for (const op of texts) {
+        expect(op.at.y + op.style.sizeMm, `${templateId}: ${op.text}`).toBeLessThanOrEqual(
+          placement.bounds.height,
+        );
+        expect(op.at.x, `${templateId}: ${op.text}`).toBeGreaterThanOrEqual(0);
+        expect(op.at.x, `${templateId}: ${op.text}`).toBeLessThanOrEqual(placement.bounds.width);
+      }
     }
   });
 });

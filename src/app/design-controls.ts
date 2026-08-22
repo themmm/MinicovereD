@@ -26,7 +26,7 @@ const COLOURS: readonly ColourField[] = [
 ];
 
 interface ToggleField {
-  readonly key: 'showOverlayText' | 'showLogo';
+  readonly key: 'showOverlayText' | 'showLogo' | 'insetArtwork';
   readonly label: string;
   readonly hint: string;
 }
@@ -38,6 +38,13 @@ const TOGGLES: readonly ToggleField[] = [
     hint: 'Artist and album on top of full-bleed artwork',
   },
   { key: 'showLogo', label: 'MiniDisc logo', hint: 'On Front Panel and Spine' },
+  {
+    key: 'insetArtwork',
+    label: 'Artwork as an inset square',
+    // Named by what it does to the Part rather than by the Template it belongs
+    // to, because the Template picker is directly above it.
+    hint: 'Classic: a square with paper all round it, instead of bleeding to three edges',
+  },
 ];
 
 export function createDesignControls(
