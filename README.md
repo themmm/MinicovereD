@@ -13,7 +13,7 @@ reads out of it. The capitals are load-bearing — in lowercase the device disap
 the repository name, the PWA `name` and `short_name`, the Wordmark, this heading and the about dialog.
 
 **`minicovered`** is the technical form: clone directories and shell paths, the npm package name, the
-`client=minicovered-0.1.0` identifier sent to MusicBrainz, the `minicovered:` prefix on internal
+`client=minicovered-1.0.0` identifier sent to MusicBrainz, the `minicovered:` prefix on internal
 errors, exported filenames, search queries, and any URL typed from memory.
 
 Please do not "fix" one into the other.
