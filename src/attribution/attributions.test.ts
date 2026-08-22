@@ -226,7 +226,13 @@ describe('attribution manifest (ADR-0003)', () => {
 
   it('attributes the bundled fonts as OFL-1.1', () => {
     const fonts = ATTRIBUTIONS.filter((entry) => entry.kind === 'font');
-    expect(fonts.map((entry) => entry.name).sort()).toEqual(['Noto Sans', 'Noto Sans JP']);
+    // Three faces across two stacks: JetBrains Mono is the chrome, the two Noto
+    // faces are what a Part is set in (ADR-0008 rule 9).
+    expect(fonts.map((entry) => entry.name).sort()).toEqual([
+      'JetBrains Mono',
+      'Noto Sans',
+      'Noto Sans JP',
+    ]);
     expect(fonts.every((entry) => entry.license === 'OFL-1.1')).toBe(true);
   });
 

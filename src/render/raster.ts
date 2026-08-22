@@ -26,10 +26,21 @@ const GUIDE_HALO_COLOR = '#ffffff';
 const GUIDE_HALO_WIDTH_MM: Mm = 0.5;
 const FOLD_DASH_MM: readonly [Mm, Mm] = [1.6, 1.2];
 
-export const FONT_STACK = "'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif";
+/**
+ * The type a Part is set in, and the print side of the quarantine (ADR-0008
+ * rule 9). This module is the single source of it: `canvas-text-measurer.ts`
+ * imports `fontFor` rather than restating the stack, so measuring and drawing
+ * cannot disagree.
+ *
+ * `--font-print` in `src/styles/fonts.css` has to read exactly the same, and a
+ * test asserts it — the duplication is unavoidable, because a canvas cannot
+ * read a custom property, so the only alternative to a check is drift. The
+ * chrome face has no business here and a test keeps it out.
+ */
+export const PRINT_FONT_STACK = "'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif";
 
 export function fontFor(style: TextStyle, scale: number): string {
-  return `${style.weight} ${style.sizeMm * scale}px ${FONT_STACK}`;
+  return `${style.weight} ${style.sizeMm * scale}px ${PRINT_FONT_STACK}`;
 }
 
 /**

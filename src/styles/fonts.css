@@ -1,6 +1,13 @@
 /*
  * Bundled OFL fonts (ADR-0003). Nothing here touches the network at runtime:
  * every face is part of the build and is precached by the service worker.
+ *
+ * Two stacks, and the boundary between them is the quarantine of ADR-0008
+ * rule 9. `--font-chrome` is the app surface and never reaches a Part.
+ * `--font-print` is the Part's stack, and it has to stay equal to
+ * `PRINT_FONT_STACK` in `src/render/raster.ts` — which is the string a canvas
+ * actually gets, because a canvas cannot read a custom property. Nothing in
+ * CSS can enforce that, so a test does.
  */
 
 /* Latin, Latin-ext, Greek, Cyrillic, Vietnamese and Devanagari, split into
@@ -22,9 +29,54 @@
     U+1B000-1B001, U+1F200-1F251, U+20000-2FA1F;
 }
 
+/*
+ * JetBrains Mono, the chrome face (ADR-0008).
+ *
+ * Declared by hand rather than imported, because Fontsource's `wght.css` also
+ * carries Greek, Cyrillic and Vietnamese: six subsets where two are wanted.
+ * Every subset would be precached in the hosted build and inlined as a data
+ * URI in the single-file one, so importing the lot would cost four subsets
+ * nothing asks for. The chrome's own labels are English; anything the
+ * collector types falls through to the Noto faces above, which do ship those
+ * ranges.
+ *
+ * Roman only — the chrome has no italic. The `wght` axis costs what two static
+ * weights would and delivers all of them. Latin + Latin-ext is
+ * 40,404 + 15,196 = 55,600 bytes (54.3 KiB), or +2.28 % on the single-file
+ * build. The axis stops at 800, not 900, which is what the face ships.
+ */
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-ext-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
-  /* The stack every Part and every piece of UI renders with. Noto Sans first,
-     Noto Sans JP for CJK, then the system for whatever neither covers. */
-  --font-sans: 'Noto Sans Variable', 'Noto Sans JP', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  /* The app surface, and never a Part. The Noto faces sit behind JetBrains
+     Mono so that a Cyrillic or Japanese album title typed into a field still
+     renders in something; the mono face only covers Latin here. */
+  --font-chrome: 'JetBrains Mono Variable', 'Noto Sans Variable', 'Noto Sans JP', ui-monospace,
+    monospace;
+
+  /* The Part's stack, and the one thing in this file that is not free to
+     change: it must read exactly as `PRINT_FONT_STACK` does in
+     `src/render/raster.ts`. */
+  --font-print: 'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif;
 }

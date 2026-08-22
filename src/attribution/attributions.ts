@@ -158,6 +158,18 @@ export const ATTRIBUTIONS: readonly Attribution[] = [
     packageName: '@fontsource/noto-sans-jp',
   },
   {
+    name: 'JetBrains Mono',
+    kind: 'font',
+    version: '5.3.0',
+    license: 'OFL-1.1',
+    copyright: 'Copyright 2020 The JetBrains Mono Project Authors',
+    url: 'https://fontsource.org/fonts/jetbrains-mono',
+    packageName: '@fontsource-variable/jetbrains-mono',
+    note:
+      'The app surface only, never a Part (ADR-0008). Latin and Latin-ext, roman, one variable ' +
+      'weight axis — the two subsets the chrome needs, out of the six the package ships.',
+  },
+  {
     name: 'MiniDisc logo',
     kind: 'asset',
     version: 'Commons revision',
