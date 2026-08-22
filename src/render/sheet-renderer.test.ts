@@ -1128,6 +1128,50 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
+  it('bands Full-bleed’s heading and leaves Classic’s bare', () => {
+    // The structural half of the difference, which colour alone would not
+    // catch: Classic is one flat ground, Full-bleed is a ground plus a bar.
+    const classicFills = backCard('classic').ops.filter((op) => op.op === 'fill-rect');
+    const { ops, placement } = backCard('fullbleed');
+    const fullbleedFills = ops.filter((op) => op.op === 'fill-rect');
+
+    expect(classicFills, 'Classic grounds the card and stops').toHaveLength(1);
+    expect(fullbleedFills, 'Full-bleed grounds it and bands the top').toHaveLength(2);
+
+    const band = fullbleedFills[1];
+    if (band?.op !== 'fill-rect') throw new Error('no band');
+    expect(band.color).toBe(DARK.accentColor);
+    expect(band.rect.x).toBe(0);
+    expect(band.rect.y).toBe(0);
+    expect(band.rect.width).toBe(placement.bounds.width);
+    expect(band.rect.height).toBeLessThan(placement.bounds.height / 3);
+  });
+
+  it('chooses the ink per ground, not once for the whole card', () => {
+    // A light accent over a dark ink is the case a single `readableInkFor` call
+    // cannot survive: Full-bleed's band wants dark type and its list wants
+    // white, from the same two parameters.
+    const MIXED: Partial<TemplateParams> = {
+      paperColor: '#ffffff',
+      inkColor: '#101820',
+      accentColor: '#ffd966',
+    };
+    const isTrack = (op: TextOp): boolean => /^\d+\. /.test(op.text);
+
+    const fullbleed = backCard('fullbleed', MIXED).texts;
+    expect(fullbleed.filter((op) => !isTrack(op)).map((op) => op.style.color)).toEqual([
+      '#111111',
+      '#111111',
+    ]);
+    expect([...new Set(fullbleed.filter(isTrack).map((op) => op.style.color))]).toEqual(['#ffffff']);
+
+    // Classic has one ground, so it has one ink — which is the contrast that
+    // makes the assertion above about the band rather than about luck.
+    expect([...new Set(backCard('classic', MIXED).texts.map((op) => op.style.color))]).toEqual([
+      '#111111',
+    ]);
+  });
+
   it('leaves the lonely hairline rule behind', () => {
     for (const templateId of ['classic', 'fullbleed'] as const) {
       expect(
