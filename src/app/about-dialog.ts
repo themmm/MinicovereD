@@ -24,12 +24,16 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
  * typeface on purpose. Showing only the chrome would prove the half that never
  * reaches paper.
  *
- * Each print face gets its own line, set in itself, because that is the only
- * thing here that can actually go wrong offline: a face that failed to load
- * renders in a fallback and still looks like type. The last three lines carry
- * Latin-ext and CJK on purpose — the five voices ship Latin and Latin-ext
- * only, so those are where the Noto fallback is doing the work and has to be
- * seen doing it.
+ * Each print face gets its own line, named by its voice and set in itself,
+ * because that is the only thing here that can actually go wrong offline: a
+ * face that failed to load renders in a fallback and still looks like type.
+ *
+ * Two of the lines are chosen for their characters rather than their voice. The
+ * humanist one carries Ł, ź and Č, which are Latin-ext: the five voices ship
+ * that subset themselves, so seeing those glyphs in Cabin rather than in Noto
+ * is what says the second subset arrived. The Japanese and bold lines are the
+ * opposite case — no voice ships CJK, so those prove the Noto fallback every
+ * print stack ends with.
  */
 const FONT_SPECIMEN: ReadonlyArray<{
   script: string;
@@ -43,7 +47,7 @@ const FONT_SPECIMEN: ReadonlyArray<{
   { script: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
   { script: 'Grotesque', sample: 'Lift Your Skinny Fists Like Antennas', stack: 'grotesque' },
   { script: 'Condensed', sample: 'Ascenseur pour l’échafaud · Şafak', stack: 'condensed' },
-  { script: 'Umlauts', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
+  { script: 'Humanist', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
   { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'sans' },
   { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'sans' },
 ];
