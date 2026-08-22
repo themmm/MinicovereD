@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="760" viewBox="0 0 980 760" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace">
+  <rect width="980" height="760" fill="#fdf6e3"/>
+  <style>
+    .h  { font-size:15px; font-weight:700; fill:#5c6a72; letter-spacing:.06em }
+    .l  { font-size:11px; fill:#5c6a72 }
+    .s  { font-size:10px; fill:#939f91 }
+    .pg { font-size:20px; font-weight:700; fill:#5c6a72 }
+    .panel { fill:#f4f0d9; stroke:#d3c6aa; stroke-width:1 }
+    .jc    { fill:#e8e4cf; stroke:#d3c6aa; stroke-width:1 }
+    .fore  { stroke:#3a94c5; stroke-width:2.5; stroke-dasharray:7 5 }
+    .spine { stroke:#df69ba; stroke-width:2.5 }
+    .jfold { stroke:#a7c080; stroke-width:2.5; stroke-dasharray:2 4 }
+    .ink   { stroke:#e67e80; stroke-width:4; stroke-linecap:round }
+  </style>
+
+  <text class="h" x="60" y="34">1 · THE STRIP, PRINTED ON ONE SIDE — 4 pages, 282.5 × 79 mm, fits A4 landscape</text>
+
+  <!-- flat strip: scale 3px/mm, origin x=60 y=70 -->
+  <rect class="jc"    x="60"    y="70" width="42"  height="237"/>
+  <rect class="jc"    x="102"   y="70" width="16.5" height="237"/>
+  <rect class="panel" x="118.5" y="70" width="204" height="237"/>
+  <rect class="panel" x="322.5" y="70" width="195" height="237"/>
+  <rect class="panel" x="517.5" y="70" width="195" height="237"/>
+  <rect class="panel" x="712.5" y="70" width="195" height="237"/>
+
+  <line class="jfold" x1="102"   y1="62" x2="102"   y2="315"/>
+  <line class="jfold" x1="118.5" y1="62" x2="118.5" y2="315"/>
+  <line class="fore"  x1="322.5" y1="55" x2="322.5" y2="322"/>
+  <line class="spine" x1="517.5" y1="48" x2="517.5" y2="330"/>
+  <line class="fore"  x1="712.5" y1="55" x2="712.5" y2="322"/>
+
+  <text class="s"  x="81"  y="196" text-anchor="middle" transform="rotate(-90 81 196)">INNER FLAP 14</text>
+  <text class="s"  x="110" y="196" text-anchor="middle" transform="rotate(-90 110 196)">SPINE 5.5</text>
+  <text class="pg" x="220.5" y="180" text-anchor="middle">page 1</text>
+  <text class="l"  x="220.5" y="202" text-anchor="middle">FRONT PANEL · 68</text>
+  <text class="s"  x="220.5" y="222" text-anchor="middle">artwork, bleeding 3 edges</text>
+  <text class="pg" x="420" y="180" text-anchor="middle">page 2</text>
+  <text class="l"  x="420" y="202" text-anchor="middle">TRACKLIST · 65</text>
+  <text class="pg" x="615" y="180" text-anchor="middle">page 3</text>
+  <text class="l"  x="615" y="202" text-anchor="middle">TRACKLIST cont. / notes</text>
+  <text class="pg" x="810" y="180" text-anchor="middle">page 4</text>
+  <text class="l"  x="810" y="202" text-anchor="middle">CREDITS · 65</text>
+
+  <text class="l" x="322.5" y="44" text-anchor="middle" fill="#3a94c5">fore-edge</text>
+  <text class="l" x="517.5" y="40" text-anchor="middle" fill="#df69ba">SPINE</text>
+  <text class="l" x="712.5" y="44" text-anchor="middle" fill="#3a94c5">fore-edge</text>
+  <text class="s" x="322.5" y="340" text-anchor="middle" fill="#3a94c5">blank meets blank</text>
+  <text class="s" x="517.5" y="348" text-anchor="middle" fill="#df69ba">printed meets printed — this is the spread</text>
+  <text class="s" x="712.5" y="340" text-anchor="middle" fill="#3a94c5">blank meets blank</text>
+
+  <text class="h" x="60" y="400">2 · EDGE-ON, FOLDED — red is the printed side. It never faces another printed side except at the spine.</text>
+
+  <!-- cross-section -->
+  <g transform="translate(120,430)">
+    <line class="ink" x1="0"   y1="0"  x2="400" y2="0"/>
+    <line class="ink" x1="0"   y1="26" x2="400" y2="26"/>
+    <line class="ink" x1="0"   y1="52" x2="400" y2="52"/>
+    <line class="ink" x1="0"   y1="78" x2="400" y2="78"/>
+    <path d="M400 0 A13 13 0 0 1 400 26"  fill="none" class="ink"/>
+    <path d="M0 26 A13 13 0 0 0 0 52"     fill="none" class="ink"/>
+    <path d="M400 52 A13 13 0 0 1 400 78" fill="none" class="ink"/>
+    <text class="l" x="415" y="4"  >page 1  ← printed face up, this is the cover</text>
+    <text class="l" x="415" y="30" >page 2  ← printed face down</text>
+    <text class="l" x="415" y="56" >page 3  ← printed face up</text>
+    <text class="l" x="415" y="82" >page 4  ← printed face down</text>
+    <text class="s" x="432" y="16" fill="#3a94c5">fore-edge fold</text>
+    <text class="s" x="-118" y="43" fill="#df69ba">SPINE fold</text>
+    <text class="s" x="432" y="68" fill="#3a94c5">fore-edge fold</text>
+    <text class="s" x="0" y="112">Between 1 and 2 the two blank sides touch, so both printed faces stay outward.</text>
+    <text class="s" x="0" y="128">Same for 3 and 4. The spine is the one fold where printed meets printed — and that</text>
+    <text class="s" x="0" y="144">is exactly the pair you see when you open the cover. Nothing blank is ever visible.</text>
+  </g>
+
+  <text class="h" x="60" y="630">3 · HOW IT READS — a codex, hinged at the spine, not a fan</text>
+  <g transform="translate(60,650)">
+    <rect class="panel" x="0"   y="0" width="90" height="90"/>
+    <text class="l" x="45" y="50" text-anchor="middle">1</text>
+    <text class="s" x="45" y="106" text-anchor="middle">closed</text>
+    <text class="l" x="112" y="50">→</text>
+    <rect class="panel" x="140" y="0" width="90" height="90"/>
+    <rect class="panel" x="230" y="0" width="90" height="90"/>
+    <line class="spine" x1="230" y1="-6" x2="230" y2="96"/>
+    <text class="l" x="185" y="50" text-anchor="middle">2</text>
+    <text class="l" x="275" y="50" text-anchor="middle">3</text>
+    <text class="s" x="230" y="106" text-anchor="middle">open — the spread</text>
+    <text class="l" x="342" y="50">→</text>
+    <rect class="panel" x="370" y="0" width="90" height="90"/>
+    <text class="l" x="415" y="50" text-anchor="middle">4</text>
+    <text class="s" x="415" y="106" text-anchor="middle">back</text>
+    <text class="s" x="500" y="30">Page count must be even — every leaf is two panels.</text>
+    <text class="s" x="500" y="48">4 pages at 65 mm is the most one A4 sheet holds (282.5 of 287 usable).</text>
+    <text class="s" x="500" y="66">6 pages needs a second strip, joined by the reader or left separate.</text>
+  </g>
+</svg>

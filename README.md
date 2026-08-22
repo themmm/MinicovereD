@@ -53,6 +53,12 @@ Implementation runs ticket by ticket.
 - Tickets: [.scratch/minicovered-v1/issues/](.scratch/minicovered-v1/issues/)
 - Domain glossary: [CONTEXT.md](CONTEXT.md) · Decisions: [docs/adr/](docs/adr/)
 
+v2 is specified and not started: the J-Card and the Back Card become one folded **Insert**
+([ADR-0012](docs/adr/0012-the-insert.md)), in two releases split at the project-file format.
+
+- Spec: [.scratch/minicovered-v2/spec.md](.scratch/minicovered-v2/spec.md)
+- Tickets: [.scratch/minicovered-v2/issues/](.scratch/minicovered-v2/issues/)
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Note: this project bundles the official MiniDisc logo as an optional asset; MiniDisc is a trademark of Sony (see [ADR-0004](docs/adr/0004-bundle-official-minidisc-logo.md)).
