@@ -22,7 +22,7 @@ import type {
 } from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
-export type { SheetLayout, PartPlacement, Guide, DrawOp, PrintFace, TextStyle, SheetWarning } from './layout.ts';
+export type { SheetLayout, PartPlacement, Guide, DrawOp, PrintFace, TextStyle, TextOp, SheetWarning } from './layout.ts';
 export type { TextMeasurer } from './text.ts';
 export type { TemplateId, TemplateParams, TemplateFaces, Template } from './templates/template.ts';
 export { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';

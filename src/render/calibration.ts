@@ -31,9 +31,12 @@ const RULE_WIDTH: Mm = 0.2;
 const CAPTION_SIZE: Mm = 3;
 /**
  * Nothing on this sheet belongs to a Release, so no Template chose its type.
- * The neutral sans is right twice over: this page is an instrument rather than
- * a design, and it is the one stack that covers every script a Label preset
- * name or a paper size could arrive in.
+ * The neutral sans is right twice over: this page is an instrument rather than a
+ * design, and it is the one stack that renders every script in a single face.
+ * Every stack falls through to the same Noto pair, so any of them could set a
+ * Cyrillic Label preset name — but the five voices would set the Latin half in
+ * themselves and the rest in Noto, and a ruler should not change typeface
+ * halfway down.
  */
 const CALIBRATION_FACE: PrintFace = 'sans';
 const CAPTION_GAP: Mm = 1.2;

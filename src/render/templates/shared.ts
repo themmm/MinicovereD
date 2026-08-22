@@ -241,13 +241,22 @@ export function drawInnerFlap({ release, params, faces, measure }: PartContext, 
 const TRACK_SIZE_MM: Mm = 2.4;
 
 /** Where the tracklist sits on the Back Card, and how it had to fit. */
-function backCardTracklist({ release, size, faces, measure }: PartContext): TracklistLayout {
+function backCardTracklist({ release, params, size, faces, measure }: PartContext): TracklistLayout {
   const listTop = PAD + 8.6 + 2;
+  // The style goes in whole and comes back fitted, so the list is drawn with the
+  // very object it was trimmed against rather than with a second copy of it.
+  const style: TextStyle = {
+    sizeMm: TRACK_SIZE_MM,
+    weight: 400,
+    face: faces.text,
+    color: params.inkColor,
+    align: 'left',
+    baseline: 'top',
+  };
   return layOutTracklist(
     release.tracks,
     { x: PAD, y: listTop, width: size.width - 2 * PAD, height: size.height - listTop - PAD },
-    TRACK_SIZE_MM,
-    faces.text,
+    style,
     measure,
   );
 }
@@ -279,20 +288,9 @@ export function drawBackCard(context: PartContext): PartDrawing {
   ];
 
   const tracklist = backCardTracklist(context);
-  const trackStyle: TextStyle = {
-    sizeMm: tracklist.sizeMm,
-    weight: 400,
-    // The same face the list was measured and trimmed against, above. A
-    // different one here would put titles on the Part that were ellipsised for
-    // metrics they are not being drawn in.
-    face: faces.text,
-    color: params.inkColor,
-    align: 'left',
-    baseline: 'top',
-  };
 
   for (const line of tracklist.lines) {
-    ops.push({ op: 'text', text: line.text, at: line.at, style: trackStyle });
+    ops.push({ op: 'text', text: line.text, at: line.at, style: tracklist.style });
   }
 
   // Reported from where it was measured, so the warning always describes the
@@ -306,7 +304,7 @@ export function drawBackCard(context: PartContext): PartDrawing {
             releaseId: release.id,
             releaseTitle: release.album || release.artist || release.id,
             trackCount: release.tracks.length,
-            sizeMm: tracklist.sizeMm,
+            sizeMm: tracklist.style.sizeMm,
             floorMm: PRINT_FLOOR_MM,
           },
         ],

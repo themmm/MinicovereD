@@ -56,7 +56,8 @@ const BUNDLED_FACES: ReadonlyArray<{ family: string; sample: string }> = [
   },
   { family: 'Noto Sans JP', sample: '東' },
   // The five voices, Latin and Latin-ext only — the two subsets each is
-  // declared with in `fonts.css`, so two characters fetch the whole of each.
+  // declared with in `fonts.css`. The sample spans both ranges, which is what
+  // makes the browser fetch both rather than only the one it happens to need.
   { family: 'Source Serif 4 Variable', sample: 'Aä Łź' },
   { family: 'Bitter Variable', sample: 'Aä Łź' },
   { family: 'Space Grotesk Variable', sample: 'Aä Łź' },

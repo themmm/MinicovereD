@@ -36,26 +36,26 @@ const GROUPS: ReadonlyArray<{ kind: AttributionKind; title: string }> = [
  * print stack ends with.
  */
 const FONT_SPECIMEN: ReadonlyArray<{
-  script: string;
+  label: string;
   sample: string;
   weight?: 'bold';
   stack: 'chrome' | PrintFace;
 }> = [
-  { script: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
-  { script: 'Sans', sample: 'Wichita Lineman — Glen Campbell', stack: 'sans' },
-  { script: 'Serif', sample: 'Rêveries · Canción · Ángel · Sinnöver', stack: 'serif' },
-  { script: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
-  { script: 'Grotesque', sample: 'Lift Your Skinny Fists Like Antennas', stack: 'grotesque' },
-  { script: 'Condensed', sample: 'Ascenseur pour l’échafaud · Şafak', stack: 'condensed' },
-  { script: 'Humanist', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
-  { script: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'sans' },
-  { script: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'sans' },
+  { label: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
+  { label: 'Sans', sample: 'Wichita Lineman — Glen Campbell', stack: 'sans' },
+  { label: 'Serif', sample: 'Rêveries · Canción · Ángel · Sinnöver', stack: 'serif' },
+  { label: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
+  { label: 'Grotesque', sample: 'Lift Your Skinny Fists Like Antennas', stack: 'grotesque' },
+  { label: 'Condensed', sample: 'Ascenseur pour l’échafaud · Şafak', stack: 'condensed' },
+  { label: 'Humanist', sample: 'Grüße aus Köln · Ærø · Łódź · Čačak', stack: 'humanist' },
+  { label: 'Japanese', sample: '東京は夜の七時 · こんにちは · カタカナ', stack: 'sans' },
+  { label: 'Bold', sample: 'Grüße · 東京 · Ángel', weight: 'bold', stack: 'sans' },
 ];
 
 function fontSpecimen(): HTMLElement {
   const list = el('dl', { class: 'specimen' });
   for (const row of FONT_SPECIMEN) {
-    list.appendChild(el('dt', { text: row.script }));
+    list.appendChild(el('dt', { text: row.label }));
     list.appendChild(
       el('dd', {
         text: row.sample,

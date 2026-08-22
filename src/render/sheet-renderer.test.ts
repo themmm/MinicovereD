@@ -10,6 +10,7 @@ import { DEFAULT_TEMPLATE_PARAMS, renderSheets, TEMPLATES } from './sheet-render
 import type {
   PrintFace,
   ReleaseDesign,
+  TextOp,
   SheetConfig,
   SheetLayout,
   SheetWarning,
@@ -17,7 +18,7 @@ import type {
   TemplateParams,
   TextMeasurer,
 } from './sheet-renderer.ts';
-import type { TextOp } from './layout.ts';
+
 
 /**
  * A deterministic stand-in for the browser's text metrics: half an em per Latin
@@ -830,8 +831,14 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
   /**
    * A measurer that answers differently per face, which is the only way this
    * seam can tell a stack that was chosen from one that was declared and
-   * ignored. Real faces differ by roughly this much: a narrow grotesque sets
-   * around a third less width than a wide one at the same size.
+   * ignored.
+   *
+   * The factors are deliberately further apart than the real faces: measured in
+   * a browser, Archivo Narrow sets the Spine's line 20.4 % narrower than Noto
+   * Sans, where `condensed` here is 42 % narrower than `grotesque`. Exaggerating
+   * it is what keeps the assertions below about plumbing rather than about
+   * metrics — a real-metric margin this test cannot see would make a failure
+   * look like a rounding accident.
    */
   const FACE_WIDTH: Readonly<Record<PrintFace, number>> = {
     sans: 0.5,

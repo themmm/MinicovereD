@@ -74,8 +74,8 @@
  *
  * Declared by hand for the reason JetBrains Mono is: Fontsource ships one
  * `wght.css` per package covering every subset it has, and these five have
- * between three and six each — Vietnamese in all of them, Cyrillic and Greek in
- * Source Serif 4 and Bitter. Importing the lot would inline subsets nothing
+ * between three and six each — Vietnamese in all five, Cyrillic in Source Serif 4
+ * and Bitter, Greek in Source Serif 4 alone. Importing the lot would inline subsets nothing
  * asks for into a double-clickable HTML file, and Noto already covers those
  * ranges as the fallback every print stack ends with. So: Latin and Latin-ext
  * only, roman only, one `wght` axis each, and every axis spans 400-700, which
@@ -219,9 +219,17 @@
 
   /* The Part's stacks, one per face, and the one part of this file that is not
      free to change: each must read exactly as its entry in `PRINT_FONT_STACKS`
-     does in `src/render/raster.ts`. A face named here that no Template selects
-     would be bytes nobody can reach, and a face a Template selects that is not
-     named here would be measured against a fallback; both fail a test. */
+     in `src/render/raster.ts`, and the two sides must name the same set of
+     faces. A test asserts both directions.
+
+     What that test can police is the bundled *families*, not the face ids: a
+     family no Template's stack reaches would be a woff2 nobody can see, and a
+     family leading a stack that the preload manifest omits would be measured
+     against a fallback. `sans` is deliberately a face no Template currently
+     selects — it is the calibration sheet's type, `.prose` in the chrome, and
+     the fallback inside all five other stacks, so none of its bytes are
+     unreachable and no test can tell it apart from a face left unused by
+     accident. If it stops being any of those, delete it by hand. */
   --font-print-sans: 'Noto Sans Variable', 'Noto Sans JP', system-ui, sans-serif;
   --font-print-serif: 'Source Serif 4 Variable', 'Noto Sans Variable', 'Noto Sans JP', serif;
   --font-print-slab: 'Bitter Variable', 'Noto Sans Variable', 'Noto Sans JP', serif;

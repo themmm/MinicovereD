@@ -22,16 +22,18 @@ import { TEMPLATES } from './sheet-renderer.ts';
  *    literal on purpose. Nothing stops an editor from "tidying" a hex into a
  *    token except a test that fails when they do.
  *
- * The first four checks here are the ones ticket 11 names, grown from one stack
- * to one per bundled face. Two of them became pairs on the way, and the pairing
- * is the point: a face declared in CSS that no Template selects is bytes in a
- * double-clickable file that nothing can reach, and a face a Template selects
- * that the manifest does not name is laid out against a fallback and drawn in
- * itself. Either one alone reads as fine.
+ * Nine checks. The first four are the ones ticket 11 names, grown from one stack
+ * to one per bundled face; two of those became pairs on the way, because one
+ * half of each reads as fine on its own. A family in the preload manifest that
+ * no Template's stack reaches is a woff2 inlined into a double-clickable file
+ * with no way to see it; a family leading a stack that the manifest does not
+ * name is laid out against a fallback and then drawn in itself. The fifth check
+ * closes the same gap on the screen side, where a print face with no specimen
+ * rule of its own would render in the chrome's monospace.
  *
- * The last two checks are additions from step 1: they hold the two claims it
- * rests on — one text colour, and four literals — which the others do not
- * touch.
+ * The last four came with step 1 and hold the claims it rests on: the print
+ * surface stays literal, the stylesheet spends exactly four literal colours,
+ * every control inherits its ink, and no text is set in an accent.
  */
 
 const PRINT_FACES = Object.keys(PRINT_FONT_STACKS) as PrintFace[];
@@ -67,7 +69,7 @@ const families = (stack: string): string[] => stack.split(',').map(firstFamily);
 
 /** The print faces a stylesheet declares a property for, by face id. */
 const declaredPrintFaces = (css: string): string[] =>
-  [...css.matchAll(/--font-print-([a-z0-9-]+)\s*:/g)].map(([, id]) => id as string);
+  [...css.matchAll(/--font-print-([a-z0-9-]+)\s*:/g)].map(([, id]) => id ?? '');
 
 /**
  * Every TypeScript module under `src/render` that ships, repo-relative.
@@ -151,7 +153,7 @@ describe('the print quarantine (ADR-0008 rule 9)', () => {
     expect(manifest, 'BUNDLED_FACES').toBeTruthy();
 
     const manifested = [...(manifest ?? '').matchAll(/family:\s*'([^']+)'/g)].map(
-      ([, family]) => family as string,
+      ([, family]) => family ?? '',
     );
     expect(manifested.length).toBeGreaterThan(0);
 
@@ -202,6 +204,32 @@ describe('the print quarantine (ADR-0008 rule 9)', () => {
     expect(
       assignments.filter(({ value }) => value !== 'font' && !value.startsWith('fontFor(')),
     ).toEqual([]);
+  });
+
+  it('gives every print face a specimen of its own in the about dialog', () => {
+    // The same gap as the manifest one, on the screen side. The dialog is the
+    // visible-attribution surface ADR-0003 requires, and its specimen exists to
+    // prove each bundled face loaded — so a face with no row, or a row with no
+    // rule, renders in whatever `.specimen dd` inherits, which is the chrome's
+    // monospace. That is a print face displayed in the chrome face: a leak, and
+    // a silent one, because the line still looks like type.
+    //
+    // Read from `src/app` by a test under `src/render` on purpose: the boundary
+    // being policed is the quarantine's, not any one directory's.
+    const dialog = read('src/app/about-dialog.ts');
+    const rows = [...dialog.matchAll(/stack:\s*'([a-z-]+)'/g)].map(([, face]) => face ?? '');
+    expect(rows.length, 'FONT_SPECIMEN rows').toBeGreaterThan(0);
+
+    const missingRow = PRINT_FACES.filter((face) => !rows.includes(face));
+    expect(missingRow, 'print faces with no specimen line').toEqual([]);
+
+    // And the rule that actually sets the line in it. `--font-print-<face>` in
+    // the property list is not enough: nothing consumes it without this.
+    const css = read(APP_CSS);
+    const missingRule = PRINT_FACES.filter(
+      (face) => !css.includes(`.specimen dd[data-stack='${face}']`),
+    );
+    expect(missingRule, 'print faces with no specimen rule').toEqual([]);
   });
 
   it('keeps the print surface literal, with no token able to re-theme it', () => {
