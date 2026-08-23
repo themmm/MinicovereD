@@ -123,6 +123,26 @@ describe('how many Pages an Insert folds into', () => {
     }
   });
 
+  it('always folds at least one tracklist Page, whatever the Release has', () => {
+    // The invariant `dropped` rests on: the tracklist is never *lost*, only set
+    // smaller, so it is never in the list of things a collector did not get. If a
+    // Release could ever produce a strip with no tracklist Page on it, that claim
+    // would be false and the warning would be silent about it.
+    for (const hasCredits of [false, true]) {
+      for (const hasBackCover of [false, true]) {
+        for (const trackCount of [0, 1, 12, OVERFLOWS_ONE_PAGE]) {
+          for (const override of [undefined, 2, 4]) {
+            const pages = plan({ hasCredits, hasBackCover, trackCount }, 4, override);
+            expect(
+              pages.filter((role) => role === 'tracklist').length,
+              `${trackCount} tracks, credits ${hasCredits}, back ${hasBackCover}, override ${override}`,
+            ).toBeGreaterThanOrEqual(1);
+          }
+        }
+      }
+    }
+  });
+
   it('counts the tracklist as fitting right up to the last line that does', () => {
     expect(plan({ trackCount: FITS_ONE_PAGE, hasBackCover: true })).toEqual(['cover', 'tracklist']);
     expect(plan({ trackCount: OVERFLOWS_ONE_PAGE, hasBackCover: true })).toHaveLength(4);

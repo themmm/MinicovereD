@@ -204,6 +204,27 @@ describe('SheetPacker — paper and margin', () => {
     expectNoOverlaps(pack(quarters(4), roomy));
   });
 
+  it('counts the caption room a figure needs beneath it, not only the figure', () => {
+    // The calibration sheet reserves room under every outline for its two caption
+    // lines, and a figure that fits the paper but not the paper minus its caption
+    // has to be refused rather than printed with the caption off the page. The
+    // fit rule is shared with `fitsPaper`, so this is also what says that export
+    // reads the caption room.
+    const area = printableArea(A4, 5);
+    const tall: Item = {
+      ref: { releaseId: 'r1', part: 'insert' },
+      label: 'a figure as tall as the bed',
+      // Exactly the printable height, so it fits alone and does not fit with a
+      // caption under it.
+      size: { width: 50, height: area.height },
+    };
+
+    expect(pack([tall], { ...A4_CONFIG, oversize: 'omit' })).toHaveLength(1);
+    expect(
+      packParts([tall], { ...A4_CONFIG, captionRoomMm: 8.8, oversize: 'omit' }).omitted,
+    ).toEqual(['a figure as tall as the bed']);
+  });
+
   it('refuses a Part that cannot fit the printable area at all', () => {
     const huge: Item = {
       ref: { releaseId: 'r1', part: 'insert' },

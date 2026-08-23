@@ -494,6 +494,87 @@ describe('reading a project file with values that would break a render', () => {
     return JSON.stringify(base);
   };
 
+  it('reads a version-1 J-Card block as the Insert’s first four measurements', () => {
+    // Four of the Insert's five are the J-Card's own numbers under a new name —
+    // the same lengths measured off the same case (ADR-0012 keeps all three
+    // panels) — so a v1 collector's nudged J-Card survives the format break
+    // rather than being discarded for the defaults.
+    const text = project((base) => {
+      base['version'] = 1;
+      delete base['measurements'];
+      const designs = base['designs'] as Array<Record<string, unknown>>;
+      (designs[0] as Record<string, unknown>)['dimensions'] = {
+        jcard: { innerFlapWidth: 13, spineWidth: 5, frontPanelWidth: 67, height: 78 },
+        backCard: { width: 68, height: 78 },
+        label: { width: 34.5, height: 52, notch: true, notchSize: 5.5 },
+      };
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.insert).toEqual({
+      innerFlapWidth: 13,
+      spineWidth: 5,
+      frontPanelWidth: 67,
+      // No v1 source for this one — there were no Pages — so it takes the default.
+      pageWidth: 65,
+      height: 78,
+    });
+    // And the Back Card's 69 mm width is deliberately not read: it has no
+    // counterpart on the strip, whose Pages are 65 by the case rather than 69 by
+    // the old rectangle.
+    expect(result.project.measurements.dimensions.insert.pageWidth).toBe(65);
+  });
+
+  it('refuses a Page count a file states that could not be folded', () => {
+    // Even, at least two, at most four — and anything else is *no* override
+    // rather than a clamped one. A file saying 3 did not come from this app, and
+    // guessing which of 2 and 4 it meant would invent a decision.
+    for (const pageCount of [3, 1, 0, -2, 6, 2.5, 'four']) {
+      const text = project((base) => {
+        const designs = base['designs'] as Array<Record<string, unknown>>;
+        (designs[0] as Record<string, unknown>)['pageCount'] = pageCount;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(designsOf(result.project)[0]?.pageCount, `pageCount ${pageCount}`).toBeUndefined();
+    }
+  });
+
+  it('keeps a Page count a file states that could be folded', () => {
+    for (const pageCount of [2, 4]) {
+      const text = project((base) => {
+        const designs = base['designs'] as Array<Record<string, unknown>>;
+        (designs[0] as Record<string, unknown>)['pageCount'] = pageCount;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(designsOf(result.project)[0]?.pageCount).toBe(pageCount);
+    }
+  });
+
+  it('holds the Page width to its own range rather than to any Part’s', () => {
+    // A Page is what makes the strip long — at four Pages every millimetre here
+    // is three on the paper — so it has a floor of 30 and a ceiling of 80 where
+    // the other measurements are clamped to 1–300.
+    for (const [asked, expected] of [
+      [5, 30],
+      [500, 80],
+      [62.5, 62.5],
+    ] as const) {
+      const text = project((base) => {
+        const measurements = base['measurements'] as Record<string, Record<string, Record<string, unknown>>>;
+        measurements['dimensions']!['insert']!['pageWidth'] = asked;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(result.project.measurements.dimensions.insert.pageWidth, `asked ${asked}`).toBe(expected);
+    }
+  });
+
   it('falls back to a safe colour rather than trusting the file', () => {
     const text = project((base) => {
       const designs = base['designs'] as Array<Record<string, Record<string, unknown>>>;

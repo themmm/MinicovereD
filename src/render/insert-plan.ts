@@ -76,25 +76,30 @@ const LARGE_INTERIOR = 3;
  * The tracklist takes whatever the other two leave, and never fewer Pages than
  * it needs to be set at full size. That is what lets a Release with credits and
  * no artwork reach four Pages: the list spreads over two rather than a blank one
- * being folded.
+ * being folded — and it is why the roles always add up to at least `interior`,
+ * so the only thing that can refuse a length is the track count below.
  *
  * Nothing back means "not foldable at this length", which is how the even-Page
  * rule is kept from ever producing a blank sheet the collector did not ask for.
- * The only Page allowed to hold nothing is the tracklist Page every Insert has:
+ * The one Page allowed to hold nothing is the tracklist Page every Insert has:
  * an empty Release's second Page is an empty list, exactly as v1's Back Card was.
  */
 function fillInterior(interior: number, content: InsertContent, needsTwoLists: boolean): PageRole[] | undefined {
   const credits = content.hasCredits ? 1 : 0;
   const back = content.hasBackCover ? 1 : 0;
   const lists = Math.max(needsTwoLists ? 2 : 1, interior - credits - back);
+  // A tracklist Page with no track on it is blank paper, and this is the only
+  // thing that can refuse a length: `lists` is floored at `interior - credits -
+  // back`, so the three roles always sum to `interior` or more.
   if (lists > Math.max(1, content.trackCount)) return undefined;
 
-  const roles: PageRole[] = [
+  return [
     ...Array.from({ length: lists }, (): PageRole => 'tracklist'),
     ...(credits ? (['credits'] as const) : []),
     ...(back ? (['artwork'] as const) : []),
-  ];
-  return roles.length >= interior ? roles.slice(0, interior) : undefined;
+    // Trimmed rather than padded, and the back cover is last, so it is what gives
+    // way when the other two already fill the strip.
+  ].slice(0, interior);
 }
 
 /** Rounded down to something foldable: even, at least two, and inside the cap. */
