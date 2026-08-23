@@ -112,6 +112,25 @@ describe('writing a project file', () => {
   it('carries the artwork inside it, so the file is the whole design', () => {
     expect(write()).toContain('data:image/png;base64,AAAA');
   });
+
+  it('writes the measurements once, beside the Sheet, and inside no design', () => {
+    // Asserted against the JSON rather than against what comes back, because
+    // the reader cannot put `dimensions` on a Design any more — so a writer
+    // still emitting one would round-trip clean and grow every file with a
+    // block nothing reads.
+    const parsed = JSON.parse(write()) as {
+      designs: Array<Record<string, unknown>>;
+      measurements: { dimensions: { label: Record<string, unknown> } };
+    };
+
+    expect(parsed.measurements.dimensions.label).toEqual({
+      width: 36.4,
+      height: 53.1,
+      notch: false,
+      notchSize: 6,
+    });
+    expect(parsed.designs.some((design) => 'dimensions' in design)).toBe(false);
+  });
 });
 
 describe('reading a project file back', () => {
@@ -216,10 +235,9 @@ describe('reading a project file back', () => {
       notch: false,
       notchSize: 6,
     });
-    // Not on the Designs, and there is nowhere left to put it: from version 2
-    // the measurements belong to the project, so two Releases cannot come back
-    // wanting two different stickers.
-    expect(designs.some((each) => 'dimensions' in each)).toBe(false);
+    // One block for two Releases: from version 2 the measurements belong to the
+    // project, so two Releases cannot come back wanting two different stickers.
+    expect(designs).toHaveLength(2);
   });
 
   it('restores a Template’s own parameters', () => {
