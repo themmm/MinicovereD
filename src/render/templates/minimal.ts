@@ -423,6 +423,9 @@ export const MINIMAL_TEMPLATE: Template = {
   id: 'minimal',
   name: 'Minimal',
   description: 'Type only: no artwork, the title as large as it fits, the list on colour.',
+  // No artwork at all, so both of the artwork toggles are unreachable and only
+  // the Spine logo is left to decide about.
+  toggles: ['showLogo'],
   /**
    * One face, in all three roles, and it is the neutral one.
    *

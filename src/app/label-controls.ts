@@ -1,11 +1,19 @@
 import { LABEL_PRESETS, LABEL_SIZE_RANGE, labelPreset } from '../domain/parts.ts';
-import type { LabelDimensions, LabelPresetId } from '../domain/parts.ts';
+import type { LabelDimensions, LabelPreset, LabelPresetId } from '../domain/parts.ts';
 import { el } from './dom.ts';
 
 /**
  * The Label: which preset to start from, how big exactly, and whether to cut
  * the cartridge's diagonal corner. The sources for these numbers disagree, so
  * the preset is a starting point and the calibration sheet is the arbiter.
+ *
+ * These are measurements rather than design, so from v2 they belong to the app
+ * and not to the Release on screen (`Measurements`). Two consequences show up
+ * here. The panel is built once and outlives every selection, which is why it
+ * needs {@link LabelControls.show} — the same shape `createSheetControls` has,
+ * for the same reason: a project arriving from a file changes the numbers from
+ * somewhere else. And a nudge now applies to every Release at once, which is
+ * what the hint says.
  */
 
 interface SizeField {
@@ -21,10 +29,29 @@ const SIZES: readonly SizeField[] = [
 /** Shown once the Label has been nudged away from every preset. */
 const CUSTOM = 'custom';
 
+/** Which preset a set of measurements matches, if any. */
+const presetMatching = (label: LabelDimensions): LabelPreset | undefined =>
+  LABEL_PRESETS.find(
+    (preset) =>
+      preset.dimensions.width === label.width &&
+      preset.dimensions.height === label.height &&
+      preset.dimensions.notch === label.notch,
+  );
+
+export interface LabelControls {
+  readonly element: HTMLElement;
+  /**
+   * Show measurements that changed somewhere else — an opened project, or this
+   * browser's restored work. Setting a field's value fires no event, so this
+   * cannot loop back through `onChange`.
+   */
+  show(label: LabelDimensions): void;
+}
+
 export function createLabelControls(
   initial: LabelDimensions,
   onChange: (dimensions: LabelDimensions) => void,
-): HTMLElement {
+): LabelControls {
   let dimensions = initial;
 
   const inputs = new Map<SizeField['key'], HTMLInputElement>();
@@ -33,15 +60,18 @@ export function createLabelControls(
   });
   const provenance = el('span', { class: 'field__note', text: '' });
 
-  const apply = (next: LabelDimensions, syncInputs: boolean): void => {
-    dimensions = next;
-    if (syncInputs) {
-      for (const field of SIZES) {
-        const input = inputs.get(field.key);
-        if (input) input.value = String(next[field.key]);
-      }
-      notch.checked = next.notch;
+  /** Puts the numbers on screen, without saying who changed them. */
+  const syncInputs = (next: LabelDimensions): void => {
+    for (const field of SIZES) {
+      const input = inputs.get(field.key);
+      if (input) input.value = String(next[field.key]);
     }
+    notch.checked = next.notch;
+  };
+
+  const apply = (next: LabelDimensions, sync: boolean): void => {
+    dimensions = next;
+    if (sync) syncInputs(next);
     onChange(dimensions);
   };
 
@@ -61,12 +91,7 @@ export function createLabelControls(
   const custom = el('option', { text: 'Custom', attrs: { value: CUSTOM } });
   // A Label that has been nudged is no longer any preset, so the picker starts
   // on whichever one it currently matches, or on nothing.
-  const matching = LABEL_PRESETS.find(
-    (preset) =>
-      preset.dimensions.width === initial.width &&
-      preset.dimensions.height === initial.height &&
-      preset.dimensions.notch === initial.notch,
-  );
+  const matching = presetMatching(initial);
   for (const preset of LABEL_PRESETS) {
     const option = el('option', { text: preset.name, attrs: { value: preset.id } });
     option.selected = preset.id === matching?.id;
@@ -128,13 +153,15 @@ export function createLabelControls(
     apply({ ...dimensions, notch: notch.checked }, false);
   });
 
-  return el(
+  const element = el(
     'section',
     { class: 'panel' },
     el('h2', { class: 'panel__title', text: 'Label' }),
     el('p', {
       class: 'panel__hint',
-      text: 'Start from a preset, then nudge it until it fits your cartridges. Print the calibration sheet to check.',
+      text:
+        'Your cartridges, not this Release: one size for every Release in the queue. Start from a ' +
+        'preset, nudge it until it fits, and print the calibration sheet to check.',
     }),
     el(
       'label',
@@ -155,4 +182,15 @@ export function createLabelControls(
       ),
     ),
   );
+
+  return {
+    element,
+    show(label) {
+      dimensions = label;
+      syncInputs(label);
+      const preset = presetMatching(label);
+      picker.value = preset?.id ?? CUSTOM;
+      provenance.textContent = preset?.provenance ?? 'Adjusted from a preset.';
+    },
+  };
 }

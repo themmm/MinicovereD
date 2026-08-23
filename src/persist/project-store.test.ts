@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { A4 } from '../domain/paper.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
 import { readyEntry } from '../queue/release-queue.ts';
-import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
+import { DEFAULT_DESIGN_CHOICE } from '../render/sheet-renderer.ts';
 import type { Project } from './project-file.ts';
 import { debounceSave } from './project-store.ts';
 import type { ProjectStore } from './project-store.ts';
@@ -11,13 +12,12 @@ import type { ProjectStore } from './project-store.ts';
 const projectFor = (album: string): Project => ({
   entries: [
     readyEntry({
+      ...DEFAULT_DESIGN_CHOICE,
       release: { id: 'r1', artist: 'Glen Campbell', album, tracks: [] },
-      templateId: 'classic',
-      params: DEFAULT_TEMPLATE_PARAMS,
-      dimensions: DEFAULT_PART_DIMENSIONS,
     }),
   ],
   sheet: { paper: A4, marginMm: 5, parts: PART_KINDS },
+  measurements: DEFAULT_MEASUREMENTS,
 });
 
 function recordingStore(behaviour: { failWith?: Error } = {}): ProjectStore & {

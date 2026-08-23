@@ -1,8 +1,10 @@
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { PART_KINDS } from '../domain/parts.ts';
 import type { LabelDimensions } from '../domain/parts.ts';
 import { blankRelease } from '../domain/release.ts';
 import type { Credits, Release } from '../domain/release.ts';
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
+import type { Measurements } from '../domain/measurements.ts';
 import { errorMessage } from '../errors.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
@@ -21,9 +23,9 @@ import type { QueueEntry } from '../queue/release-queue.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
 import { EXPORT_DPI } from '../render/raster.ts';
 import { createCanvasTextMeasurer, fontsReady, onFontsLoaded } from '../render/canvas-text-measurer.ts';
-import { DEFAULT_TEMPLATE_PARAMS, renderSheets } from '../render/sheet-renderer.ts';
-import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
-import { createDesignControls } from './design-controls.ts';
+import { DEFAULT_DESIGN_CHOICE, renderSheets } from '../render/sheet-renderer.ts';
+import type { DesignChoice, ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
+import { createDesignControls, describeDesign } from './design-controls.ts';
 import { clear, el } from './dom.ts';
 import { createEmptyState } from './empty-state.ts';
 import { createFold } from './fold.ts';
@@ -56,13 +58,6 @@ import { createSheetPreview, PREVIEW_DPI } from './sheet-preview.ts';
 /** Long enough that typing does not write on every keystroke, short enough to survive a reload. */
 const AUTOSAVE_DELAY_MS = 600;
 
-/** What a Release is designed with until the collector changes any of it. */
-const DEFAULT_DESIGN = {
-  templateId: 'classic',
-  params: DEFAULT_TEMPLATE_PARAMS,
-  dimensions: DEFAULT_PART_DIMENSIONS,
-} as const satisfies Omit<ReleaseDesign, 'release'>;
-
 export interface Workspace {
   /** The search form. Lives in the header, because it is the entry point. */
   readonly find: HTMLElement;
@@ -84,10 +79,39 @@ export function createWorkspace(): Workspace {
     marginMm: DEFAULT_PRINTABLE_MARGIN_MM,
     parts: PART_KINDS,
   };
+  /**
+   * The collector's measurements. One set for the whole Queue, because they
+   * describe the cartridges rather than any record on it (`Measurements`).
+   */
+  let measurements: Measurements = DEFAULT_MEASUREMENTS;
 
-  const project = (): Project => ({ entries: queue, sheet: sheetConfig });
+  /**
+   * What the next Release to arrive will wear, whichever way it arrives.
+   *
+   * Kept here rather than read off the selection at each of the three arrival
+   * points, because the selection can be nothing: a collector who removes the
+   * last Release in the Queue has not thereby changed their mind about
+   * Full-bleed on black, and the next one they add should not come back plain.
+   * `refresh` is the only writer — see `rememberDesign`.
+   */
+  let carried: DesignChoice = DEFAULT_DESIGN_CHOICE;
+
+  const project = (): Project => ({ entries: queue, sheet: sheetConfig, measurements });
   const selected = (): QueueEntry | undefined =>
     queue.find((entry) => entry.design.release.id === selectedId) ?? queue[0];
+
+  /** The Label in words: the fold's summary, and the sentence an import reports. */
+  const describeLabel = (label: LabelDimensions): string =>
+    `${label.width} × ${label.height} mm · ${
+      label.notch ? `${label.notchSize} mm notch` : 'square corner'
+    }`;
+
+  /** Whether two Labels would be cut to the same rectangle, notch included. */
+  const sameLabel = (a: LabelDimensions, b: LabelDimensions): boolean =>
+    a.width === b.width &&
+    a.height === b.height &&
+    a.notch === b.notch &&
+    a.notchSize === b.notchSize;
 
   const measure = createCanvasTextMeasurer();
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
@@ -103,7 +127,7 @@ export function createWorkspace(): Workspace {
         // trusting anything else this app produced.
         const { layouts } = renderCalibrationSheet(
           { paper: sheetConfig.paper, marginMm: sheetConfig.marginMm },
-          selected()?.design.dimensions ?? DEFAULT_PART_DIMENSIONS,
+          measurements.dimensions,
           measure,
         );
         preview.show(layouts, 'minicovered-calibration.pdf');
@@ -125,16 +149,27 @@ export function createWorkspace(): Workspace {
       projectControls.report(refused);
       return;
     }
+    // Read before the file overwrites it: what changes has to be said, and
+    // afterwards there is nothing left to compare against.
+    const previousLabel = measurements.dimensions.label;
     applyProject(imported);
-    projectControls.report(
+
+    const opened =
       imported.entries.length === 0
         ? // A readable file can still hold no Releases. Saying "your work has
           // been replaced" when nothing was is the one thing not to do here.
           'That project had no Releases in it, so your queue is untouched. Its Sheet settings were applied.'
         : `Opened ${imported.entries.length} ${
             imported.entries.length === 1 ? 'Release' : 'Releases'
-          }. Your previous work has been replaced.`,
-    );
+          }. Your previous work has been replaced.`;
+    // A project file carries the measurements and they are applied (see
+    // `applyProject`), which means opening somebody else's file can change the
+    // size of every Label this collector prints. Said out loud when it happens,
+    // and silent when it does not, so the sentence is worth reading.
+    const labelChange = sameLabel(previousLabel, measurements.dimensions.label)
+      ? ''
+      : ` Its Label measurements came with it: ${describeLabel(measurements.dimensions.label)}.`;
+    projectControls.report(`${opened}${labelChange}`);
   });
 
   const saveSoon = debounceSave(store, AUTOSAVE_DELAY_MS, (error) => {
@@ -191,8 +226,15 @@ export function createWorkspace(): Workspace {
    */
   const metadataFold = createFold({ index: '01', title: 'Metadata' });
   const designFold = createFold({ index: '02', title: 'Design' });
+  /**
+   * The measurements, which are not a view of the selected Release and so are
+   * built once and never refilled. Between Design and the Sheet check because
+   * that is the order the paper goes through: what the record looks like, how
+   * big it is cut, what it is printed on.
+   */
+  const measurementsFold = createFold({ index: '03', title: 'Measurements' });
   const outputFold = createFold(
-    { index: '03', title: 'Sheet check & output' },
+    { index: '04', title: 'Sheet check & output' },
     preview.element,
     el('div', { class: 'output__controls' }),
   );
@@ -200,7 +242,22 @@ export function createWorkspace(): Workspace {
 
   preview.onSummary((summary) => outputFold.setSummary(summary));
 
-  const folds = el('div', { class: 'folds' }, metadataFold.element, designFold.element, outputFold.element);
+  const labelControls = createLabelControls(measurements.dimensions.label, (label: LabelDimensions) => {
+    // Every Release at once, which is the whole point: a cartridge is a
+    // cartridge whatever is printed on it.
+    measurements = { ...measurements, dimensions: { ...measurements.dimensions, label } };
+    changed();
+  });
+  measurementsFold.body.appendChild(labelControls.element);
+
+  const folds = el(
+    'div',
+    { class: 'folds' },
+    metadataFold.element,
+    designFold.element,
+    measurementsFold.element,
+    outputFold.element,
+  );
   /**
    * The end of the page: the two things that put ink on paper, the two that move
    * a project, and the sentence that says the preview and the print are one
@@ -240,6 +297,7 @@ export function createWorkspace(): Workspace {
   function refresh(): void {
     queuePanel.show(queue, selectedId);
     const entry = selected();
+    rememberDesign(entry);
     showHero(entry);
     showSummaries(entry);
     // The result list stays open after a pick, so it has to say which of its
@@ -247,17 +305,31 @@ export function createWorkspace(): Workspace {
     // wrong pressing is a guess about what was picked the first time.
     search.markInUse(entry?.design.release.id ?? '');
     try {
-      const sheets = renderSheets(queueDesigns(queue), sheetConfig, measure);
+      const sheets = renderSheets(queueDesigns(queue), sheetConfig, measurements.dimensions, measure);
       preview.show(
         sheets,
         fileNameFor(queue),
         queue.length === 0 ? 'No Sheets yet — start with a Release.' : undefined,
       );
-      partBand.show(sheets, entry);
+      partBand.show(sheets, entry, measurements.dimensions);
     } catch (error) {
       preview.showProblem(errorMessage(error));
-      partBand.show([], undefined);
+      partBand.show([], undefined, measurements.dimensions);
     }
+  }
+
+  /**
+   * The design the next arrival wears, taken from the Release on screen.
+   *
+   * One writer, called from `refresh`, which runs after every change and every
+   * selection — so "the last Release touched" is whatever was last looked at or
+   * edited, and it survives that Release being removed. New Entries are built
+   * before the refresh that follows them, so they read the previous value and
+   * then set it to their own, which is the same value.
+   */
+  function rememberDesign(entry: QueueEntry | undefined): void {
+    if (!entry) return;
+    carried = { templateId: entry.design.templateId, params: entry.design.params };
   }
 
   /**
@@ -270,17 +342,20 @@ export function createWorkspace(): Workspace {
    * than no summary at all, because it is read as current.
    */
   function showSummaries(entry: QueueEntry | undefined): void {
+    // The Label is in its own fold now, and its summary is not about the
+    // selected Release, so it is set whether or not there is one.
+    const { label } = measurements.dimensions;
+    measurementsFold.setSummary(`Label ${describeLabel(label)} · every Release`);
+
     if (!entry) return;
-    const { release, templateId, dimensions } = entry.design;
+    const { release } = entry.design;
     const named = [release.artist, release.album].filter(Boolean).join(' — ');
     metadataFold.setSummary(
       `${named || 'nothing filled in yet'} · ${release.tracks.length} ${
         release.tracks.length === 1 ? 'track' : 'tracks'
       }${release.credits ? ' · credits' : ''}`,
     );
-    designFold.setSummary(
-      `Template ${templateId} · Label ${dimensions.label.width} × ${dimensions.label.height} mm`,
-    );
+    designFold.setSummary(describeDesign(entry.design));
   }
 
   /** The hero follows every keystroke, because it is showing what is being typed. */
@@ -328,7 +403,7 @@ export function createWorkspace(): Workspace {
    */
   function startReleaseByHand(): void {
     const release = blankRelease();
-    queue = addToQueue(queue, readyEntry({ ...DEFAULT_DESIGN, release }));
+    queue = addToQueue(queue, readyEntry({ ...carried, release }));
     selectedId = release.id;
     selectionChanged();
     // The form is the whole point of pressing the button, and it is now behind
@@ -408,10 +483,9 @@ export function createWorkspace(): Workspace {
     metadata,
     (found) => {
       // A looked-up Release joins the queue and becomes the one being edited,
-      // keeping the design settings of whichever Release was on screen, so a
-      // second lookup matches the first rather than reverting to plain.
-      const settings = selected()?.design ?? DEFAULT_DESIGN;
-      queue = addToQueue(queue, readyEntry({ ...settings, release: found }));
+      // wearing what the last Release touched wore — the same rule a Batch and
+      // a mixtape now follow, where v1 gave those two plain Classic on white.
+      queue = addToQueue(queue, readyEntry({ ...carried, release: found }));
       selectedId = found.id;
       selectionChanged();
       requestCredits(found);
@@ -437,6 +511,7 @@ export function createWorkspace(): Workspace {
       // and it needs what actually joined the queue, not what was looked up.
       return added;
     },
+    () => carried,
   );
 
   /**
@@ -508,21 +583,27 @@ export function createWorkspace(): Workspace {
       },
     );
 
-    const labelControls = createLabelControls(design.dimensions.label, (label: LabelDimensions) => {
-      updateSelected((current) => ({
-        ...current,
-        dimensions: { ...current.dimensions, label },
-      }));
-    });
-
     metadataFold.body.appendChild(form.element);
-    designFold.body.append(designControls, labelControls);
+    designFold.body.appendChild(designControls);
     // No summaries here: `refresh` sets them on every change, and every caller
     // of this function refreshes straight afterwards.
     // No `queuePanel.show` here: every caller refreshes straight afterwards,
     // and rendering the list twice destroys the focus in it twice.
   }
 
+  /**
+   * A whole project taking the place of what is on screen — this browser's
+   * restored work, or a file the collector opened.
+   *
+   * The measurements come with it and are applied, which is deliberate and is
+   * the surprising half. A project file is the one thing that leaves this
+   * browser (ADR-0001), so opening somebody else's rewrites the Label size the
+   * collector set for their own cartridges. Applied anyway, for two reasons:
+   * paper and printable margin have arrived this way and been applied since v1,
+   * and splitting the rule would mean a file that reproduces half of its own
+   * design. What the import must not do is apply them *quietly* — see the
+   * sentence `importReport` builds.
+   */
   function applyProject(next: Project): void {
     if (next.entries.length > 0) {
       // Entries, not designs: an entry that still needs completing by hand
@@ -533,8 +614,11 @@ export function createWorkspace(): Workspace {
     }
     sheetConfig = next.sheet;
     sheetControls.show(sheetConfig);
+    measurements = next.measurements;
+    labelControls.show(measurements.dimensions.label);
     selectionChanged();
   }
+
 
   // A reload leaves at most one debounce window of work unwritten; asking for
   // it on the way out closes that.

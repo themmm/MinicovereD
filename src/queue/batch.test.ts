@@ -5,8 +5,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { Clock, HttpClient, HttpResponse } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
+import type { MetadataAdapter } from '../metadata/metadata-adapter.ts';
+import { DEFAULT_DESIGN_CHOICE } from '../render/sheet-renderer.ts';
+import type { DesignChoice } from '../render/sheet-renderer.ts';
 import { resolveBatchIntoQueue } from './batch.ts';
-import type { BatchRequest } from './batch.ts';
+import type { BatchProgress, BatchRequest } from './batch.ts';
+import type { QueueEntry } from './release-queue.ts';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '..', 'metadata', '__fixtures__');
 const fixture = (name: string): string => readFileSync(join(fixtures, name), 'utf8');
@@ -70,13 +74,27 @@ const requests = (...queries: Array<[string, string]>): BatchRequest[] =>
 const titles = (...names: readonly string[]): BatchRequest[] =>
   names.map((text) => ({ id: `batch-${text}`, query: { kind: 'text', text } }));
 
+/**
+ * `resolveBatchIntoQueue` on the design a first-ever Batch would carry.
+ *
+ * The design moved in front of the progress callback when it stopped being
+ * hard-coded here, and only the test below is about it — the rest are about
+ * what a lookup does, and say nothing about how the Entry is dressed.
+ */
+const resolveBatch = (
+  adapter: MetadataAdapter,
+  requests: readonly BatchRequest[],
+  onProgress: (progress: BatchProgress) => void,
+  design: DesignChoice = DEFAULT_DESIGN_CHOICE,
+): Promise<QueueEntry[]> => resolveBatchIntoQueue(adapter, requests, design, onProgress);
+
 describe('resolving a batch into the queue', () => {
   it('resolves every entry and reports progress as it goes', async () => {
     const http = recordedHttp();
     const adapter = createMetadataAdapter({ http, clock: testClock() });
     const progress: Array<{ done: number; total: number }> = [];
 
-    const entries = await resolveBatchIntoQueue(
+    const entries = await resolveBatch(
       adapter,
       requests(['Daft Punk', 'Discovery'], ['Daft Punk', 'Homework'], ['Daft Punk', 'Human After All']),
       (update) => progress.push({ done: update.done, total: update.total }),
@@ -92,7 +110,7 @@ describe('resolving a batch into the queue', () => {
     const http = recordedHttp(['No Such Album Xyzzy']);
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 
-    const entries = await resolveBatchIntoQueue(
+    const entries = await resolveBatch(
       adapter,
       requests(
         ['Daft Punk', 'Discovery'],
@@ -114,7 +132,7 @@ describe('resolving a batch into the queue', () => {
     const http = recordedHttp(['Not A Real Album']);
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 
-    const entries = await resolveBatchIntoQueue(
+    const entries = await resolveBatch(
       adapter,
       requests(
         ['Daft Punk', 'Discovery'],
@@ -136,7 +154,7 @@ describe('resolving a batch into the queue', () => {
     const clock = testClock();
     const adapter = createMetadataAdapter({ http, clock });
 
-    await resolveBatchIntoQueue(
+    await resolveBatch(
       adapter,
       requests(['Daft Punk', 'Discovery'], ['Daft Punk', 'Homework']),
       () => {},
@@ -152,7 +170,7 @@ describe('resolving a batch into the queue', () => {
     const http = recordedHttp(['Missing One', 'Missing Two']);
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 
-    const entries = await resolveBatchIntoQueue(
+    const entries = await resolveBatch(
       adapter,
       requests(['Nobody', 'Missing One'], ['Nobody', 'Missing Two']),
       () => {},
@@ -167,7 +185,7 @@ describe('resolving a batch into the queue', () => {
     const adapter = createMetadataAdapter({ http, clock: testClock() });
     const seen: string[] = [];
 
-    await resolveBatchIntoQueue(
+    await resolveBatch(
       adapter,
       requests(['Daft Punk', 'Discovery'], ['Daft Punk', 'Homework']),
       (update) => {
@@ -188,7 +206,7 @@ describe('a request that named no artist', () => {
     const http = recordedHttp();
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 
-    await resolveBatchIntoQueue(adapter, titles('Loveless'), () => {});
+    await resolveBatch(adapter, titles('Loveless'), () => {});
 
     expect(http.urls[0]).toContain('query=%22Loveless%22');
     expect(http.urls[0]).not.toContain('artist');
@@ -198,7 +216,7 @@ describe('a request that named no artist', () => {
     const http = recordedHttp(['Loveless']);
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 
-    const [entry] = await resolveBatchIntoQueue(adapter, titles('Loveless'), () => {});
+    const [entry] = await resolveBatch(adapter, titles('Loveless'), () => {});
 
     // The card the collector completes by hand has the title where a title
     // goes, so all that is left to type is the artist.
@@ -212,10 +230,67 @@ describe('a request that named no artist', () => {
     const adapter = createMetadataAdapter({ http, clock: testClock() });
     const seen: string[] = [];
 
-    await resolveBatchIntoQueue(adapter, titles('Loveless'), (update) => {
+    await resolveBatch(adapter, titles('Loveless'), (update) => {
       if (update.current) seen.push(update.current);
     });
 
     expect(seen).toContain('Loveless');
+  });
+});
+
+describe('the design a Batch dresses its Entries in', () => {
+  /** Nothing a default would produce: a different Template and a different ground. */
+  const chosen: DesignChoice = {
+    templateId: 'minimal',
+    params: { ...DEFAULT_DESIGN_CHOICE.params, paperColor: '#101820', showLogo: false },
+  };
+
+  it('gives every Entry the design it was handed, found and not found alike', async () => {
+    // The asymmetry ticket 06 removes, at this end of it: for the whole of v1
+    // a Batch produced plain Classic on white however the Queue on screen was
+    // set, so pasting a shelf undid the design the collector had just chosen.
+    const http = recordedHttp(['Nope']);
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    const entries = await resolveBatch(
+      adapter,
+      [...requests(['Daft Punk', 'Discovery']), ...titles('Nope')],
+      () => {},
+      chosen,
+    );
+
+    // One of each, so a rule that only reached the successful path would show.
+    expect(entries.map((entry) => entry.status)).toEqual(['ready', 'failed']);
+    for (const entry of entries) {
+      expect(entry.design.templateId, entry.design.release.album).toBe('minimal');
+      expect(entry.design.params.paperColor, entry.design.release.album).toBe('#101820');
+      expect(entry.design.params.showLogo, entry.design.release.album).toBe(false);
+    }
+  });
+
+  it('gives an Entry whose lookup threw the same design as the rest', async () => {
+    // The third path out of the loop, and the one nothing else here covers: a
+    // search that fails outright is caught rather than searched-and-empty.
+    const http: HttpClient = {
+      get: () => Promise.reject(new Error('the network went away')),
+    };
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    const [entry] = await resolveBatch(adapter, titles('Anything'), () => {}, chosen);
+
+    expect(entry?.status).toBe('failed');
+    expect(entry?.error).toContain('the network went away');
+    expect(entry?.design.templateId).toBe('minimal');
+  });
+
+  it('does not carry a Release from one Entry into another', async () => {
+    // Spreading a shared design object is how a Release could be shared too, if
+    // the design ever grew one. Two Entries, two Releases.
+    const http = recordedHttp(['One', 'Two']);
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    const entries = await resolveBatch(adapter, titles('One', 'Two'), () => {}, chosen);
+
+    expect(entries.map((entry) => entry.design.release.album)).toEqual(['One', 'Two']);
   });
 });

@@ -191,6 +191,10 @@ export const CLASSIC_TEMPLATE: Template = {
   id: 'classic',
   name: 'Classic',
   description: 'Artwork to three edges, type on paper below, tracklist on colour.',
+  // The Front Panel is the only place either of these reaches: the square at
+  // `classic.ts` artworkRect, the logo in the column beside the title. Type
+  // here is never drawn over artwork, which is what `showOverlayText` governs.
+  toggles: ['showLogo', 'insetArtwork'],
   /**
    * A book: a serif over the artwork, a humanist for the reading, and the
    * narrow grotesque on the Spine where every character costs width.

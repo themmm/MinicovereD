@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
+import type { Measurements } from '../domain/measurements.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig } from '../render/sheet-renderer.ts';
@@ -38,43 +40,77 @@ const design: ReleaseDesign = {
   },
   templateId: 'fullbleed',
   params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
+};
+
+const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['jcard', 'label'] };
+
+/** A collector who has nudged their Label away from both presets. */
+const measurements: Measurements = {
   dimensions: {
     ...DEFAULT_PART_DIMENSIONS,
     label: { width: 36.4, height: 53.1, notch: false, notchSize: 6 },
   },
 };
 
-const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['jcard', 'label'] };
-
 /** A Release the lookup never found: what was typed, and nothing else. */
 const design2: ReleaseDesign = {
   release: { id: 'r2', artist: 'Zzzqqxx Nonexistent', album: 'No Such Album', tracks: [] },
   templateId: 'classic',
   params: DEFAULT_TEMPLATE_PARAMS,
-  dimensions: DEFAULT_PART_DIMENSIONS,
 };
+
+/**
+ * A version-1 project document, as v1.0 wrote one.
+ *
+ * Built by hand rather than recorded, because the app can no longer produce
+ * one: the measurements sit inside each design, `insetArtwork` is absent
+ * because the parameter did not exist, and there is no `settings` block. Every
+ * difference from a version-2 file is a thing the reader has to migrate, so
+ * they are all stated here rather than derived from what this build writes.
+ */
+const versionOneFile = (
+  labels: ReadonlyArray<Record<string, unknown> | undefined> = [
+    { width: 34.6, height: 52.4, notch: true, notchSize: 5 },
+  ],
+): Record<string, unknown> => ({
+  format: PROJECT_FORMAT,
+  version: 1,
+  designs: labels.map((label, index) => ({
+    release: { id: `r${index + 1}`, artist: 'Glen Campbell', album: 'Wichita Lineman', tracks: [] },
+    templateId: 'classic',
+    params: { paperColor: '#ffffff', inkColor: '#141414', accentColor: '#1f2933', showLogo: true },
+    ...(label ? { dimensions: { ...DEFAULT_PART_DIMENSIONS, label } } : {}),
+  })),
+  sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+});
 
 /** Most of these tests care about the designs, not which entry carries them. */
 const designsOf = (project: Project): ReleaseDesign[] =>
   project.entries.map((entry) => entry.design);
 
-const roundTrip = (designs = [design], config = sheet) => {
-  const text = writeProjectFile(designs.map(readyEntry), config);
-  const result = readProjectFile(text);
+/** Writing a project, for the tests that are not about how one is assembled. */
+const write = (
+  entries = [readyEntry(design)],
+  config = sheet,
+  nudged = measurements,
+): string => writeProjectFile({ entries, sheet: config, measurements: nudged });
+
+const roundTrip = (designs = [design], config = sheet, nudged = measurements) => {
+  const result = readProjectFile(write(designs.map(readyEntry), config, nudged));
   if (!result.ok) throw new Error(`expected a valid project file, got: ${result.error}`);
   return { ...result.project, designs: designsOf(result.project) };
 };
 
 describe('writing a project file', () => {
   it('is JSON that says what it is and which version it is', () => {
-    const parsed = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as Record<string, unknown>;
+    const parsed = JSON.parse(write()) as Record<string, unknown>;
 
     expect(parsed['format']).toBe(PROJECT_FORMAT);
     expect(parsed['version']).toBe(PROJECT_VERSION);
   });
 
   it('carries the artwork inside it, so the file is the whole design', () => {
-    expect(writeProjectFile([readyEntry(design)], sheet)).toContain('data:image/png;base64,AAAA');
+    expect(write()).toContain('data:image/png;base64,AAAA');
   });
 });
 
@@ -102,7 +138,7 @@ describe('reading a project file back', () => {
   });
 
   it('refuses a playing time that is not one', () => {
-    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
+    const written = JSON.parse(write()) as {
       designs: Array<{ release: { tracks: Array<Record<string, unknown>> } }>;
     };
     const tracks = written.designs[0]?.release.tracks ?? [];
@@ -119,20 +155,36 @@ describe('reading a project file back', () => {
   });
 
   it('reopens a design saved before the artwork could bleed as the square it was', () => {
-    // v1 and v1.1 files both carry version 1, so the version cannot separate
-    // them — but every v1.1 file states `insetArtwork`, so only a v1 file omits
-    // it. Reading the absence as "square" is what makes a saved project
-    // reproduce its own design across the change.
-    const written = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as {
-      designs: Array<{ params: Record<string, unknown> }>;
-    };
-    delete written.designs[0]?.params['insetArtwork'];
-
-    const result = readProjectFile(JSON.stringify(written));
+    // v1.0 and v1.1 files both carry version 1, so the version cannot separate
+    // those two — but every v1.1 file states `insetArtwork`, so only a v1.0 file
+    // omits it. Inside version 1, reading the absence as "square" is what makes
+    // a saved project reproduce its own design across the change.
+    const result = readProjectFile(JSON.stringify(versionOneFile()));
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
     expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(true);
+  });
+
+  it('gives a version-2 file that omits the same key the default instead', () => {
+    // The tell above is a v1.0 convention and does not travel forward. This app
+    // writes the key into every version-2 file, so a version-2 file without one
+    // was written by something else and states nothing about a square — and
+    // guessing "square" for it would be reading a convention into a document
+    // that predates nothing.
+    const written = JSON.parse(write()) as {
+      version: number;
+      designs: Array<{ params: Record<string, unknown> }>;
+    };
+    expect(written.version).toBe(2);
+    delete written.designs[0]?.params['insetArtwork'];
+
+    const result = readProjectFile(JSON.stringify(written));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(
+      DEFAULT_TEMPLATE_PARAMS.insetArtwork,
+    );
   });
 
   it('keeps a bleeding Front Panel bleeding, which the fallback must not overrule', () => {
@@ -140,7 +192,7 @@ describe('reading a project file back', () => {
     // and a fallback of `true` reached by `??` rather than by a type check
     // would swallow it.
     const bleeding = { ...design, params: { ...design.params, insetArtwork: false } };
-    const result = readProjectFile(writeProjectFile([readyEntry(bleeding)], sheet));
+    const result = readProjectFile(write([readyEntry(bleeding)]));
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
@@ -155,15 +207,24 @@ describe('reading a project file back', () => {
     expect(restored.parts).toEqual(['jcard', 'label']);
   });
 
-  it('restores an adjusted Label and a Template’s own parameters', () => {
-    const { designs } = roundTrip();
+  it('restores an adjusted Label, once, for the whole project', () => {
+    const { measurements: restored, designs } = roundTrip([design, design2]);
 
-    expect(designs[0]?.dimensions.label).toEqual({
+    expect(restored.dimensions.label).toEqual({
       width: 36.4,
       height: 53.1,
       notch: false,
       notchSize: 6,
     });
+    // Not on the Designs, and there is nowhere left to put it: from version 2
+    // the measurements belong to the project, so two Releases cannot come back
+    // wanting two different stickers.
+    expect(designs.some((each) => 'dimensions' in each)).toBe(false);
+  });
+
+  it('restores a Template’s own parameters', () => {
+    const { designs } = roundTrip();
+
     expect(designs[0]?.templateId).toBe('fullbleed');
     expect(designs[0]?.params.accentColor).toBe('#7c2d12');
     expect(designs[0]?.params.showLogo).toBe(false);
@@ -191,7 +252,7 @@ describe('reading a project file back', () => {
 
 describe('an entry that still needs completing by hand', () => {
   it('comes back still flagged, because that flag is the collector’s to-do list', () => {
-    const text = writeProjectFile([readyEntry(design), unfinishedEntry(design2)], sheet);
+    const text = write([readyEntry(design), unfinishedEntry(design2)]);
     const result = readProjectFile(text);
 
     if (!result.ok) throw new Error(result.error);
@@ -200,18 +261,18 @@ describe('an entry that still needs completing by hand', () => {
 
   it('does not carry the reason across, which was true of one moment only', () => {
     const failed = { ...unfinishedEntry(design2), error: 'Nothing on MusicBrainz matched.' };
-    const result = readProjectFile(writeProjectFile([failed], sheet));
+    const result = readProjectFile(write([failed]));
 
     if (!result.ok) throw new Error(result.error);
     // Tomorrow the network is fine and the album may well be there. A stale
     // cause shown as a current one is worse than none.
     expect(result.project.entries[0]?.status).toBe('failed');
     expect(result.project.entries[0]?.error).toBeUndefined();
-    expect(writeProjectFile([failed], sheet)).not.toContain('MusicBrainz');
+    expect(write([failed])).not.toContain('MusicBrainz');
   });
 
   it('writes nothing extra for an ordinary Release', () => {
-    expect(writeProjectFile([readyEntry(design)], sheet)).not.toContain('needsCompleting');
+    expect(write()).not.toContain('needsCompleting');
   });
 
   it('reads a project written before the flag existed as work that is finished', () => {
@@ -241,6 +302,51 @@ describe('reading a project file that is not one', () => {
 
   it('says so when the JSON is not a project file', () => {
     expect(failure(JSON.stringify({ hello: 'world' }))).toMatch(/minicovered project/i);
+  });
+
+  it('takes a version-1 project’s Part sizes as the whole project’s measurements', () => {
+    // v1 kept them inside each Design. There is one place for them now, and a
+    // collector who nudged their Label to 34.6 × 52.4 must not reopen tomorrow
+    // to find 35 × 52.5 — a second silent loss of saved work would be a pattern
+    // rather than an accident (ADR-0012).
+    const result = readProjectFile(JSON.stringify(versionOneFile()));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.label).toEqual({
+      width: 34.6,
+      height: 52.4,
+      notch: true,
+      notchSize: 5,
+    });
+  });
+
+  it('collapses a version-1 project whose Releases disagree onto the first of them', () => {
+    // Which really happens: v1's Label control wrote to the selected Release
+    // and to nothing else, so a v1 project can hold three Labels at three
+    // sizes. There is no shape left to express that in — that being the point
+    // of the version — and the first Release is the one selected after an
+    // import, so it is the one whose measurements the collector can see.
+    const result = readProjectFile(
+      JSON.stringify(
+        versionOneFile([
+          undefined,
+          { width: 34.6, height: 52.4, notch: true, notchSize: 5 },
+          { width: 38, height: 54, notch: false, notchSize: 6 },
+        ]),
+      ),
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    // The first Release states nothing, so the first that states anything wins
+    // — an absent block is not a measurement of zero.
+    expect(result.project.measurements.dimensions.label.width).toBe(34.6);
+  });
+
+  it('falls back to the defaults for a version-1 project that never stated any', () => {
+    const result = readProjectFile(JSON.stringify(versionOneFile([undefined, undefined])));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements).toEqual(DEFAULT_MEASUREMENTS);
   });
 
   it('says so when the file comes from a newer version', () => {
@@ -290,7 +396,7 @@ describe('reading a project file that is not one', () => {
   });
 
   it('says so when the file is truncated mid-write', () => {
-    const whole = writeProjectFile([readyEntry(design)], sheet);
+    const whole = write();
 
     expect(failure(whole.slice(0, Math.floor(whole.length / 2)))).toMatch(/could not be read|json/i);
   });
@@ -309,7 +415,7 @@ describe('reading a project file that is not one', () => {
 
 describe('reading a project file with values that would break a render', () => {
   const project = (patch: (base: Record<string, unknown>) => void): string => {
-    const base = JSON.parse(writeProjectFile([readyEntry(design)], sheet)) as Record<string, unknown>;
+    const base = JSON.parse(write()) as Record<string, unknown>;
     patch(base);
     return JSON.stringify(base);
   };
@@ -409,20 +515,16 @@ describe('reading a project file built to break things', () => {
     const result = read({
       format: PROJECT_FORMAT,
       version: PROJECT_VERSION,
-      designs: [
-        {
-          release: { id: 'r1', tracks: [{ position: 'first', title: 'One' }] },
-          dimensions: { label: { width: null, height: 'tall', notch: 'yes', notchSize: -3 } },
-        },
-      ],
+      designs: [{ release: { id: 'r1', tracks: [{ position: 'first', title: 'One' }] } }],
       sheet: { paperId: 'a4', marginMm: 'wide', parts: PART_KINDS },
+      measurements: { dimensions: { label: { width: null, height: 'tall', notch: 'yes', notchSize: -3 } } },
     });
 
     if (!result.ok) throw new Error(result.error);
     const [first] = designsOf(result.project);
     expect(first?.release.tracks[0]?.position).toBe(1);
-    expect(first?.dimensions.label.width).toBe(35);
-    expect(first?.dimensions.label.notchSize).toBe(0);
+    expect(result.project.measurements.dimensions.label.width).toBe(35);
+    expect(result.project.measurements.dimensions.label.notchSize).toBe(0);
     expect(result.project.sheet.marginMm).toBe(5);
   });
 

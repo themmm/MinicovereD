@@ -94,6 +94,49 @@ export const DEFAULT_TEMPLATE_PARAMS: TemplateParams = {
   insetArtwork: false,
 };
 
+/**
+ * The parameters that are on or off, as against the three that are colours.
+ *
+ * Named as a type rather than left implicit because each Template reads a
+ * different subset of them and now has to say which — see {@link Template.toggles}.
+ */
+export type TemplateToggle = 'showOverlayText' | 'showLogo' | 'insetArtwork';
+
+export const TEMPLATE_TOGGLES: readonly TemplateToggle[] = [
+  'showOverlayText',
+  'showLogo',
+  'insetArtwork',
+];
+
+/**
+ * The choices that turn a Release into Parts, without the Release: which
+ * Template, and what it was told (CONTEXT.md, Design).
+ *
+ * This is the taste half of the fit/taste split, and the half that carries
+ * forward. A collector who set a Release in Full-bleed on a black ground meant
+ * it about their taste, not about that one record, so the next Release to
+ * arrive wears the same thing by every route it can arrive by — a lookup, a
+ * Batch, or a mixtape typed in from a shelf. The measurements that used to
+ * travel beside these now live in `Measurements` (domain/measurements.ts).
+ */
+export interface DesignChoice {
+  readonly templateId: TemplateId;
+  readonly params: TemplateParams;
+}
+
+/**
+ * What the first Release of a session wears, and the only place the answer is
+ * written down.
+ *
+ * v1 had three copies of it — one in the workspace, one in the Batch resolver
+ * and one inlined in the entry a failed lookup leaves behind — and they agreed
+ * only because nobody had edited one of them yet.
+ */
+export const DEFAULT_DESIGN_CHOICE: DesignChoice = {
+  templateId: 'classic',
+  params: DEFAULT_TEMPLATE_PARAMS,
+};
+
 export interface PartContext {
   readonly release: Release;
   readonly params: TemplateParams;
@@ -130,6 +173,21 @@ export interface Template {
   /** One line saying what this design does, for the picker. */
   readonly description: string;
   readonly faces: TemplateFaces;
+  /**
+   * Which of the toggles this Template actually reads.
+   *
+   * Declared by the Template rather than worked out by the panel, because it is
+   * a fact about the drawing: `insetArtwork` under Full-bleed and Minimal, and
+   * `showOverlayText` under Classic and Minimal, changed nothing and were shown
+   * anyway for the whole of v1. A control that cannot do anything is worse than
+   * a missing one — it is read as the reason the Part looks the way it does.
+   *
+   * Held to it by `sheet-renderer.test.ts`, which flips every toggle under every
+   * Template and requires the ops to differ for exactly the ones named here. So
+   * a Template that declares one it ignores fails, and one that reads a toggle
+   * it did not declare fails too.
+   */
+  readonly toggles: readonly TemplateToggle[];
   drawJCard(context: JCardContext): PartDrawing;
   drawBackCard(context: PartContext): PartDrawing;
   drawLabel(context: PartContext): PartDrawing;

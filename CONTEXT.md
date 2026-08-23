@@ -58,8 +58,21 @@ A named visual scheme that determines the layout, typography, and color logic of
 _Avoid_: Theme, Stil, Design
 
 **Design**:
-A Release together with the choices that turn it into Parts: Template, its parameters, and the Part dimensions. The unit that autosaves, that a project file carries, and that the Queue holds. A Release is what the album *is*; a Design is what this collector decided to print.
+A Release together with the choices that turn it into Parts: Template and its parameters. The unit
+the Queue holds and a project file carries, and what **carries forward** from the last Release
+touched to the next one that arrives, by every route — a lookup, a Batch, or a mixtape typed in from
+a shelf. A Release is what the album *is*; a Design is what this collector decided to print about
+this record. How big it is cut is not part of it; see Measurements.
 _Avoid_: Project, Layout, Entwurf
+
+**Measurements**:
+The collector's hardware in millimetres: how big each Part is cut, because that is how big their
+cartridges are. Set once, true of every Release, and so held by the app rather than by any Design —
+which is the split the whole word exists for. Paper size and printable margin are measurements by the
+same argument and have always been app-level; they stay in the Sheet configuration beside the choice
+of which Parts to print. Measurements **travel in a project file and are applied when one is opened**,
+the way paper and margin always have; an import says so when it changed them.
+_Avoid_: Settings, Preferences, Dimensions, Maße
 
 ### The Queue
 

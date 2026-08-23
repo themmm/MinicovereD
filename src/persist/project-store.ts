@@ -99,9 +99,7 @@ export function createIndexedDbStore(): ProjectStore {
 
     save: (project) =>
       serialise(async () => {
-        await write(await database(), (store) =>
-          store.put(writeProjectFile(project.entries, project.sheet), KEY),
-        );
+        await write(await database(), (store) => store.put(writeProjectFile(project), KEY));
       }),
 
     clear: () => serialise(async () => write(await database(), (store) => store.delete(KEY))),
