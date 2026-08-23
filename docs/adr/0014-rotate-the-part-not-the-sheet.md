@@ -61,8 +61,9 @@ overlaps, nothing crosses the margin, a turned item's placement reports its turn
 renderer needs nothing new — draw ops already carry `rotationDeg`, which is how the Spine reads
 bottom-to-top today.
 
-That last sentence was half right, and ticket 07 found the other half. `rotationDeg` turns one op
-about its own anchor; there was no whole-Part turn anywhere, and `PartPlacement` had no field to say
+That last sentence was half right, and ticket 07 found the other half. `rotationDeg` turns one op on
+the spot — text about its anchor, an image about the centre of its rect; there was no whole-Part turn
+anywhere, and `PartPlacement` had no field to say
 that one had happened. It gained `turned`, and `raster.ts` gained one rotation immediately after the
 translate to the Part's box — which turns the drawing, the cut-outline clip and the guides together,
 because all three are already drawn under that one transform. The PDF path really did need nothing: it

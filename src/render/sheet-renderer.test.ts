@@ -354,10 +354,11 @@ describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
   });
 
   it('fills the room under a Part once the Label is small enough to sit there', () => {
-    // The other half of ADR-0014, and the one a collector can reach today. A
-    // Label nudged to 30 × 35 leaves 40 mm under it on the J-Card's 79 mm row,
-    // and five Releases of J-Cards and Labels at a 10 mm printable margin come
-    // off one Sheet instead of two.
+    // The other half of ADR-0014, and the one a collector can reach today. On
+    // the J-Card's 79 mm row a 35 mm Label leaves room for another up to 40 mm
+    // tall once the 4 mm gap is taken off, so five Releases of J-Cards and
+    // Labels at a 10 mm printable margin come off one Sheet instead of two.
+    // 37.5 mm is where that starts: any taller and two of them do not fit.
     const nudged: PartDimensions = {
       ...DEFAULT_PART_DIMENSIONS,
       label: { ...DEFAULT_PART_DIMENSIONS.label, width: 30, height: 35 },
@@ -391,6 +392,10 @@ describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
 
     expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
       /the J-Card of Wichita Lineman .* does not fit A4 with a printable margin of 5 mm, turned or not/,
+    );
+    // And the advice is the honest one: no margin rescues a 519.5 mm strip.
+    expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
+      /No margin makes room for it: A4 is too small\./,
     );
   });
 });

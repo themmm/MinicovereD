@@ -54,13 +54,14 @@ A print-only mark on the Sheet that shows the boundaries of the Parts for cuttin
 _Avoid_: Schnittlinien
 
 **Turned**:
-A Part lying on its side on the Sheet, 90° clockwise, because it is longer than the paper is wide. The
+A Part lying on its side on the Sheet, 90° clockwise, because it is longer than the printable area is
+wide. The
 **Part** turns and the Sheet never does — there is no portrait/landscape control, and A4 and Letter
 keep the dimensions they have always had (ADR-0014). Kept apart from *rotated*, which is what type and
 images do inside a Part: the Spine's line is rotated, and the Part carrying it may also be turned. A
 turn answers the size of the paper rather than deciding anything about the record, so it lives on the
 Sheet check and never on the design surface: a Part packed turned is still shown standing up.
-_Avoid_: Rotated, Landscape, Orientation, Gedreht
+_Avoid_: Rotated (of a whole Part), Landscape, Orientation, Gedreht
 
 **Template**:
 A named visual scheme that determines the layout, typography, and color logic of a Part. Parameterized per Design.

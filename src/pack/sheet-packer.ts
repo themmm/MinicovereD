@@ -83,9 +83,14 @@ export interface PackPlacement<T> {
    */
   readonly rect: Rect;
   /**
-   * Placed on its side. The turn is 90° clockwise, which is what puts the
-   * rectangle's left edge at the top of the Sheet — a strip that reads left to
-   * right standing up still reads top to bottom lying down.
+   * Placed on its side.
+   *
+   * The packer places a box and takes no view of what goes in it. Whoever draws
+   * the rectangle turns it **90° clockwise** — `raster.ts` is the one that does,
+   * and the direction is agreed here because a placement is where the two sides
+   * meet. Clockwise is what puts the rectangle's left edge at the top of the
+   * Sheet, so a strip that reads left to right standing up reads top to bottom
+   * lying down.
    */
   readonly turned: boolean;
 }
@@ -111,8 +116,10 @@ export type OversizePolicy = 'throw' | 'omit';
  * standing up, but only two lying down.
  *
  * The calibration sheet stays on `never`, and not only by inertia: its figures
- * are outlines it draws itself in paper coordinates from the packed box, so a
- * turned box would print a J-Card outline lying inside a rectangle standing up.
+ * are outlines it draws itself in paper coordinates from the packed box, and it
+ * has no idea a box can be turned. A turned J-Card would put an upright 87.5 mm
+ * outline inside a 79 mm box, overflowing it to the right and stopping short at
+ * the bottom, under a caption reading 79 × 87.5.
  */
 export type TurnPolicy = 'never' | 'to-fit';
 
@@ -188,7 +195,17 @@ function placeOnShelf<T>(sheet: Sheet<T>, shelf: Shelf, piece: Piece<T>, bed: Be
   shelf.columns.push({ x, width: piece.size.width, cursorY: shelf.y + piece.size.height });
 }
 
-/** Where a rectangle stacked in `column` would start, and whether it still fits the shelf. */
+/**
+ * Where a rectangle stacked in `column` would start, and whether it still fits
+ * the shelf.
+ *
+ * Caption room is reserved on both sides of it: below the rectangle above, and
+ * below this one. The second is stricter than it has to be — the band under the
+ * shelf would hold that last caption, since `openShelf` already keeps caption
+ * room and a gap there — and it is kept because the alternative is an invariant
+ * with an exception in it. Every rectangle reserves its caption room inside the
+ * shelf that holds it; the band beneath the shelf belongs to the row.
+ */
 function fitsInColumn(shelf: Shelf, column: Column, size: Size, bed: Bed): boolean {
   if (size.width > column.width) return false;
   const y = column.cursorY + bed.captionRoomMm + bed.gapMm;
@@ -225,9 +242,11 @@ function turnedSize(size: Size): Size {
  * no margin does.
  *
  * Worked out rather than searched for, and reported when a rectangle is
- * refused: "does not fit" is a fact, "lower the margin to 7.25 mm" is something
- * the collector can act on. This is the case ADR-0014 says will actually
- * happen, because 5 mm is a default that home printers routinely need raised.
+ * refused: "does not fit" is a fact, "lower the margin to 7.25 mm or less" is
+ * something the collector can act on. This is the case ADR-0014 says will
+ * actually happen, because 5 mm is a default that home printers routinely need
+ * raised. The margin is reported as a ceiling rather than a value because the
+ * control steps in half-millimetres and will not land on 7.25 anyway.
  */
 function largestMarginThatFits(paper: PaperSize, size: Size, captionRoomMm: Mm, turn: TurnPolicy): Mm {
   const standing = Math.min(
@@ -303,7 +322,7 @@ export function packParts<T>(
           `${config.paper.name} with a printable margin of ${config.marginMm} mm${eitherWay} — that ` +
           `leaves ${area.width} × ${area.height} mm to print on. ` +
           (largest >= 0
-            ? `Lower the margin to ${downTo2dp(largest)} mm to make room for it.`
+            ? `Lower the margin to ${downTo2dp(largest)} mm or less to make room for it.`
             : `No margin makes room for it: ${config.paper.name} is too small.`),
       );
     }
@@ -333,9 +352,9 @@ export function packParts<T>(
         placed = true;
         break;
       }
-      // Only once no row on this Sheet has width left: a column costs no new
-      // height, so it is worth more than a fresh shelf, and less than a seat
-      // beside a neighbour.
+      // Only once no row on this Sheet will take it — `fitsOnShelf` refuses on
+      // height as well as width. A column costs no new height, so it is worth
+      // more than a fresh shelf and less than a seat beside a neighbour.
       const inColumn = columnsAllowed
         ? sheet.shelves
             .flatMap((candidate) =>

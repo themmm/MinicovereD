@@ -231,13 +231,16 @@ const insertsAndLabels = (): Array<PackItem<string>> => [
 
 describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
   it('is measured against the sizes the app and the ADRs actually use', () => {
-    // Every sheet count below is about these two rectangles. If the default
-    // Label moves, or ADR-0012's strip is re-cut, the arithmetic in these
-    // comments is about a Part nobody has.
+    // Every sheet count below is about these two rectangles, so both are
+    // measured against the domain rather than against themselves. The Insert
+    // keeps the J-Card's three panels and adds Pages at 65 mm (ADR-0012), so
+    // its length is the J-Card's flat strip plus three of them.
+    const { jcard } = DEFAULT_PART_DIMENSIONS;
+    const strip = jcard.innerFlapWidth + jcard.spineWidth + jcard.frontPanelWidth;
+
     expect(LABEL).toEqual(partSize('label', DEFAULT_PART_DIMENSIONS));
-    // Inner Flap 14 + Spine 5.5 + Front Panel 68 + three Pages at 65 (ADR-0012).
-    expect(INSERT_4PAGE.width).toBe(14 + 5.5 + 68 + 3 * 65);
-    expect(INSERT_2PAGE.width).toBe(14 + 5.5 + 68 + 65);
+    expect(INSERT_4PAGE).toEqual({ width: strip + 3 * 65, height: jcard.height });
+    expect(INSERT_2PAGE).toEqual({ width: strip + 65, height: jcard.height });
   });
 
   it('turns a rectangle too long for the paper, and the placement says so', () => {
@@ -269,6 +272,8 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     const six = Array.from({ length: 6 }, (_, index) => shape(`two-Page ${index}`, INSERT_2PAGE));
     expect(packParts(six, TURNING).sheets.map((sheet) => sheet.placements.length)).toEqual([3, 3]);
 
+    // Turned by hand, because the packer will not do it: this is the packing
+    // the other heuristic would have produced, not a second answer from this one.
     const laidDown = six.map((item) => ({ ...item, size: { width: 79, height: 152.5 } }));
     expect(packParts(laidDown, TURNING).sheets.map((sheet) => sheet.placements.length)).toEqual([
       2, 2, 2,
@@ -305,10 +310,12 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
   });
 
   it('lands two Inserts and five Labels on one A4 portrait Sheet', () => {
-    // ADR-0014's picture: two turned Inserts take 158 of 200 mm and the column
-    // that leaves holds the Labels. It needs the column as much as the turn —
-    // every rectangle on a shelf shares the shelf's top edge, so without one
-    // only the first Label reaches the strip.
+    // ADR-0014's picture: two turned Inserts side by side, and the column that
+    // leaves holds the Labels. At the 3 mm gap below they take 161 of the
+    // 200 mm — the ADR's 158 is the same pair with no gap between them. It
+    // needs the column as much as the turn: every rectangle on a shelf shares
+    // that shelf's top edge, so without one only the first Label reaches the
+    // strip.
     const sheets = packParts(insertsAndLabels(), {
       ...TURNING,
       gapMm: 3,
@@ -354,7 +361,7 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     ).toThrow(
       'minicovered: the Insert of Discovery (282.5 × 79 mm) does not fit A4 with a printable ' +
         'margin of 10 mm, turned or not — that leaves 190 × 277 mm to print on. Lower the margin ' +
-        'to 7.25 mm to make room for it.',
+        'to 7.25 mm or less to make room for it.',
     );
   });
 
@@ -368,7 +375,7 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
 
     expect(() =>
       packParts([shape('the Insert of Discovery', INSERT_4PAGE)], { ...TURNING, marginMm: 7.35 }),
-    ).toThrow(/Lower the margin to 7\.25 mm/);
+    ).toThrow(/Lower the margin to 7\.25 mm or less/);
   });
 
   it('names a margin that really does leave room, rounding down to get there', () => {
@@ -378,10 +385,23 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     const strip = shape('a long strip', { width: 282.55, height: 79 });
 
     expect(() => packParts([strip], { ...TURNING, marginMm: 10 })).toThrow(
-      /Lower the margin to 7\.22 mm/,
+      /Lower the margin to 7\.22 mm or less/,
     );
     expect(packParts([strip], { ...TURNING, marginMm: 7.22 }).sheets).toHaveLength(1);
     expect(() => packParts([strip], { ...TURNING, marginMm: 7.23 })).toThrow(/does not fit/);
+  });
+
+  it('counts the caption room a caller asked for when it works the margin out', () => {
+    // A figure 270 mm tall with 20 mm of caption under it needs 290 of the
+    // 297 mm sheet, so the margin has to come down to 3.5 — not the 13.5 the
+    // figure alone would allow.
+    expect(() =>
+      packParts([shape('a tall figure', { width: 60, height: 270 })], {
+        ...A4_CONFIG,
+        marginMm: 20,
+        captionRoomMm: 20,
+      }),
+    ).toThrow(/Lower the margin to 3\.5 mm or less/);
   });
 
   it('says plainly when no margin would help at all', () => {
@@ -406,8 +426,10 @@ describe('SheetPacker — a column under a rectangle', () => {
     Array.from({ length: count }, (_, index) => shape(`brick ${index}`, { width, height: 60 }));
 
   it('leaves the room under a rectangle empty unless asked', () => {
-    // Two rows of 60 mm fit under the tower's 200 mm shelf, so the fourth brick
-    // is pushed onto a second Sheet.
+    // One brick sits beside the tower and two share the row below its shelf —
+    // a second row below that would start at 273 and end at 333 on a 292 mm
+    // bed. So the fourth brick opens a Sheet of its own, and the 140 mm left
+    // under the first brick goes to waste.
     const sheets = packParts([tower, ...bricks(4)], A4_CONFIG).sheets;
 
     expect(sheets).toHaveLength(2);
@@ -459,9 +481,11 @@ describe('SheetPacker — a column under a rectangle', () => {
 
   it('keeps caption room under the last rectangle in a column as well as the first', () => {
     // 200 mm of shelf: 90 for the brick on the row, then 10 of caption, a 4 mm
-    // gap, 90 more and its own 10 of caption — 204. So one brick to a column,
-    // and the second opens a Sheet of its own. Without that last 10 it would
-    // slide in and print its caption over whatever the shelf below holds.
+    // gap, 90 more and its own 10 of caption — 204. So no brick fits the column
+    // and the second one opens a Sheet of its own. Drop that last 10 and it
+    // slides in at 199, with its caption spilling out of the shelf into the
+    // band the row below keeps for its own (`fitsInColumn` says why that is
+    // refused rather than allowed).
     const packed = packParts(
       [tower, shape('brick 0', { width: 96, height: 90 }), shape('brick 1', { width: 96, height: 90 })],
       { ...A4_CONFIG, columns: true, captionRoomMm: 10 },
@@ -472,8 +496,15 @@ describe('SheetPacker — a column under a rectangle', () => {
   });
 
   it('never lets a column reach past where the Sheet says its content ends', () => {
-    // `contentBottom` is where the calibration sheet starts its footer.
-    const packed = packParts([tower, ...bricks(3)], { ...A4_CONFIG, columns: true });
+    // `contentBottom` is where the calibration sheet starts its footer, and it
+    // is worked out from the shelves alone — so a column that outgrew its shelf
+    // would print underneath it.
+    const packed = packParts([tower, ...bricks(3)], { ...A4_CONFIG, columns: true, captionRoomMm: 6 });
+
+    const shelfTops = new Set(packed.sheets.flatMap((sheet) => sheet.placements.map(({ rect }) => rect.y)));
+    // The test is about stacked rectangles, so there had better be one: with
+    // columns off every rectangle here sits at one of two shelf tops.
+    expect(shelfTops.size).toBeGreaterThan(2);
 
     for (const [index, sheet] of packed.sheets.entries()) {
       for (const { item, rect } of sheet.placements) {
@@ -482,6 +513,45 @@ describe('SheetPacker — a column under a rectangle', () => {
         );
       }
     }
+  });
+
+  it('takes the first column that fits, not the last', () => {
+    // Two columns have room and the filler fits both. First-fit keeps it beside
+    // the rectangle it would have sat next to, rather than at the far end of a
+    // row it never reached.
+    const packed = packParts(
+      [
+        shape('the opener', { width: 60, height: 200 }),
+        shape('seat A', { width: 50, height: 50 }),
+        shape('seat B', { width: 50, height: 50 }),
+        shape('the filler', { width: 50, height: 50 }),
+      ],
+      { ...A4_CONFIG, columns: true, sortByHeight: false },
+    );
+
+    const filler = allPlacements(packed.sheets).find(({ item }) => item.label === 'the filler');
+    expect(filler?.rect).toEqual({ x: 69, y: 59, width: 50, height: 50 });
+  });
+
+  it('carries the turn into a column, because a column takes whatever fits it', () => {
+    // Unreachable from the app today — a turned rectangle is over 200 mm tall
+    // on A4, so the shelf above it has to be nearly the whole bed — but
+    // `packParts` is a seam and `sortByHeight` is a supported option. A turned
+    // rectangle reported as standing up is drawn off the paper.
+    const packed = packParts(
+      [
+        shape('the opener', { width: 60, height: 287 }),
+        shape('the seat', { width: 90, height: 75 }),
+        shape('a long strip', { width: 205, height: 85 }),
+      ],
+      { ...A4_CONFIG, turn: 'to-fit', columns: true, sortByHeight: false },
+    );
+
+    const strip = allPlacements(packed.sheets).find(({ item }) => item.label === 'a long strip');
+    expect(strip?.turned).toBe(true);
+    expect(strip?.rect).toEqual({ x: 69, y: 84, width: 85, height: 205 });
+    expectNoOverlaps(packed.sheets);
+    expectInsideMargin(packed.sheets, A4, 5);
   });
 });
 
@@ -517,7 +587,9 @@ describe('SheetPacker — invariants over arbitrary rectangle sets', () => {
        * cannot turn are still runs about rectangles that fit.
        */
       const overlong = (): Size => ({
-        width: Math.round((area.width + random() * (area.height - area.width)) * 10) / 10,
+        // Strictly wider than the area, or a rounded-down draw would land on
+        // the width exactly and stand up after all.
+        width: Math.round((area.width + 0.5 + random() * (area.height - area.width - 0.5)) * 10) / 10,
         height: Math.round((5 + random() * (area.width - 5)) * 10) / 10,
       });
 
@@ -582,6 +654,6 @@ describe('SheetPacker — invariants over arbitrary rectangle sets', () => {
 
     // Otherwise the loop above could stop generating over-long rectangles and
     // the turn would go untested by every run of it, silently.
-    expect(turnedSeen, 'runs that actually turned something').toBeGreaterThan(100);
+    expect(turnedSeen, 'placements that were actually turned').toBeGreaterThan(100);
   });
 });

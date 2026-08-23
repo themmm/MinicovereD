@@ -200,10 +200,11 @@ describe('the calibration sheet — the page', () => {
 
   it('never turns a figure to make it fit, which is what keeps this page unchanged', () => {
     // 210 − 2 × 62 leaves 86 mm of width and the J-Card is 87.5 across. Lying
-    // down it is 79 × 87.5 and would fit easily, and the packer can do that
-    // now (ADR-0014) — but this page draws its own outlines in paper
-    // coordinates from the packed box, so a turned box would print a J-Card
-    // lying down inside a rectangle standing up.
+    // down it is 79 × 87.5 and would fit easily, and the packer can do that now
+    // (ADR-0014) — but this page draws its own outlines in paper coordinates
+    // from the packed box, and knows nothing about a turn. It would put an
+    // upright 87.5 mm outline inside a 79 mm box, spilling out to the right and
+    // stopping 8.5 mm short at the bottom, under a caption reading 79 × 87.5.
     //
     // The other half of ADR-0014, the column under a figure, is off here for
     // the same reason `sortByHeight` is: this page is meant to be read down and
@@ -213,8 +214,9 @@ describe('the calibration sheet — the page', () => {
 
     expect(narrow.omitted).toContain('J-Card');
     expect(narrow.figures.some((figure) => figure.label === 'J-Card')).toBe(false);
-    // The Labels are narrow enough to print standing up, so this is a page that
-    // still works — it is the J-Card alone that is refused.
+    // The Labels are narrow enough to print standing up and still do. The test
+    // square is gone too, but for its own reason and at a smaller margin — the
+    // test below this one is about that.
     expect(narrow.figures.map((figure) => figure.label)).toContain('Label — Classic');
   });
 

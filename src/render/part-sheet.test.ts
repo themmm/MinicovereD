@@ -114,20 +114,27 @@ describe('a Part as its own Sheet', () => {
     expect(sheet.placements[0]?.bounds).toEqual({ x: 0, y: 0, width: 35, height: 52.5 });
   });
 
-  it('assembles a turned J-Card from its panels, which never turned', () => {
-    // The panels are Part-local and stay upright whatever the packer did, so a
-    // turned J-Card still hides the flap behind the Front Panel rather than
-    // trimming the wrong edge.
+  it('assembles a turned J-Card exactly as it assembles an upright one', () => {
+    // The panels are Part-local and stay upright whatever the packer did, so
+    // the assembled box is the same box either way. What must not survive is
+    // the turn itself: a specimen still carrying it would be drawn on its side
+    // inside paper trimmed to a standing Part.
     const packedTurned: PartPlacement = {
       ...jCardPlacement(),
       bounds: { x: 37, y: 61, width: jcard.height, height: FLAP + SPINE + FRONT },
       turned: true,
     };
+    const sheet = partSheet(A4, packedTurned, 'assembled');
 
-    expect(visibleBox(packedTurned, 'assembled')).toEqual(
-      visibleBox(jCardPlacement(), 'assembled'),
-    );
-    expect(partSheet(A4, packedTurned, 'assembled').paper.width).toBe(SPINE + FRONT);
+    expect(sheet.placements[0]?.turned).toBe(false);
+    expect(sheet.placements[0]?.bounds).toEqual({
+      x: -FLAP,
+      y: 0,
+      width: SPINE + FRONT,
+      height: jcard.height,
+    });
+    expect(sheet.paper.width).toBe(SPINE + FRONT);
+    expect(visibleBox(packedTurned, 'assembled')).toEqual(visibleBox(jCardPlacement(), 'assembled'));
   });
 
   it('names a paper that exists, and resizes only what the rasteriser reads', () => {
