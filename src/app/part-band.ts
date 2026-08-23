@@ -1,5 +1,5 @@
-import { LABEL_PRESETS, PART_KINDS } from '../domain/parts.ts';
-import type { PartKind } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, LABEL_PRESETS, PART_KINDS } from '../domain/parts.ts';
+import type { PartDimensions, PartKind } from '../domain/parts.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import type { PartPlacement, SheetLayout, SheetWarning } from '../render/layout.ts';
 import { partSheet } from '../render/part-sheet.ts';
@@ -70,8 +70,16 @@ export interface PartBand {
    * Show the Parts of `entry`, found in whichever Sheet they were packed onto.
    * Absent Parts are absent: a Part switched off does not print, so it is not
    * on the design surface either.
+   *
+   * The measurements come in beside the entry rather than out of it: they belong
+   * to the app now, and the captions under the specimens are about the paper
+   * being cut rather than about this Release (`Measurements`).
    */
-  show(sheets: readonly SheetLayout[], entry: QueueEntry | undefined): void;
+  show(
+    sheets: readonly SheetLayout[],
+    entry: QueueEntry | undefined,
+    dimensions: PartDimensions,
+  ): void;
 }
 
 interface Specimen {
@@ -212,7 +220,9 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
 
   let placements: readonly { placement: PartPlacement; sheet: SheetLayout }[] = [];
   let warnings: readonly SheetWarning[] = [];
-  let selected: QueueEntry | undefined;
+  // The app's measurements, not the selected Release's: what the captions and
+  // the Label note are about is the paper being cut.
+  let dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS;
   let focused: PartKind | undefined;
   let drawToken = 0;
   const drawn = new Map<PartKind, Specimen>();
@@ -341,11 +351,11 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
     if (part !== 'jcard' || jcardView === 'flat') {
       return `${trim(box.width)} × ${trim(box.height)} mm`;
     }
-    const jcard = selected?.design.dimensions.jcard;
-    const flat = jcard ? jcard.innerFlapWidth + jcard.spineWidth + jcard.frontPanelWidth : box.width;
+    const { jcard } = dimensions;
+    const flat = jcard.innerFlapWidth + jcard.spineWidth + jcard.frontPanelWidth;
     return (
       `${trim(box.width)} × ${trim(box.height)} shown · ${trim(flat)} flat · ` +
-      `flap ${trim(jcard?.innerFlapWidth ?? 0)} behind`
+      `flap ${trim(jcard.innerFlapWidth)} behind`
     );
   }
 
@@ -356,9 +366,8 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
    * Part's shape that a collector has to decide about, and saying which preset
    * is in force is what makes the decision checkable without opening a fold.
    */
-  function labelNote(): string | undefined {
-    const label = selected?.design.dimensions.label;
-    if (!label) return undefined;
+  function labelNote(): string {
+    const { label } = dimensions;
     const preset = LABEL_PRESETS.find(
       (candidate) =>
         candidate.dimensions.width === label.width && candidate.dimensions.height === label.height,
@@ -451,8 +460,8 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
 
   return {
     element,
-    show(sheets, entry) {
-      selected = entry;
+    show(sheets, entry, next) {
+      dimensions = next;
       const releaseId = entry?.design.release.id ?? '';
       const found: { placement: PartPlacement; sheet: SheetLayout }[] = [];
       for (const sheet of sheets) {

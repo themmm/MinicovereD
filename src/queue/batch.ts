@@ -1,9 +1,6 @@
-import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
-import type { Release } from '../domain/release.ts';
 import { errorMessage } from '../errors.ts';
 import type { MetadataAdapter, SearchQuery } from '../metadata/metadata-adapter.ts';
-import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
-import type { ReleaseDesign } from '../render/sheet-renderer.ts';
+import type { DesignChoice } from '../render/sheet-renderer.ts';
 import { readyEntry, unresolvedEntry } from './release-queue.ts';
 import type { QueueEntry } from './release-queue.ts';
 
@@ -78,6 +75,15 @@ const describe = (request: BatchRequest): string => {
 export async function resolveBatchIntoQueue(
   adapter: MetadataAdapter,
   requests: readonly BatchRequest[],
+  /**
+   * What every Entry this Batch produces is dressed in — the design of the last
+   * Release the collector touched, read once when the Batch starts.
+   *
+   * Read once rather than per Entry so a Batch of twenty-five comes back
+   * looking like one set: a Template changed while the lookups are running
+   * applies to what arrives after the Batch, not to the middle of it.
+   */
+  design: DesignChoice,
   onProgress: (progress: BatchProgress) => void,
 ): Promise<QueueEntry[]> {
   const entries: QueueEntry[] = [];
@@ -92,28 +98,24 @@ export async function resolveBatchIntoQueue(
       const best = releases[0];
       if (!best) {
         entries.push(
-          unresolvedEntry(request.id, artist, album, 'Nothing on MusicBrainz matched that search.'),
+          unresolvedEntry(
+            design,
+            request.id,
+            artist,
+            album,
+            'Nothing on MusicBrainz matched that search.',
+          ),
         );
       } else {
-        entries.push(readyEntry(withDefaults(await adapter.resolve(best.mbid))));
+        entries.push(readyEntry({ ...design, release: await adapter.resolve(best.mbid) }));
       }
     } catch (error) {
       // Reported as an entry, never thrown: the rest of the batch keeps going.
-      entries.push(unresolvedEntry(request.id, artist, album, errorMessage(error)));
+      entries.push(unresolvedEntry(design, request.id, artist, album, errorMessage(error)));
     }
 
     onProgress({ done: entries.length, total: requests.length });
   }
 
   return entries;
-}
-
-/** A freshly looked-up Release starts on the defaults; the collector changes it from there. */
-function withDefaults(release: Release): ReleaseDesign {
-  return {
-    release,
-    templateId: 'classic',
-    params: DEFAULT_TEMPLATE_PARAMS,
-    dimensions: DEFAULT_PART_DIMENSIONS,
-  };
 }

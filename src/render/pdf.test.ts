@@ -81,14 +81,18 @@ describe('paper size travels from the Sheet configuration to the PDF page', () =
     release: { id: 'r1', artist: 'Glen Campbell', album: 'Wichita Lineman', tracks: [] },
     templateId: 'classic',
     params: DEFAULT_TEMPLATE_PARAMS,
-    dimensions: DEFAULT_PART_DIMENSIONS,
   };
 
   it.each([
     ['A4', A4, 210, 297],
     ['Letter', LETTER, 215.9, 279.4],
   ])('exports a %s Sheet as a %s mm page', async (_name, paper, widthMm, heightMm) => {
-    const sheets = renderSheets([design], { paper, marginMm: 5, parts: PART_KINDS }, measurer);
+    const sheets = renderSheets(
+      [design],
+      { paper, marginMm: 5, parts: PART_KINDS },
+      DEFAULT_PART_DIMENSIONS,
+      measurer,
+    );
     const bytes = await buildPdf(sheets.map((sheet) => ({ size: sheet.paper, png: PNG_2X2 })));
     const size = await pageSizeMm(bytes, 0);
 

@@ -1,8 +1,6 @@
 import { withArrivedCredits } from '../domain/credits.ts';
-import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
 import type { Credits, Release } from '../domain/release.ts';
-import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
-import type { ReleaseDesign } from '../render/sheet-renderer.ts';
+import type { DesignChoice, ReleaseDesign } from '../render/sheet-renderer.ts';
 
 /**
  * The print queue: the Releases a collector is working through in one session.
@@ -43,24 +41,23 @@ export function unfinishedEntry(design: ReleaseDesign): QueueEntry {
   return { status: 'failed', design };
 }
 
-/** An entry for a Release the lookup could not find, holding what was typed. */
+/**
+ * An entry for a Release the lookup could not find, holding what was typed.
+ *
+ * Dressed in the design it is handed rather than in defaults of its own. A card
+ * to complete by hand is still a card the collector is going to print beside
+ * the others, and v1 gave it plain Classic on white however the rest of the
+ * Queue was set — which is half of the asymmetry ticket 06 exists to remove.
+ */
 export function unresolvedEntry(
+  design: DesignChoice,
   id: string,
   artist: string,
   album: string,
   error: string,
 ): QueueEntry {
   const release: Release = { id, artist, album, tracks: [] };
-  return {
-    status: 'failed',
-    error,
-    design: {
-      release,
-      templateId: 'classic',
-      params: DEFAULT_TEMPLATE_PARAMS,
-      dimensions: DEFAULT_PART_DIMENSIONS,
-    },
-  };
+  return { status: 'failed', error, design: { ...design, release } };
 }
 
 const indexOfRelease = (queue: readonly QueueEntry[], releaseId: string): number =>

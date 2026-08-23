@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
 import type { Credits } from '../domain/release.ts';
-import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
+import { DEFAULT_DESIGN_CHOICE } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign } from '../render/sheet-renderer.ts';
 import {
   addToQueue,
@@ -15,10 +14,8 @@ import {
 import type { QueueEntry } from './release-queue.ts';
 
 const design = (id: string, album = `Album ${id}`): ReleaseDesign => ({
+  ...DEFAULT_DESIGN_CHOICE,
   release: { id, artist: `Artist ${id}`, album, tracks: [] },
-  templateId: 'classic',
-  params: DEFAULT_TEMPLATE_PARAMS,
-  dimensions: DEFAULT_PART_DIMENSIONS,
 });
 
 const resolved = (id: string): QueueEntry => ({ status: 'ready', design: design(id) });
@@ -80,8 +77,24 @@ describe('the queue', () => {
 });
 
 describe('an entry whose lookup failed', () => {
+  it('wears the design it was handed rather than a default of its own', () => {
+    // A card to complete by hand still gets printed beside the rest, so it has
+    // to look like them. v1 gave it plain Classic on white whatever the Queue
+    // was set to — one of the three defaults ticket 06 collapses into one.
+    const entry = unresolvedEntry(
+      { templateId: 'minimal', params: { ...DEFAULT_DESIGN_CHOICE.params, inkColor: '#7c2d12' } },
+      'mb-1',
+      'Cornelius',
+      'Fantasma',
+      'HTTP 404',
+    );
+
+    expect(entry.design.templateId).toBe('minimal');
+    expect(entry.design.params.inkColor).toBe('#7c2d12');
+  });
+
   it('is still a Release, editable by hand', () => {
-    const entry = unresolvedEntry('mb-1', 'Cornelius', 'Fantasma', 'HTTP 404');
+    const entry = unresolvedEntry(DEFAULT_DESIGN_CHOICE, 'mb-1', 'Cornelius', 'Fantasma', 'HTTP 404');
 
     expect(entry.status).toBe('failed');
     expect(entry.error).toBe('HTTP 404');
@@ -93,14 +106,14 @@ describe('an entry whose lookup failed', () => {
   });
 
   it('takes its place in the queue like any other entry', () => {
-    const queue = addToQueue([resolved('a')], unresolvedEntry('b', 'X', 'Y', 'timed out'));
+    const queue = addToQueue([resolved('a')], unresolvedEntry(DEFAULT_DESIGN_CHOICE, 'b', 'X', 'Y', 'timed out'));
 
     expect(ids(queue)).toEqual(['a', 'b']);
     expect(queue[1]?.status).toBe('failed');
   });
 
   it('becomes ready once its fields have been filled in', () => {
-    const failed = unresolvedEntry('b', 'X', 'Y', 'timed out');
+    const failed = unresolvedEntry(DEFAULT_DESIGN_CHOICE, 'b', 'X', 'Y', 'timed out');
     const queue = addToQueue([], failed);
 
     const completed = queue.map((entry) =>
@@ -156,7 +169,7 @@ describe('credits arriving for one Release in the queue', () => {
     // An unfinished Entry is the collector's to-do list, and a second source
     // answering is not them ticking it off. Reachable through a project file,
     // which can carry a Discogs link on an Entry that still needs a hand.
-    const queue = [unresolvedEntry('a', 'X', 'Y', 'nothing matched')];
+    const queue = [unresolvedEntry(DEFAULT_DESIGN_CHOICE, 'a', 'X', 'Y', 'nothing matched')];
 
     const filled = withCreditsInQueue(queue, 'a', credits);
 
@@ -187,7 +200,7 @@ describe('credits arriving for one Release in the queue', () => {
 
 describe('what the queue hands to the renderer', () => {
   it('is every entry, failed ones included, in queue order', () => {
-    const queue = [resolved('a'), unresolvedEntry('b', 'X', 'Y', 'nope'), resolved('c')];
+    const queue = [resolved('a'), unresolvedEntry(DEFAULT_DESIGN_CHOICE, 'b', 'X', 'Y', 'nope'), resolved('c')];
 
     // A failed lookup is still a Release the collector may want printed — they
     // completed it by hand, or they want the blank to write on.

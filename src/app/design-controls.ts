@@ -1,18 +1,19 @@
-import { TEMPLATES } from '../render/sheet-renderer.ts';
-import type { TemplateId, TemplateParams } from '../render/sheet-renderer.ts';
-import { el } from './dom.ts';
+import { DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
+import type { DesignChoice, TemplateId, TemplateParams, TemplateToggle } from '../render/sheet-renderer.ts';
+import { clear, el } from './dom.ts';
 
 /**
  * How this Release looks: which Template, in what colours, with or without the
  * type over the artwork and the MiniDisc logo. Every one of these belongs to
  * the Release, not to the app, so two Releases can wear the same design
- * differently.
+ * differently — which is the other half of the split the Label measurements
+ * left by (`Measurements`).
+ *
+ * The toggles shown are the ones the chosen Template reads, and no others. Each
+ * Template declares that itself (`Template.toggles`), so the list changes when
+ * the Template does — in place, because the collector is standing in the picker
+ * when it happens and rebuilding the panel would take their focus with it.
  */
-
-export interface DesignChoice {
-  readonly templateId: TemplateId;
-  readonly params: TemplateParams;
-}
 
 interface ColourField {
   readonly key: 'paperColor' | 'inkColor' | 'accentColor';
@@ -26,7 +27,7 @@ const COLOURS: readonly ColourField[] = [
 ];
 
 interface ToggleField {
-  readonly key: 'showOverlayText' | 'showLogo' | 'insetArtwork';
+  readonly key: TemplateToggle;
   readonly label: string;
   readonly hint: string;
 }
@@ -49,15 +50,43 @@ const TOGGLES: readonly ToggleField[] = [
     label: 'Artwork as an inset square',
     // Named by what it does to the Part rather than by the Template it belongs
     // to, because the Template picker is directly above it.
-    hint: 'Classic: a square with paper all round it, instead of bleeding to three edges',
+    hint: 'A square with paper all round it, instead of bleeding to three edges',
   },
 ];
+
+/** The toggle fields the chosen Template reads, in the order they are listed above. */
+const togglesFor = (templateId: TemplateId): ToggleField[] =>
+  TOGGLES.filter((toggle) => TEMPLATES[templateId].toggles.includes(toggle.key));
+
+/**
+ * The Design fold's summary line: what is inside it, without opening it
+ * (ADR-0010 item 6).
+ *
+ * Lives here rather than in the workspace because it reads the same two lists
+ * the panel does — the Templates and the toggle labels — and a summary naming a
+ * control the panel does not show would be a summary of a different fold.
+ */
+export function describeDesign({ templateId, params }: DesignChoice): string {
+  // The control labels verbatim, capitals and all: the summary is a list of what
+  // is switched on in the fold below it, and renaming them here would make two
+  // names for one checkbox.
+  const on = togglesFor(templateId).filter((toggle) => params[toggle.key]);
+  // The colours cannot be listed — three hexes say nothing at a glance — but
+  // whether this Release has been taken off the plain ones can be, and a fold
+  // that hides three colour wells has to admit that (ADR-0010 item 6).
+  const recoloured = COLOURS.some(
+    (colour) => params[colour.key] !== DEFAULT_TEMPLATE_PARAMS[colour.key],
+  );
+  const notes = [...on.map((toggle) => toggle.label), ...(recoloured ? ['recoloured'] : [])];
+  return `${TEMPLATES[templateId].name} · ${notes.join(', ') || 'nothing on, default colours'}`;
+}
 
 export function createDesignControls(
   initial: DesignChoice,
   onChange: (change: Partial<DesignChoice>) => void,
 ): HTMLElement {
   let params = initial.params;
+  let templateId = initial.templateId;
 
   const changeParams = (patch: Partial<TemplateParams>): void => {
     params = { ...params, ...patch };
@@ -83,9 +112,6 @@ export function createDesignControls(
     class: 'field__note',
     text: TEMPLATES[initial.templateId].description,
   });
-  picker.addEventListener('change', () => {
-    description.textContent = TEMPLATES[picker.value as TemplateId].description;
-  });
 
   const swatches = el('div', { class: 'swatches' });
   for (const colour of COLOURS) {
@@ -107,23 +133,48 @@ export function createDesignControls(
   }
 
   const toggles = el('div', { class: 'toggles toggles--stacked' });
-  for (const toggle of TOGGLES) {
-    const box = el('input', {
-      attrs: { type: 'checkbox', id: `design-${toggle.key}` },
-      on: {
-        change: (event) => changeParams({ [toggle.key]: (event.target as HTMLInputElement).checked }),
-      },
-    });
-    box.checked = params[toggle.key];
-    toggles.appendChild(
-      el(
-        'label',
-        { class: 'toggle', attrs: { for: `design-${toggle.key}`, title: toggle.hint } },
-        box,
-        toggle.label,
-      ),
-    );
-  }
+
+  /**
+   * The toggles this Template reads, rebuilt where they stand.
+   *
+   * The panel itself is not rebuilt when the Template changes — the workspace
+   * builds it per *selection*, and a Template change is not one — so this is
+   * what keeps the list honest. Only the checkboxes inside `toggles` are
+   * replaced — one, two or three of them, depending on the Template — so the
+   * focus stays in the picker the collector just used.
+   *
+   * A toggle the Template does not read keeps its value in `params` rather than
+   * being reset: coming back to Classic should find the inset square as it was
+   * left, not as it starts.
+   */
+  const showToggles = (): void => {
+    clear(toggles);
+    for (const toggle of togglesFor(templateId)) {
+      const box = el('input', {
+        attrs: { type: 'checkbox', id: `design-${toggle.key}` },
+        on: {
+          change: (event) =>
+            changeParams({ [toggle.key]: (event.target as HTMLInputElement).checked }),
+        },
+      });
+      box.checked = params[toggle.key];
+      toggles.appendChild(
+        el(
+          'label',
+          { class: 'toggle', attrs: { for: `design-${toggle.key}`, title: toggle.hint } },
+          box,
+          toggle.label,
+        ),
+      );
+    }
+  };
+  showToggles();
+
+  picker.addEventListener('change', () => {
+    templateId = picker.value as TemplateId;
+    description.textContent = TEMPLATES[templateId].description;
+    showToggles();
+  });
 
   return el(
     'section',
@@ -131,7 +182,9 @@ export function createDesignControls(
     el('h2', { class: 'panel__title', text: 'Design' }),
     el('p', {
       class: 'panel__hint',
-      text: 'Template, colours and what appears on the artwork — set per Release.',
+      text:
+        'Template, colours and what appears on the artwork — this Release only. ' +
+        'The next Release you add starts with whatever is set here.',
     }),
     el(
       'label',

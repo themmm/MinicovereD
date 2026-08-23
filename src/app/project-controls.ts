@@ -39,11 +39,12 @@ export function createProjectControls(
     attrs: { type: 'button' },
     on: {
       click: () => {
-        const { entries, sheet } = currentProject();
-        download(writeProjectFile(entries, sheet), fileNameFor(entries.length));
-        status.textContent = `Saved ${entries.length} ${
-          entries.length === 1 ? 'Release' : 'Releases'
-        } to a project file, artwork included.`;
+        const project = currentProject();
+        const count = project.entries.length;
+        download(writeProjectFile(project), fileNameFor(count));
+        status.textContent = `Saved ${count} ${
+          count === 1 ? 'Release' : 'Releases'
+        } to a project file, artwork included — with your Label measurements.`;
       },
     },
   });

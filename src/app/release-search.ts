@@ -5,6 +5,7 @@ import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata
 import { resolveBatchIntoQueue, searchQueryFor } from '../queue/batch.ts';
 import type { BatchRequest, LineQuery } from '../queue/batch.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
+import type { DesignChoice } from '../render/sheet-renderer.ts';
 import { clear, el } from './dom.ts';
 
 /**
@@ -162,6 +163,16 @@ export function createReleaseSearch(
   onResolved: (release: Release) => void,
   /** Adds the entries to the queue and answers which of them were new. */
   onBatchResolved: (entries: readonly QueueEntry[]) => readonly QueueEntry[],
+  /**
+   * What a Batch dresses its Entries in: the design of the last Release the
+   * collector touched. Asked for rather than handed over, because this panel is
+   * built once and outlives every Release there will ever be a design for.
+   *
+   * A single lookup does not need it — that one hands a bare Release over and
+   * the workspace dresses it — but a Batch builds whole Entries, so the answer
+   * has to reach `resolveBatchIntoQueue`.
+   */
+  designToCarry: () => DesignChoice,
 ): ReleaseSearch {
   const input = el('input', {
     class: 'field__input find__input',
@@ -425,7 +436,7 @@ export function createReleaseSearch(
     setOpen(true);
     setPending('batch', `Looking up ${requests.length} Releases, one a second…`);
     try {
-      const entries = await resolveBatchIntoQueue(adapter, requests, (progress) => {
+      const entries = await resolveBatchIntoQueue(adapter, requests, designToCarry(), (progress) => {
         status.textContent = progress.current
           ? `Looking up ${progress.current} — ${progress.done} of ${progress.total} done…`
           : `Looked up ${progress.done} of ${progress.total}.`;

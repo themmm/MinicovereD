@@ -15,18 +15,25 @@ import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
 import { MINIMAL_TEMPLATE } from './templates/minimal.ts';
 import type {
+  DesignChoice,
   JCardContext,
   PartContext,
   Template,
   TemplateId,
-  TemplateParams,
 } from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
 export type { SheetLayout, PartPlacement, Guide, DrawOp, PrintFace, TextStyle, TextOp, SheetWarning } from './layout.ts';
 export type { TextMeasurer } from './text.ts';
-export type { TemplateId, TemplateParams, TemplateFaces, Template } from './templates/template.ts';
-export { DEFAULT_TEMPLATE_PARAMS } from './templates/template.ts';
+export type {
+  DesignChoice,
+  Template,
+  TemplateFaces,
+  TemplateId,
+  TemplateParams,
+  TemplateToggle,
+} from './templates/template.ts';
+export { DEFAULT_DESIGN_CHOICE, DEFAULT_TEMPLATE_PARAMS, TEMPLATE_TOGGLES } from './templates/template.ts';
 export { TEMPLATES };
 
 /**
@@ -39,13 +46,17 @@ export { TEMPLATES };
  * Template's. This module is the join.
  */
 
-/** A Release together with the Template chosen for it and the Part sizes it prints at. */
-export interface ReleaseDesign {
+/**
+ * A Release together with the choices that turn it into Parts (CONTEXT.md,
+ * Design): which Template, in what colours, with which toggles on.
+ *
+ * The Part sizes are deliberately not in here. They describe the collector's
+ * cartridges rather than this record, so they are one set of measurements for
+ * the whole Queue and arrive beside the designs instead — see `Measurements`
+ * (domain/measurements.ts) and the `dimensions` argument to `renderSheets`.
+ */
+export interface ReleaseDesign extends DesignChoice {
   readonly release: Release;
-  readonly templateId: TemplateId;
-  /** Colours and toggles for this Release, independent of any other. */
-  readonly params: TemplateParams;
-  readonly dimensions: PartDimensions;
 }
 
 export interface SheetConfig {
@@ -113,6 +124,7 @@ function guidesFor(part: PartKind, dimensions: PartDimensions, size: Size): Guid
 function drawPart(
   part: PartKind,
   design: ReleaseDesign,
+  dimensions: PartDimensions,
   size: Size,
   measure: TextMeasurer,
 ): { ops: PartPlacement['ops']; warnings?: readonly SheetWarning[]; panels?: readonly PanelBounds[] } {
@@ -120,7 +132,7 @@ function drawPart(
   const context: PartContext = {
     release: design.release,
     params: design.params,
-    dimensions: design.dimensions,
+    dimensions,
     size,
     // Taken from the Template that is about to draw, so the shared pieces set
     // the Spine and the tracklist in its faces without asking which it is.
@@ -130,7 +142,7 @@ function drawPart(
 
   switch (part) {
     case 'jcard': {
-      const panels = jCardPanels(design.dimensions);
+      const panels = jCardPanels(dimensions);
       const jCardContext: JCardContext = { ...context, panels };
       return {
         ...template.drawJCard(jCardContext),
@@ -147,6 +159,12 @@ function drawPart(
 export function renderSheets(
   designs: readonly ReleaseDesign[],
   config: SheetConfig,
+  /**
+   * The Part sizes every Release in this Queue is cut to. One set for all of
+   * them, taken beside the designs rather than out of one, because a Queue
+   * prints onto one collector's cartridges — see `Measurements`.
+   */
+  dimensions: PartDimensions,
   measure: TextMeasurer,
 ): readonly SheetLayout[] {
   const byRelease = new Map(designs.map((design) => [design.release.id, design]));
@@ -160,7 +178,7 @@ export function renderSheets(
     config.parts.map((part) => ({
       ref: { releaseId: design.release.id, part },
       label: `the ${PART_LABELS[part]} of ${design.release.album || design.release.id}`,
-      size: partSize(part, design.dimensions),
+      size: partSize(part, dimensions),
     })),
   );
 
@@ -178,14 +196,20 @@ export function renderSheets(
       const design = byRelease.get(releaseId);
       if (!design) throw new Error(`minicovered: no design for Release "${releaseId}"`);
 
-      const { ops, panels, warnings: partWarnings } = drawPart(part, design, item.size, measure);
+      const { ops, panels, warnings: partWarnings } = drawPart(
+        part,
+        design,
+        dimensions,
+        item.size,
+        measure,
+      );
       warnings.push(...(partWarnings ?? []));
       return {
         releaseId,
         part,
         bounds: rect,
         ops,
-        guides: guidesFor(part, design.dimensions, item.size),
+        guides: guidesFor(part, dimensions, item.size),
         ...(panels ? { panels } : {}),
       };
     });

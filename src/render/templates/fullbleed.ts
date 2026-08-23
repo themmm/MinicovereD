@@ -194,6 +194,10 @@ export const FULLBLEED_TEMPLATE: Template = {
   id: 'fullbleed',
   name: 'Full-bleed',
   description: 'Artwork edge to edge, type as an overlay, tracklist on colour.',
+  // Every word on the Front Panel and the Label sits on the artwork here, so
+  // `showOverlayText` is the one Template it means something to. The artwork
+  // covers the Part by definition, which leaves `insetArtwork` nothing to do.
+  toggles: ['showOverlayText', 'showLogo'],
   /**
    * A poster: a squared grotesque over the artwork and on the Spine, a slab for
    * the reading.

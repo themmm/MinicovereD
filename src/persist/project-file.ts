@@ -1,4 +1,6 @@
 import { hasCredits } from '../domain/credits.ts';
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
+import type { Measurements } from '../domain/measurements.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM, PAPER_SIZES } from '../domain/paper.ts';
 import type { PaperSize } from '../domain/paper.ts';
 import {
@@ -11,7 +13,7 @@ import type { Artwork, Credit, Credits, Release, Track } from '../domain/release
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { safeLogoColor } from '../render/minidisc-logo.ts';
-import { DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
+import { DEFAULT_DESIGN_CHOICE, DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign, SheetConfig, TemplateId, TemplateParams } from '../render/sheet-renderer.ts';
 
 /**
@@ -25,12 +27,33 @@ import type { ReleaseDesign, SheetConfig, TemplateId, TemplateParams } from '../
  */
 
 export const PROJECT_FORMAT = 'minicovered-project';
-export const PROJECT_VERSION = 1;
+
+/**
+ * Version 2: the measurements left the Designs.
+ *
+ * A version-1 file carries a `dimensions` block inside every design, because
+ * v1 gave each Release its own Part sizes. A version-2 file carries one
+ * `measurements` block for the project, because that is what a set of cartridges
+ * is. `readProjectFile` still reads both — see `readMeasurements` — but it writes
+ * only the new shape, and that is the break: this is the first version whose
+ * files a v1.x build refuses outright rather than misreading.
+ *
+ * Refusing is the intended half. The unintended half is what an older reader
+ * does with anything *additive*, which it cannot refuse because it cannot see
+ * it: `readTemplateId` in v1.0 falls back to `'classic'` for a Template it does
+ * not know, so a v1.0 build opening a Minimal file quietly rewrites the design
+ * rather than saying it cannot read it. That is the price the additive rule
+ * charged for the whole of 1.1, and bumping the version is what stops it
+ * accruing further.
+ */
+export const PROJECT_VERSION = 2;
 
 export interface Project {
   /** The queue as it stood, in order, entries still needing a hand included. */
   readonly entries: readonly QueueEntry[];
   readonly sheet: SheetConfig;
+  /** The collector's measurements, one set for the whole project. */
+  readonly measurements: Measurements;
 }
 
 export type ProjectReadResult =
@@ -44,10 +67,7 @@ const MAX_MARGIN_MM = 40;
 const MIN_PART_MM = 1;
 const MAX_PART_MM = 300;
 
-export function writeProjectFile(
-  entries: readonly QueueEntry[],
-  sheet: SheetConfig,
-): string {
+export function writeProjectFile({ entries, sheet, measurements }: Project): string {
   return `${JSON.stringify(
     {
       format: PROJECT_FORMAT,
@@ -57,13 +77,15 @@ export function writeProjectFile(
         release: design.release,
         templateId: design.templateId,
         params: design.params,
-        dimensions: design.dimensions,
         // Written only when true, so a project of ordinary Releases reads the
         // same as one written before this flag existed. The reason the lookup
         // failed is deliberately not written; see QueueEntry.error.
         ...(status === 'failed' ? { needsCompleting: true } : {}),
       })),
       sheet: { paperId: sheet.paper.id, marginMm: sheet.marginMm, parts: sheet.parts },
+      // Beside the Sheet rather than inside it: paper and margin describe the
+      // print job, these describe the cartridges the Parts have to fit.
+      measurements: { dimensions: measurements.dimensions },
     },
     null,
     2,
@@ -189,7 +211,7 @@ function readRelease(value: unknown, index: number): Release | string {
   };
 }
 
-function readParams(value: unknown): TemplateParams {
+function readParams(value: unknown, version: number): TemplateParams {
   const source = isRecord(value) ? value : {};
   // Colours from a file end up substituted into SVG markup, so they get the
   // same validation the bundled logo uses. Anything that fails it falls back to
@@ -205,17 +227,25 @@ function readParams(value: unknown): TemplateParams {
     accentColor: colour('accentColor', DEFAULT_TEMPLATE_PARAMS.accentColor),
     showOverlayText: asBoolean(source['showOverlayText'], DEFAULT_TEMPLATE_PARAMS.showOverlayText),
     showLogo: asBoolean(source['showLogo'], DEFAULT_TEMPLATE_PARAMS.showLogo),
-    // Not the default, which is the one fallback here that is not.
+    // Not the default, which is the one fallback here that is not — and only
+    // for a version-1 file.
     //
     // A saved project has to reproduce its own design (ADR-0001), and every
-    // Front Panel written before v1.1 was drawn as an inset square. v1 and v1.1
-    // files both carry `PROJECT_VERSION` 1, so the version cannot tell them
+    // Front Panel written before v1.1 was drawn as an inset square. v1.0 and
+    // v1.1 files both carry version 1, so the version cannot tell those two
     // apart — but `writeProjectFile` serialises the whole params object, so
-    // every v1.1 file states this key one way or the other and only a v1 file
-    // omits it. The absence is the tell, and it means "square". A new design
-    // still bleeds, because that comes from `DEFAULT_TEMPLATE_PARAMS` rather
-    // than from here.
-    insetArtwork: asBoolean(source['insetArtwork'], true),
+    // every v1.1 file states this key one way or the other and only a v1.0 file
+    // omits it. Inside version 1, the absence is the tell and it means "square".
+    //
+    // From version 2 the tell is retired. A version-2 file that omits the key
+    // was not written by this app, which always writes it, so reading a v1.0
+    // convention into it would be guessing about a document that predates
+    // nothing. It gets the default instead, which is the bleed — and this is
+    // the first thing the version bump is actually able to decide.
+    insetArtwork: asBoolean(
+      source['insetArtwork'],
+      version <= 1 ? true : DEFAULT_TEMPLATE_PARAMS.insetArtwork,
+    ),
   };
 }
 
@@ -267,7 +297,32 @@ function readTemplateId(value: unknown): TemplateId {
   const id = asString(value);
   // hasOwn, not `in`: `in` walks the prototype chain, so "constructor" and
   // "toString" would pass and templateFor would hand back Object.
-  return Object.hasOwn(TEMPLATES, id) ? (id as TemplateId) : 'classic';
+  return Object.hasOwn(TEMPLATES, id) ? (id as TemplateId) : DEFAULT_DESIGN_CHOICE.templateId;
+}
+
+/**
+ * The project's measurements: the `measurements` block a version-2 file carries, or
+ * the Part sizes a version-1 file kept inside each of its Designs.
+ *
+ * The migration is a collapse, and it can lose something. v1's Label control
+ * wrote to the selected Release and to nothing else, so a v1 project really can
+ * hold as many Labels as it has Releases — which is the asymmetry version 2
+ * exists to remove, and there is no longer a shape to express it in. The first
+ * Design that states any dimensions wins, because after an import the first Release is
+ * the one selected, and so the one whose Parts the collector is looking at when
+ * they judge whether the measurements survived.
+ *
+ * Not branched on the version, deliberately: a version-2 file with no `measurements`
+ * block is not something this app writes, and looking for the old key and
+ * finding none — version 2 stops writing it — lands it on the defaults, which
+ * is the right answer for a document that states nothing either way.
+ */
+function readMeasurements(value: unknown, designs: readonly unknown[]): Measurements {
+  if (isRecord(value)) return { dimensions: readDimensions(value['dimensions']) };
+
+  const legacy = designs.find((design) => isRecord(design) && design['dimensions'] !== undefined);
+  if (!isRecord(legacy)) return DEFAULT_MEASUREMENTS;
+  return { dimensions: readDimensions(legacy['dimensions']) };
 }
 
 function readSheet(value: unknown): SheetConfig | string {
@@ -311,7 +366,8 @@ export function readProjectFile(text: string): ProjectReadResult {
   const sheet = readSheet(parsed['sheet']);
   if (typeof sheet === 'string') return { ok: false, error: sheet };
 
-  const rawDesigns = Array.isArray(parsed['designs']) ? parsed['designs'] : [];
+  const rawDesigns: readonly unknown[] = Array.isArray(parsed['designs']) ? parsed['designs'] : [];
+  const measurements = readMeasurements(parsed['measurements'], rawDesigns);
   const entries: QueueEntry[] = [];
   const seenIds = new Set<string>();
 
@@ -330,8 +386,7 @@ export function readProjectFile(text: string): ProjectReadResult {
     const design: ReleaseDesign = {
       release,
       templateId: readTemplateId(source['templateId']),
-      params: readParams(source['params']),
-      dimensions: readDimensions(source['dimensions']),
+      params: readParams(source['params'], version),
     };
     // A file written before this flag existed has no such key, and every
     // Release in it was one the collector had finished with.
@@ -340,5 +395,5 @@ export function readProjectFile(text: string): ProjectReadResult {
     );
   }
 
-  return { ok: true, project: { entries, sheet } };
+  return { ok: true, project: { entries, sheet, measurements } };
 }

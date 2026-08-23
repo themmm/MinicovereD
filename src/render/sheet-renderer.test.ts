@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { A4, LETTER } from '../domain/paper.ts';
 import { rectsOverlap } from '../domain/units.ts';
 import { DEFAULT_PART_DIMENSIONS, jCardSize, partShape, PART_KINDS } from '../domain/parts.ts';
-import type { JCardPanel, PartKind } from '../domain/parts.ts';
+import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
 import type { Rect } from '../domain/units.ts';
-import { DEFAULT_TEMPLATE_PARAMS, renderSheets, TEMPLATES } from './sheet-renderer.ts';
+import {
+  DEFAULT_TEMPLATE_PARAMS,
+  renderSheets,
+  TEMPLATE_TOGGLES,
+  TEMPLATES,
+} from './sheet-renderer.ts';
 import type {
   PartPlacement,
   PrintFace,
@@ -52,8 +57,26 @@ const aDesign = (
   release,
   templateId: overrides.templateId ?? 'classic',
   params: { ...DEFAULT_TEMPLATE_PARAMS, ...overrides.params },
-  dimensions: DEFAULT_PART_DIMENSIONS,
 });
+
+/**
+ * The seam at this project's default Part sizes, measured face-blind.
+ *
+ * Named apart from `renderSheets` rather than shadowing it, so that a call site
+ * saying `renderSheets` is always the seam with everything spelled out —
+ * measurement is injected, and that is the property the seam exists to have.
+ * The two tests that need a different measurer say so at the call.
+ *
+ * The measurements are app-level from v2 and arrive beside the designs rather
+ * than inside one, so a test that is not about them says nothing about them.
+ * Five call sites are about them — two nudged Labels and three 1 mm J-Cards out
+ * of a project file — and pass their own.
+ */
+const renderSheetsAt = (
+  designs: readonly ReleaseDesign[],
+  config: SheetConfig,
+  dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS,
+): readonly SheetLayout[] => renderSheets(designs, config, dimensions, testMeasurer);
 
 const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
 
@@ -98,7 +121,7 @@ const expectMm = (actual: number, expected: number, what: string): void => {
 
 describe('SheetRenderer — Part geometry', () => {
   it('renders the three Parts of one Release at their physical defaults', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     if (!sheet) throw new Error('no sheet rendered');
 
     // J-Card unfolded: Inner Flap 14 + Spine 5.5 + Front Panel 68, height 79 (ADR-0005).
@@ -116,7 +139,7 @@ describe('SheetRenderer — Part geometry', () => {
   });
 
   it('puts all three Parts of a single Release on one A4 Sheet', () => {
-    const sheets = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const sheets = renderSheetsAt([aDesign()], A4_SHEET);
 
     expect(sheets).toHaveLength(1);
     expect(sheets[0]?.paper.name).toBe('A4');
@@ -128,7 +151,7 @@ describe('SheetRenderer — Part geometry', () => {
   });
 
   it('keeps every Part inside the printable margin and clear of the others', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     if (!sheet) throw new Error('no sheet rendered');
     const { placements } = sheet;
 
@@ -149,7 +172,7 @@ describe('SheetRenderer — Part geometry', () => {
 
 describe('SheetRenderer — J-Card panels and guides', () => {
   it('folds the J-Card into Inner Flap 14, Spine 5.5 and Front Panel 68', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const panels = Object.fromEntries((jcard?.panels ?? []).map((panel) => [panel.panel, panel.rect]));
 
@@ -163,7 +186,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
   });
 
   it('marks a cutting guide around every Part', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
 
     for (const placement of sheet?.placements ?? []) {
       const cuts = placement.guides.filter((guide) => guide.kind === 'cut');
@@ -181,7 +204,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
   });
 
   it('marks fold guides on the J-Card only, at both panel boundaries', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const foldsByPart = new Map(
       (sheet?.placements ?? []).map((placement) => [
         placement.part,
@@ -206,7 +229,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
   });
 
   it('keeps every mark inside the printable area, guides included', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
 
     for (const placement of sheet?.placements ?? []) {
       const points = placement.guides.flatMap((guide) => guide.points);
@@ -220,7 +243,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
   });
 
   it('cuts the diagonal corner notch into the Label outline', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const label = sheet?.placements.find((placement) => placement.part === 'label');
     const cut = label?.guides.find((guide) => guide.kind === 'cut');
 
@@ -233,7 +256,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
 describe('SheetRenderer — Release content', () => {
   it('prints every track of the Release on the Back Card', () => {
     const release = aRelease();
-    const [sheet] = renderSheets([aDesign(release)], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign(release)], A4_SHEET);
     const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
     const printed = (backCard?.ops ?? []).flatMap((op) => (op.op === 'text' ? [op.text] : []));
 
@@ -243,7 +266,7 @@ describe('SheetRenderer — Release content', () => {
   });
 
   it('carries artist and album onto Front Panel and Spine', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const texts = (jcard?.ops ?? []).flatMap((op) => (op.op === 'text' ? [op] : []));
 
@@ -265,7 +288,7 @@ describe('SheetRenderer — Release content', () => {
 
   it('places the uploaded artwork on Front Panel and Label', () => {
     const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
-    const [sheet] = renderSheets([aDesign(aRelease({ artwork }))], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign(aRelease({ artwork }))], A4_SHEET);
 
     for (const part of ['jcard', 'label'] as const) {
       const placement = sheet?.placements.find((candidate) => candidate.part === part);
@@ -277,14 +300,14 @@ describe('SheetRenderer — Release content', () => {
 
 describe('SheetRenderer — Sheet configuration', () => {
   it('prints only the Parts the job asked for', () => {
-    const sheets = renderSheets([aDesign()], { ...A4_SHEET, parts: ['label'] }, testMeasurer);
+    const sheets = renderSheetsAt([aDesign()], { ...A4_SHEET, parts: ['label'] });
 
     expect(sheets).toHaveLength(1);
     expect(sheets[0]?.placements.map((placement) => placement.part)).toEqual(['label']);
   });
 
   it('lays the Sheet out on Letter when asked', () => {
-    const [sheet] = renderSheets([aDesign()], { ...A4_SHEET, paper: LETTER }, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], { ...A4_SHEET, paper: LETTER });
 
     expect(sheet?.paper.id).toBe('letter');
     // Letter is shorter than A4, so the same Parts have to sit higher up.
@@ -293,7 +316,7 @@ describe('SheetRenderer — Sheet configuration', () => {
   });
 
   it('keeps Parts out of a widened printable margin', () => {
-    const [sheet] = renderSheets([aDesign()], { ...A4_SHEET, marginMm: 15 }, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], { ...A4_SHEET, marginMm: 15 });
 
     for (const { part, bounds } of sheet?.placements ?? []) {
       expect(bounds.x, `${part} left`).toBeGreaterThanOrEqual(15);
@@ -307,7 +330,7 @@ describe('SheetRenderer — Sheet configuration', () => {
     const first = aRelease({ id: 'a', artist: 'Glen Campbell', album: 'Wichita Lineman' });
     const second = aRelease({ id: 'b', artist: 'Cornelius', album: 'Fantasma' });
 
-    const sheets = renderSheets([aDesign(first), aDesign(second)], A4_SHEET, testMeasurer);
+    const sheets = renderSheetsAt([aDesign(first), aDesign(second)], A4_SHEET);
     const placements = sheets.flatMap((sheet) => sheet.placements);
 
     expect(placements).toHaveLength(6);
@@ -327,7 +350,7 @@ describe('SheetRenderer — Sheet configuration', () => {
       aDesign(aRelease({ id: `r${index}` })),
     );
 
-    const sheets = renderSheets(designs, A4_SHEET, testMeasurer);
+    const sheets = renderSheetsAt(designs, A4_SHEET);
     const placements = sheets.flatMap((sheet) => sheet.placements);
 
     expect(placements).toHaveLength(24);
@@ -337,7 +360,7 @@ describe('SheetRenderer — Sheet configuration', () => {
 
 describe('SheetRenderer — Template parameters', () => {
   const opsFor = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label') => {
-    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([design], A4_SHEET);
     return sheet?.placements.find((placement) => placement.part === part)?.ops ?? [];
   };
 
@@ -412,7 +435,7 @@ describe('SheetRenderer — Template parameters', () => {
 
   it('puts the MiniDisc logo on Front Panel and Spine when it is enabled', () => {
     const design = aDesign(aRelease(), { params: { showLogo: true } });
-    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([design], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const panels = Object.fromEntries((jcard?.panels ?? []).map((p) => [p.panel, p.rect]));
     const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
@@ -436,7 +459,7 @@ describe('SheetRenderer — Template parameters', () => {
 
   it('keeps the logo inside the Part it sits on', () => {
     const design = aDesign(aRelease(), { params: { showLogo: true } });
-    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([design], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const { width, height } = jCardSize(DEFAULT_PART_DIMENSIONS.jcard);
     const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
@@ -459,7 +482,7 @@ describe('SheetRenderer — Template parameters', () => {
       album: 'Lift Your Skinny Fists Like Antennas to Heaven',
     });
     const design = aDesign(wordy, { params: { showLogo: true, showOverlayText: true } });
-    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([design], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const ops = jcard?.ops ?? [];
 
@@ -488,7 +511,7 @@ describe('SheetRenderer — Template parameters', () => {
   });
 
   it('turns the Spine logo with the Spine type, so both read the same way', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
     if (!spine) throw new Error('J-Card has no Spine');
@@ -507,7 +530,7 @@ describe('SheetRenderer — Template parameters', () => {
     const dark = aDesign(aRelease(), {
       params: { accentColor: '#101418', paperColor: '#0b0b0b', inkColor: '#0b0b0b' },
     });
-    const [sheet] = renderSheets([dark], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([dark], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
     if (!spine) throw new Error('J-Card has no Spine');
@@ -521,7 +544,7 @@ describe('SheetRenderer — Template parameters', () => {
   });
 
   it('reads the Spine bottom-to-top, the way a shelved case is read', () => {
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
     if (!spine) throw new Error('J-Card has no Spine');
@@ -543,11 +566,7 @@ describe('SheetRenderer — Label dimensions', () => {
     notch: boolean;
     notchSize: number;
   }) => {
-    const design: ReleaseDesign = {
-      ...aDesign(),
-      dimensions: { ...DEFAULT_PART_DIMENSIONS, label },
-    };
-    const [sheet] = renderSheets([design], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET, { ...DEFAULT_PART_DIMENSIONS, label });
     const placement = sheet?.placements.find((candidate) => candidate.part === 'label');
     if (!placement) throw new Error('no Label placed');
     return placement;
@@ -592,7 +611,7 @@ describe('SheetRenderer — tracklist overflow', () => {
         title: `Track ${index + 1}`,
       })),
     });
-    const [sheet] = renderSheets([aDesign(release)], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign(release)], A4_SHEET);
     const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
     return (backCard?.ops ?? []).flatMap((op) =>
       op.op === 'text' ? [{ text: op.text, x: op.at.x, y: op.at.y, sizeMm: op.style.sizeMm }] : [],
@@ -625,7 +644,7 @@ describe('SheetRenderer — tracklist overflow', () => {
   });
 
   it('keeps every track inside the Back Card', () => {
-    const [sheet] = renderSheets(
+    const [sheet] = renderSheetsAt(
       [
         aDesign(
           aRelease({
@@ -637,7 +656,6 @@ describe('SheetRenderer — tracklist overflow', () => {
         ),
       ],
       A4_SHEET,
-      testMeasurer,
     );
     const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
     if (!backCard) throw new Error('no Back Card');
@@ -659,7 +677,7 @@ describe('SheetRenderer — tracklist overflow', () => {
         { position: 3, title: 'Ærø · Łódź' },
       ],
     });
-    const [sheet] = renderSheets([aDesign(release)], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign(release)], A4_SHEET);
     const printed = (sheet?.placements ?? [])
       .flatMap((placement) => placement.ops)
       .flatMap((op) => (op.op === 'text' ? [op.text] : []));
@@ -675,7 +693,7 @@ describe('SheetRenderer — tracklist overflow', () => {
 
 describe('SheetRenderer — warnings about what was drawn', () => {
   const sheetFor = (trackCount: number) =>
-    renderSheets(
+    renderSheetsAt(
       [
         aDesign(
           aRelease({
@@ -688,7 +706,6 @@ describe('SheetRenderer — warnings about what was drawn', () => {
         ),
       ],
       A4_SHEET,
-      testMeasurer,
     )[0];
 
   it('says nothing when the tracklist fits at a printable size', () => {
@@ -712,7 +729,7 @@ describe('SheetRenderer — warnings about what was drawn', () => {
   });
 
   it('reports nothing when the job does not print the Back Card at all', () => {
-    const sheets = renderSheets(
+    const sheets = renderSheetsAt(
       [
         aDesign(
           aRelease({
@@ -724,7 +741,6 @@ describe('SheetRenderer — warnings about what was drawn', () => {
         ),
       ],
       { ...A4_SHEET, parts: ['label'] },
-      testMeasurer,
     );
 
     expect(sheets[0]?.warnings).toBeUndefined();
@@ -762,7 +778,7 @@ describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
     release: Partial<Release>,
     overrides: { templateId?: TemplateId; params?: Partial<TemplateParams> } = {},
   ): SheetLayout | undefined =>
-    renderSheets([aDesign(aRelease(release), overrides)], A4_SHEET, testMeasurer)[0];
+    renderSheetsAt([aDesign(aRelease(release), overrides)], A4_SHEET)[0];
 
   it('says nothing when the whole line fits on the edge', () => {
     // 'Glen Campbell — Wichita Lineman' is 31 characters, so 44.95 of 65.8 mm.
@@ -821,28 +837,19 @@ describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
     // A project file may carry a 1 mm J-Card (`MIN_PART_MM`), which leaves the
     // Spine a negative width — `ellipsise` then returns a bare ellipsis for
     // anything at all, and a Release with nothing to say has lost nothing.
-    const sheets = renderSheets(
-      [
-        {
-          ...aDesign(aRelease({ artist: '', album: '' })),
-          dimensions: {
-            ...DEFAULT_PART_DIMENSIONS,
-            jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, height: 1 },
-          },
-        },
-      ],
+    const sheets = renderSheetsAt(
+      [aDesign(aRelease({ artist: '', album: '' }))],
       { ...A4_SHEET, parts: ['jcard'] },
-      testMeasurer,
+      { ...DEFAULT_PART_DIMENSIONS, jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, height: 1 } },
     );
 
     expect(sheets[0]?.warnings).toBeUndefined();
   });
 
   it('reports nothing when the job does not print the J-Card at all', () => {
-    const sheets = renderSheets(
+    const sheets = renderSheetsAt(
       [aDesign(aRelease({ album: TOO_LONG }))],
       { ...A4_SHEET, parts: ['back-card', 'label'] },
-      testMeasurer,
     );
 
     expect(sheets[0]?.warnings).toBeUndefined();
@@ -893,7 +900,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
   it('sets every piece of type in a face the drawing Template names', () => {
     for (const templateId of TEMPLATE_IDS) {
       const faces = TEMPLATES[templateId].faces;
-      const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, testMeasurer);
+      const [sheet] = renderSheetsAt([aDesign(aRelease(), { templateId })], A4_SHEET);
 
       const used = new Set(
         PART_KINDS.flatMap((part) => textOpsOf(sheet, part)).map((op) => op.style.face),
@@ -908,7 +915,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
 
   it('gives each role the face it was assigned', () => {
     const { display, text, spine } = TEMPLATES.classic.faces;
-    const [sheet] = renderSheets([aDesign()], A4_SHEET, testMeasurer);
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
 
     // The Spine is the one line on the J-Card that reads sideways up the edge.
     const spineOp = textOpsOf(sheet, 'jcard').find(
@@ -944,6 +951,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
       const [sheet] = renderSheets(
         [aDesign(aRelease({ album }), { templateId })],
         { ...A4_SHEET, parts: ['jcard'] },
+        DEFAULT_PART_DIMENSIONS,
         recordingMeasurer().measure,
       );
       return sheet;
@@ -968,7 +976,12 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     // about the layout looks wrong until it is on paper.
     for (const templateId of TEMPLATE_IDS) {
       const { measure, asked } = recordingMeasurer();
-      const [sheet] = renderSheets([aDesign(aRelease(), { templateId })], A4_SHEET, measure);
+      const [sheet] = renderSheets(
+        [aDesign(aRelease(), { templateId })],
+        A4_SHEET,
+        DEFAULT_PART_DIMENSIONS,
+        measure,
+      );
 
       const measured = new Set(asked.map(([text, face]) => `${face} ${text}`));
       const drawn = PART_KINDS.flatMap((part) => textOpsOf(sheet, part));
@@ -987,10 +1000,9 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
   const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
 
   const frontPanel = (params: Partial<TemplateParams> = {}) => {
-    const [sheet] = renderSheets(
+    const [sheet] = renderSheetsAt(
       [aDesign(aRelease({ artwork }), { params })],
       { ...A4_SHEET, parts: ['jcard'] },
-      testMeasurer,
     );
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
@@ -1089,18 +1101,13 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
     // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. Unclamped, the
     // bled artwork would be 13 mm shorter than nothing.
     for (const insetArtwork of [false, true]) {
-      const [sheet] = renderSheets(
-        [
-          {
-            ...aDesign(aRelease({ artwork }), { params: { insetArtwork } }),
-            dimensions: {
-              ...DEFAULT_PART_DIMENSIONS,
-              jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
-            },
-          },
-        ],
+      const [sheet] = renderSheetsAt(
+        [aDesign(aRelease({ artwork }), { params: { insetArtwork } })],
         { ...A4_SHEET, parts: ['jcard'] },
-        testMeasurer,
+        {
+          ...DEFAULT_PART_DIMENSIONS,
+          jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+        },
       );
       const art = sheet?.placements[0]?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
       if (art?.op !== 'image') throw new Error('no artwork');
@@ -1111,10 +1118,9 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
   });
 
   it('leaves Full-bleed alone, whose artwork bleeds on all four edges anyway', () => {
-    const [sheet] = renderSheets(
+    const [sheet] = renderSheetsAt(
       [aDesign(aRelease({ artwork }), { templateId: 'fullbleed', params: { insetArtwork: true } })],
       { ...A4_SHEET, parts: ['jcard'] },
-      testMeasurer,
     );
     const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
     const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
@@ -1123,6 +1129,50 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
 
     expect(art.rect).toEqual(panel);
   });
+});
+
+describe('SheetRenderer — a Template reads the toggles it declares, and no others', () => {
+  /**
+   * Every op of every Part, as one comparable string.
+   *
+   * Coarse on purpose: this is asking "did flipping that switch change anything
+   * at all", so it has to see a moved rectangle as readily as a dropped one.
+   */
+  const drawingOf = (templateId: TemplateId, params: Partial<TemplateParams>): string => {
+    const release = aRelease({
+      artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 },
+    });
+    const [sheet] = renderSheetsAt([aDesign(release, { templateId, params })], A4_SHEET);
+    return JSON.stringify(sheet?.placements.map((placement) => placement.ops));
+  };
+
+  /**
+   * The declaration held against the drawing, both ways round.
+   *
+   * `Template.toggles` is what the Design panel filters on, so a Template that
+   * declares a control it ignores puts a dead switch in front of the collector,
+   * and one that reads a toggle it did not declare hides a live one. Neither
+   * is visible in a screenshot, and both are exactly one wrong array element
+   * away — which is why this is asserted rather than reviewed.
+   *
+   * `TEMPLATE_TOGGLES` rather than each Template's own list drives the loop, so
+   * a Template that drops a toggle from its declaration is still asked about
+   * that toggle — and answers the other way round.
+   */
+  for (const templateId of TEMPLATE_IDS) {
+    const declared = TEMPLATES[templateId].toggles;
+
+    for (const toggle of TEMPLATE_TOGGLES) {
+      const reads = declared.includes(toggle);
+      it(`${templateId} ${reads ? 'reads' : 'ignores'} ${toggle}, as it declares`, () => {
+        const on = drawingOf(templateId, { [toggle]: true });
+        const off = drawingOf(templateId, { [toggle]: false });
+
+        if (reads) expect(on).not.toEqual(off);
+        else expect(on).toEqual(off);
+      });
+    }
+  }
 });
 
 describe('SheetRenderer — each Template draws its own tracklist', () => {
@@ -1155,10 +1205,9 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   const isListLine = (op: TextOp): boolean => /^\d+\. /.test(op.text) || /^\d+:\d\d/.test(op.text);
 
   const backCard = (templateId: TemplateId, params = DARK, release = aRelease()) => {
-    const [sheet] = renderSheets(
+    const [sheet] = renderSheetsAt(
       [aDesign(release, { templateId, params })],
       { ...A4_SHEET, parts: ['back-card'] },
-      testMeasurer,
     );
     const placement = sheet?.placements.find((each) => each.part === 'back-card');
     if (!placement) throw new Error('no Back Card');
@@ -1466,10 +1515,10 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     params: Partial<TemplateParams> = {},
     dimensions = DEFAULT_PART_DIMENSIONS,
   ): SheetLayout => {
-    const [sheet] = renderSheets(
-      [{ ...aDesign(release, { templateId: 'minimal', params }), dimensions }],
+    const [sheet] = renderSheetsAt(
+      [aDesign(release, { templateId: 'minimal', params })],
       A4_SHEET,
-      testMeasurer,
+      dimensions,
     );
     if (!sheet) throw new Error('no Sheet');
     return sheet;
@@ -1547,10 +1596,9 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
 
     // The control: the same Release under Classic does produce that fill, so
     // the assertion above is looking for something that exists.
-    const [classic] = renderSheets(
+    const [classic] = renderSheetsAt(
       [aDesign(aRelease(), { templateId: 'classic', params })],
       { ...A4_SHEET, parts: ['jcard'] },
-      testMeasurer,
     );
     expect(
       (classic?.placements[0]?.ops ?? []).filter((op) => op.op === 'fill-rect' && translucent(op)),
