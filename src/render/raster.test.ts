@@ -59,7 +59,7 @@ const HUNDRED_MM_PART: SheetLayout = {
   placements: [
     {
       releaseId: 'r1',
-      part: 'back-card',
+      part: 'insert',
       bounds: { x: 0, y: 0, width: 100, height: 100 },
       turned: false,
       ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 100, height: 100 }, color: '#fff' }],
@@ -207,7 +207,7 @@ describe('rasterising a Part packed on its side (ADR-0014)', () => {
     placements: [
       {
         releaseId: 'r1',
-        part: 'jcard',
+        part: 'insert',
         bounds: { x: 5, y: 5, width: 79, height: 282.5 },
         turned: true,
         ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 282.5, height: 79 }, color: '#123456' }],

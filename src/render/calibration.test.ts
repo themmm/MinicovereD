@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
-import { DEFAULT_PART_DIMENSIONS, LABEL_PRESETS, partSize } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, LABEL_PRESETS } from '../domain/parts.ts';
 import type { PartDimensions } from '../domain/parts.ts';
 import { rectsOverlap } from '../domain/units.ts';
 import type { Rect } from '../domain/units.ts';
@@ -12,8 +12,8 @@ const measurer: TextMeasurer = {
   widthMm: (text, style) => text.length * style.sizeMm * 0.5,
 };
 
-const sheet = (dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS) =>
-  renderCalibrationSheet({ paper: A4, marginMm: 5 }, dimensions, measurer);
+const sheet = (dimensions: PartDimensions = DEFAULT_PART_DIMENSIONS, marginMm = 5) =>
+  renderCalibrationSheet({ paper: A4, marginMm }, dimensions, measurer);
 
 /** Every figure the sheet draws, by the caption printed beside it. */
 const figures = (dimensions?: PartDimensions): Map<string, Rect> =>
@@ -85,33 +85,69 @@ describe('the calibration sheet — outlines at 1:1', () => {
     expect(figures().has('Label — this Release')).toBe(false);
   });
 
-  it('shows the J-Card and the Back Card at their current dimensions', () => {
+  it('shows the Insert as the end that wraps the case, and one Page beside it', () => {
+    // Not the flat strip: 282.5 mm does not fit any printable area this app can
+    // produce, so an outline of it would be omitted at every margin and the
+    // footer would then advise a margin change that cannot help. What a case
+    // actually decides is these two shapes.
     const drawn = figures();
-    const jcard = partSize('jcard', DEFAULT_PART_DIMENSIONS);
-    const backCard = partSize('back-card', DEFAULT_PART_DIMENSIONS);
 
-    expectMm(drawn.get('J-Card')?.width ?? -1, jcard.width, 'J-Card width');
-    expectMm(drawn.get('J-Card')?.height ?? -1, jcard.height, 'J-Card height');
-    expectMm(drawn.get('Back Card')?.width ?? -1, backCard.width, 'Back Card width');
-    expectMm(drawn.get('Back Card')?.height ?? -1, backCard.height, 'Back Card height');
+    expectMm(drawn.get('Insert — case end')?.width ?? -1, 87.5, 'case end width');
+    expectMm(drawn.get('Insert — case end')?.height ?? -1, 79, 'case end height');
+    expectMm(drawn.get('Insert — one Page')?.width ?? -1, 65, 'Page width');
+    expectMm(drawn.get('Insert — one Page')?.height ?? -1, 79, 'Page height');
+  });
+
+  it('never omits either Insert figure, at any margin the control can reach', () => {
+    // The whole point of the two figures. The margin control stops at 25 mm, and
+    // an 87.5 mm outline plus its caption clears A4 at every step of it — so the
+    // one Part that matters is always on the page, which the strip never could be.
+    for (const marginMm of [0, 5, 10, 25]) {
+      const drawn = sheet(DEFAULT_PART_DIMENSIONS, marginMm);
+      expect(drawn.omitted, `${marginMm} mm margin`).not.toContain('Insert — case end');
+      expect(drawn.omitted, `${marginMm} mm margin`).not.toContain('Insert — one Page');
+    }
+  });
+
+  it('prints the flat strip’s length as a number, since it cannot be an outline', () => {
+    const printed = sheet()
+      .layouts.flatMap((layout) => layout.ops ?? [])
+      .flatMap((op) => (op.op === 'text' ? [op.text] : []))
+      .join(' ');
+
+    expect(printed).toContain('152.5 mm at 2 Pages');
+    expect(printed).toContain('282.5 mm at 4');
   });
 
   it('follows the Part dimensions it is given rather than the defaults', () => {
     const adjusted: PartDimensions = {
       ...DEFAULT_PART_DIMENSIONS,
-      backCard: { width: 66, height: 74 },
+      insert: { ...DEFAULT_PART_DIMENSIONS.insert, pageWidth: 62, height: 74 },
     };
 
-    expectMm(figures(adjusted).get('Back Card')?.width ?? -1, 66, 'adjusted Back Card width');
-    expectMm(figures(adjusted).get('Back Card')?.height ?? -1, 74, 'adjusted Back Card height');
+    expectMm(figures(adjusted).get('Insert — one Page')?.width ?? -1, 62, 'adjusted Page width');
+    expectMm(figures(adjusted).get('Insert — one Page')?.height ?? -1, 74, 'adjusted Page height');
+    expectMm(figures(adjusted).get('Insert — case end')?.height ?? -1, 74, 'adjusted case end height');
   });
 
-  it('marks the J-Card fold lines, so the panel widths can be measured too', () => {
-    const jcard = sheet().figures.find((figure) => figure.label === 'J-Card');
+  it('marks the case end’s two fold lines, so the panel widths can be measured too', () => {
+    const caseEnd = sheet().figures.find((figure) => figure.label === 'Insert — case end');
 
-    expect(jcard?.folds).toHaveLength(2);
-    expectMm(jcard?.folds?.[0] ?? -1, 14, 'first fold');
-    expectMm(jcard?.folds?.[1] ?? -1, 19.5, 'second fold');
+    expect(caseEnd?.folds).toHaveLength(2);
+    expectMm(caseEnd?.folds?.[0] ?? -1, 14, 'first fold');
+    expectMm(caseEnd?.folds?.[1] ?? -1, 19.5, 'second fold');
+  });
+
+  it('marks them as case folds, which is the only kind on this page', () => {
+    // The fore-edge and the spine belong to the strip, and the strip is not here.
+    const folds = sheet()
+      .layouts.flatMap((layout) => layout.guides ?? [])
+      .filter((guide) => guide.kind === 'fold');
+
+    expect(folds).toHaveLength(2);
+    expect(new Set(folds.map((guide) => guide.kind === 'fold' && guide.fold))).toEqual(
+      new Set(['case']),
+    );
   });
 });
 
@@ -199,12 +235,15 @@ describe('the calibration sheet — the page', () => {
   });
 
   it('never turns a figure to make it fit, which is what keeps this page unchanged', () => {
-    // 210 − 2 × 62 leaves 86 mm of width and the J-Card is 87.5 across. Lying
-    // down it is 79 × 87.5 and would fit easily, and the packer can do that now
-    // (ADR-0014) — but this page draws its own outlines in paper coordinates
-    // from the packed box, and knows nothing about a turn. It would put an
-    // upright 87.5 mm outline inside a 79 mm box, spilling out to the right and
-    // stopping 8.5 mm short at the bottom, under a caption reading 79 × 87.5.
+    // 210 − 2 × 62 leaves 86 mm of width and the Insert's case end is 87.5
+    // across. Lying down it is 79 × 87.5 and would fit easily, and the packer can
+    // do that now (ADR-0014) — but this page draws its own outlines in paper
+    // coordinates from the packed box, and knows nothing about a turn. It would
+    // put an upright 87.5 mm outline inside a 79 mm box, spilling out to the right
+    // and stopping 8.5 mm short at the bottom, under a caption reading 79 × 87.5.
+    //
+    // A 62 mm margin is far past the 25 mm the control reaches, which is the
+    // point: this is the behaviour, not a case a collector meets.
     //
     // The other half of ADR-0014, the column under a figure, is off here for
     // the same reason `sortByHeight` is: this page is meant to be read down and
@@ -212,12 +251,13 @@ describe('the calibration sheet — the page', () => {
     // is short enough to open one at the sizes it ships with anyway.
     const narrow = renderCalibrationSheet({ paper: A4, marginMm: 62 }, DEFAULT_PART_DIMENSIONS, measurer);
 
-    expect(narrow.omitted).toContain('J-Card');
-    expect(narrow.figures.some((figure) => figure.label === 'J-Card')).toBe(false);
-    // The Labels are narrow enough to print standing up and still do. The test
-    // square is gone too, but for its own reason and at a smaller margin — the
-    // test below this one is about that.
+    expect(narrow.omitted).toContain('Insert — case end');
+    expect(narrow.figures.some((figure) => figure.label === 'Insert — case end')).toBe(false);
+    // The Labels and one Page are narrow enough to print standing up and still
+    // do. The test square is gone too, but for its own reason and at a smaller
+    // margin — the test below this one is about that.
     expect(narrow.figures.map((figure) => figure.label)).toContain('Label — Classic');
+    expect(narrow.figures.map((figure) => figure.label)).toContain('Insert — one Page');
   });
 
   it('names what it could not print at 1:1 rather than shrinking it', () => {

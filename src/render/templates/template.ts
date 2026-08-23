@@ -1,7 +1,7 @@
-import type { JCardPanel, PartDimensions } from '../../domain/parts.ts';
-import type { Release } from '../../domain/release.ts';
+import type { PartDimensions } from '../../domain/parts.ts';
+import type { Release, Track } from '../../domain/release.ts';
 import type { Rect, Size } from '../../domain/units.ts';
-import type { DrawOp, PrintFace, SheetWarning } from '../layout.ts';
+import type { DrawOp, PageRole, PrintFace, SheetWarning } from '../layout.ts';
 import type { TextMeasurer } from '../text.ts';
 
 /**
@@ -152,9 +152,39 @@ export interface PartContext {
   readonly measure: TextMeasurer;
 }
 
-export interface JCardContext extends PartContext {
-  /** The three panels, in Part-local coordinates. */
-  readonly panels: Readonly<Record<JCardPanel, Rect>>;
+/**
+ * One Page of the Insert, ready to draw: where it is, what it is for, and — when
+ * it is a tracklist Page — which tracks landed on it.
+ *
+ * The tracks arrive already dealt out. A long list may run over two Pages, and
+ * splitting it is the renderer's job rather than a Template's: how a list is
+ * divided is one rule for every Template (`splitTracks`), and a Template free to
+ * divide it itself would be free to lose a track.
+ */
+export interface InsertPage {
+  /** 1-based, counting along the flat strip. Page 1 is the Front Panel. */
+  readonly page: number;
+  readonly role: PageRole;
+  readonly rect: Rect;
+  /** Present on a tracklist Page: this Page's share of the list, in order. */
+  readonly tracks?: readonly Track[];
+}
+
+/**
+ * The Insert's flat strip, cut into the sections a Template draws into.
+ *
+ * The Pages are given rather than derived, because how many there are is decided
+ * before anything is drawn — the packer needs the strip's length first — and
+ * because the answer depends on the paper (ADR-0014) as well as on the Release.
+ * A Template is handed the Pages it got and draws them.
+ */
+export interface InsertContext extends PartContext {
+  /** The 14 mm end folded inside the case to hold the Insert in place. */
+  readonly innerFlap: Rect;
+  /** The 5.5 mm edge visible when the case is shelved. */
+  readonly spine: Rect;
+  /** Every Page, in reading order along the strip. `pages[0]` is the Front Panel. */
+  readonly pages: readonly InsertPage[];
 }
 
 /**
@@ -194,7 +224,30 @@ export interface Template {
    * it did not declare fails too.
    */
   readonly toggles: readonly TemplateToggle[];
-  drawJCard(context: JCardContext): PartDrawing;
-  drawBackCard(context: PartContext): PartDrawing;
+  /**
+   * Whether this Template can fill a back cover for `release` — the odd Page out
+   * (ADR-0012), the Page that exists because the count is even.
+   *
+   * Declared by the Template because what a back cover *is* is the Template's
+   * business, and the Page **count** turns on the answer: a tracklist too long
+   * for one Page only buys a four-Page strip when there is something to fill the
+   * fourth. Classic and Full-bleed reprint the artwork, so they have one exactly
+   * when the Release has artwork; Minimal draws no artwork at all and so has
+   * none ever, which is what keeps a mixtape at two Pages.
+   *
+   * A Template that answered yes and then drew nothing would fold a blank Page,
+   * which is the one thing ADR-0012's even-Page rule exists to prevent — so
+   * `sheet-renderer.test.ts` requires a back-cover Page to carry marks.
+   */
+  hasBackCover(release: Release): boolean;
+  /**
+   * The whole strip: the Inner Flap, the Spine and every Page.
+   *
+   * One method rather than v1's `drawJCard` plus `drawBackCard`, because there is
+   * one Part now. The shared `drawInsert` composer in `shared.ts` walks the
+   * Pages and calls back per role, which is what keeps each Template drawing its
+   * own tracklist Page (ticket 03) without any of them owning the fold pattern.
+   */
+  drawInsert(context: InsertContext): PartDrawing;
   drawLabel(context: PartContext): PartDrawing;
 }

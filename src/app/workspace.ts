@@ -1,8 +1,8 @@
 import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
 import type { Measurements } from '../domain/measurements.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
-import { PART_KINDS, samePartDimensions } from '../domain/parts.ts';
-import type { LabelDimensions } from '../domain/parts.ts';
+import { PART_KINDS, sameInsertCut, sameLabelCut, samePartDimensions } from '../domain/parts.ts';
+import type { InsertDimensions, LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import { blankRelease } from '../domain/release.ts';
 import type { Credits, Release } from '../domain/release.ts';
 import { errorMessage } from '../errors.ts';
@@ -29,6 +29,7 @@ import { createDesignControls, describeDesign } from './design-controls.ts';
 import { clear, el } from './dom.ts';
 import { createEmptyState } from './empty-state.ts';
 import { createFold } from './fold.ts';
+import { createInsertControls } from './insert-controls.ts';
 import { createLabelControls } from './label-controls.ts';
 import { createPartBand } from './part-band.ts';
 import { admitRestore, refuseImport } from './project-arrival.ts';
@@ -106,6 +107,34 @@ export function createWorkspace(): Workspace {
       label.notch ? `${label.notchSize} mm notch` : 'square corner'
     }`;
 
+  /**
+   * What an opened project changed about the paper being cut, in the words of
+   * whichever Part it moved.
+   *
+   * Both Parts, and only the ones that moved. The v1 sentence quoted the Label
+   * whatever had changed, which read oddly the moment anything else could: a file
+   * that widened a Page announced itself by restating a Label nobody had touched.
+   * The comparison is still `samePartDimensions` over all nine numbers — a moved
+   * notch size or Front Panel width is a real change and still says so — and this
+   * only decides which of the two to spell out. When both moved, both are named.
+   */
+  const describeMeasurementChange = (
+    previous: PartDimensions,
+    next: PartDimensions,
+  ): string => {
+    const moved: string[] = [];
+    if (!sameInsertCut(previous.insert, next.insert)) {
+      moved.push(`the Insert’s Pages are now ${next.insert.pageWidth} mm wide`);
+    }
+    if (!sameLabelCut(previous.label, next.label)) {
+      moved.push(`the Label is now ${describeLabel(next.label)}`);
+    }
+    // Neither of the two headline numbers moved, but `samePartDimensions` said
+    // something did — the notch size, or one of the panel widths, none of which
+    // has a control. Named as a group rather than guessed at.
+    return moved.length > 0 ? moved.join(' and ') : 'the Part sizes are not the ones you had';
+  };
+
   const measure = createCanvasTextMeasurer();
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
   const store = createIndexedDbStore();
@@ -160,14 +189,17 @@ export function createWorkspace(): Workspace {
     // size of every Part this collector cuts. Said out loud when it happens,
     // and silent when it does not, so the sentence is worth reading.
     //
-    // The comparison is over all nine measurements, not only the Label: a file
-    // that moved the J-Card's height changed what gets cut just as much, and
-    // nothing else on screen would show it. Only the Label is quoted, because
-    // it is the one the collector set and so the one they can check.
+    // The comparison is over all nine measurements, not only the two with
+    // controls: a file that moved the Insert's height changed what gets cut just
+    // as much, and nothing else on screen would show it. What is *quoted* is
+    // whichever of the two the file actually moved, so the sentence never reports
+    // a change by naming a number that did not change — which is what it did when
+    // the Label was the only thing it knew how to say.
     const changed = !samePartDimensions(previous, measurements.dimensions);
     const measurementChange = changed
-      ? ` Its measurements replaced yours — the Label is now ${describeLabel(
-          measurements.dimensions.label,
+      ? ` Its measurements replaced yours — ${describeMeasurementChange(
+          previous,
+          measurements.dimensions,
         )}.`
       : '';
     projectControls.report(`${opened}${measurementChange}`);
@@ -243,13 +275,22 @@ export function createWorkspace(): Workspace {
 
   preview.onSummary((summary) => outputFold.setSummary(summary));
 
+  const insertControls = createInsertControls(
+    measurements.dimensions.insert,
+    (insert: InsertDimensions) => {
+      measurements = { ...measurements, dimensions: { ...measurements.dimensions, insert } };
+      changed();
+    },
+  );
   const labelControls = createLabelControls(measurements.dimensions.label, (label: LabelDimensions) => {
     // Every Release at once, which is the whole point: a cartridge is a
     // cartridge whatever is printed on it.
     measurements = { ...measurements, dimensions: { ...measurements.dimensions, label } };
     changed();
   });
-  measurementsFold.body.appendChild(labelControls.element);
+  // The Insert first: it is the Part a collector cuts most of, and the order down
+  // this fold is the order the paper goes through.
+  measurementsFold.body.append(insertControls.element, labelControls.element);
 
   const folds = el(
     'div',
@@ -343,10 +384,12 @@ export function createWorkspace(): Workspace {
    * than no summary at all, because it is read as current.
    */
   function showSummaries(entry: QueueEntry | undefined): void {
-    // The Label is in its own fold now, and its summary is not about the
-    // selected Release, so it is set whether or not there is one.
-    const { label } = measurements.dimensions;
-    measurementsFold.setSummary(`Label ${describeLabel(label)} · every Release`);
+    // The measurements are in their own fold now, and their summary is not about
+    // the selected Release, so it is set whether or not there is one.
+    const { insert, label } = measurements.dimensions;
+    measurementsFold.setSummary(
+      `Page ${insert.pageWidth} mm · Label ${describeLabel(label)} · every Release`,
+    );
 
     if (!entry) return;
     const { release } = entry.design;
@@ -574,13 +617,20 @@ export function createWorkspace(): Workspace {
     releaseForm = form;
 
     const designControls = createDesignControls(
-      { templateId: design.templateId, params: design.params },
+      { templateId: design.templateId, params: design.params, ...(design.pageCount === undefined ? {} : { pageCount: design.pageCount }) },
       (change) => {
-        updateSelected((current) => ({
-          ...current,
-          templateId: change.templateId ?? current.templateId,
-          params: change.params ?? current.params,
-        }));
+        updateSelected((current) => {
+          // `null` is the collector asking to go back to deriving the count, and
+          // is what takes the key off the Design; `undefined` means this change
+          // was not about Pages at all.
+          const pageCount = change.pageCount === undefined ? current.pageCount : change.pageCount;
+          return {
+            ...current,
+            templateId: change.templateId ?? current.templateId,
+            params: change.params ?? current.params,
+            ...(pageCount === null || pageCount === undefined ? {} : { pageCount }),
+          };
+        });
       },
     );
 
@@ -625,6 +675,7 @@ export function createWorkspace(): Workspace {
     sheetConfig = next.sheet;
     sheetControls.show(sheetConfig);
     measurements = next.measurements;
+    insertControls.show(measurements.dimensions.insert);
     labelControls.show(measurements.dimensions.label);
     selectionChanged();
   }

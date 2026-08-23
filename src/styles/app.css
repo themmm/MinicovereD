@@ -613,7 +613,7 @@ a:focus-visible {
  * The Parts are the page (ADR-0010). Every width below is literally its
  * millimetres — `calc(var(--w) * var(--mm))`, where `--w` is set from the
  * layout model — so one token is one truth and the real size relationships
- * between the three Parts stay visible.
+ * between the Parts stay visible.
  *
  * `--w` and `--h` come from TypeScript rather than being written here, because
  * a Part's dimensions are adjustable parameters: the Label has presets and a
@@ -774,8 +774,20 @@ a:focus-visible {
 
 /*
  * Three rows, one column per Part, so the artwork, the caption and any warning
- * line up across all three however tall any one of them turns out to be. `.spec`
+ * line up across both however tall either of them turns out to be. `.spec`
  * is `display: contents` for exactly that reason.
+ *
+ * The horizontal scroll is what ADR-0010's shared scale costs now that a Part can
+ * be 282.5 mm long. Every width is still literally its millimetres and the scale
+ * is still shared — a flat four-Page Insert is simply 1709 CSS px at 6.05 px/mm,
+ * wider than most viewports. So the row scrolls and the *page* does not: a
+ * sideways scrollbar on the document would move the header, the search field and
+ * every fold below along with it. Assembled, which is the default, is 73.5 mm and
+ * never reaches this.
+ *
+ * `overflow-y: visible` cannot be combined with `overflow-x: auto` — the
+ * computed value becomes `auto` on both axes — so the vertical padding a focused
+ * specimen's shadow needs is `clip` on that axis with a generous margin instead.
  */
 .specimens {
   display: grid;
@@ -784,6 +796,14 @@ a:focus-visible {
   grid-template-rows: auto auto auto;
   align-items: end;
   gap: 9px clamp(18px, 3vw, 44px);
+  overflow-x: auto;
+  overflow-y: clip;
+  overflow-clip-margin: 24px;
+  /* Room for the shadow under the last row, which the clip would otherwise cut. */
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  /* So a keyboard user tabbing to the second Part scrolls it fully into view. */
+  scroll-padding-inline: 12px;
 }
 
 .spec {
@@ -1223,6 +1243,14 @@ a:focus-visible {
     grid-auto-flow: row;
     grid-template-rows: none;
     justify-items: start;
+  }
+
+  /* Stacked, each Part gets its own scroller: a flat Insert is wider than a
+     narrow viewport, and the Label beside it is not, so one scroller for the
+     column would make the short Part scroll for the long one's sake. */
+  .spec {
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 
   .spec {

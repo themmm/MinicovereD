@@ -234,6 +234,22 @@ function describeWarning(warning: SheetWarning): string {
         `stays at ${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the ` +
         `artist or the album instead.`
       );
+    case 'insert-pages-short': {
+      // Named and quantified, unlike the band's version of the same warning: this
+      // list has no Part beside it and covers every Release at once, so it says
+      // which Release, what it lost and — when the paper is the limit — the two
+      // numbers the collector can act on.
+      const lost = warning.dropped
+        .map((role) => (role === 'credits' ? 'credits Page' : 'back cover'))
+        .join(' and the ');
+      const why =
+        warning.maxPages < warning.wantedPages
+          ? `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin folds ` +
+            `${warning.maxPages} Pages, not ${warning.wantedPages}. A4 at 7.25 mm or less folds four; ` +
+            `Letter never does.`
+          : `it fills ${warning.pages} Pages, not ${warning.wantedPages}, and no Page may be blank.`;
+      return `${warning.releaseTitle}: the ${lost} is not on the Insert — ${why}`;
+    }
   }
 }
 

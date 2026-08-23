@@ -42,7 +42,7 @@ const design: ReleaseDesign = {
   params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
 };
 
-const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['jcard', 'label'] };
+const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['insert', 'label'] };
 
 /** A collector who has nudged their Label away from both presets. */
 const measurements: Measurements = {
@@ -234,7 +234,7 @@ describe('reading a project file back', () => {
 
     expect(restored.paper.id).toBe('letter');
     expect(restored.marginMm).toBe(7.5);
-    expect(restored.parts).toEqual(['jcard', 'label']);
+    expect(restored.parts).toEqual(['insert', 'label']);
   });
 
   it('restores an adjusted Label, once, for the whole project', () => {
@@ -532,13 +532,38 @@ describe('reading a project file with values that would break a render', () => {
 
   it('drops a Part toggle it does not recognise instead of packing it', () => {
     const text = project((base) => {
-      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard', 'sleeve', 'label'];
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['insert', 'sleeve', 'label'];
     });
     const result = readProjectFile(text);
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.sheet.parts).toEqual(['jcard', 'label']);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
     expect(result.project.sheet.parts.every((part) => PART_KINDS.includes(part))).toBe(true);
+  });
+
+  it('collapses a version-1 file’s J-Card and Back Card into the one Insert', () => {
+    // ADR-0012's own migration sentence: a v1 Design has exactly one J-Card and
+    // one Back Card, which is exactly a two-Page Insert.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard', 'back-card', 'label'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('does not turn a J-Cards-only job into everything', () => {
+    // The one case where mapping the old names beats filtering them out. Filtered,
+    // this list would come back empty, fall through to "keep at least one Part"
+    // and hand the collector Labels they switched off.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert']);
   });
 
   it('keeps at least one Part, so a restored project can still print', () => {

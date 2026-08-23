@@ -1,21 +1,28 @@
-import { DEFAULT_PART_DIMENSIONS, LABEL_PRESETS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, insertSize, LABEL_PRESETS, PART_KINDS } from '../domain/parts.ts';
 import type { PartDimensions, PartKind } from '../domain/parts.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import type { PartPlacement, SheetLayout, SheetWarning } from '../render/layout.ts';
 import { partSheet } from '../render/part-sheet.ts';
-import type { JCardView } from '../render/part-sheet.ts';
+import type { InsertView } from '../render/part-sheet.ts';
 import { rasterizeSheet } from '../render/raster.ts';
 import { clear, el } from './dom.ts';
 
 /**
- * The Parts band: the three specimens, at one shared scale, as the composition
- * of the page (ADR-0010).
+ * The Parts band: the specimens, at one shared scale, as the composition of the
+ * page (ADR-0010).
  *
  * This is the design surface. The A4 Sheet used to be the only preview, which
  * put the 68 mm Front Panel on screen at roughly 2× physical size while
  * two-thirds of the area showed empty paper — the thing being designed was the
  * least legible thing on screen. Here every width is literally its millimetres,
  * so one token is one truth and the real size relationships stay visible.
+ *
+ * ADR-0010 wrote that rule for Parts of 87.5, 69 and 35 mm. A flat Insert is
+ * 152.5 or 282.5, which at 6.05 px/mm is 923 or 1709 CSS px, so the row can now
+ * be wider than the viewport. It still holds and the scale is still shared: the
+ * *band* scrolls sideways, and the page does not — see `.specimens` in app.css.
+ * Assembled, which is the default, is 73.5 × 79 whatever the Page count, which
+ * is the same box a v1 J-Card had.
  *
  * Scale lives entirely in CSS. This module owns only what CSS cannot know:
  * which Parts exist, what they look like, which Part is focused, and how far
@@ -35,8 +42,7 @@ const PART_DPI = 300;
 const FOCUS_DPI = 600;
 
 const PART_LABELS: Readonly<Record<PartKind, string>> = {
-  jcard: 'J-Card',
-  'back-card': 'Back Card',
+  insert: 'Insert',
   label: 'Label',
 };
 
@@ -44,19 +50,24 @@ const PART_LABELS: Readonly<Record<PartKind, string>> = {
  * Which Part a warning belongs under (ADR-0010 item 5).
  *
  * Warnings sit at their cause rather than collecting in one list away from the
- * Part that produced them: a tracklist that had to shrink is a fact about the
- * Back Card, and reading it anywhere else means looking for what it refers to.
+ * Part that produced them. All three are the Insert's now, and that is not the
+ * map going stale: the tracklist, the Spine and the Pages are all sections of one
+ * folded strip since ADR-0012, so the Part that produced them really is the same
+ * Part. The map stays because the Label is still a Part that could grow a warning
+ * of its own, and because a warning with no home would be silently dropped.
  */
 const WARNING_HOME: Readonly<Record<SheetWarning['kind'], PartKind>> = {
-  'type-below-print-floor': 'back-card',
-  'spine-truncated': 'jcard',
+  'type-below-print-floor': 'insert',
+  'spine-truncated': 'insert',
+  'insert-pages-short': 'insert',
 };
 
 /** Warnings that are errors rather than cautions, and are shown as such. */
 const WARNING_SEVERITY: Readonly<Record<SheetWarning['kind'], 'warn' | 'error'>> = {
   'type-below-print-floor': 'warn',
-  // The only one that reports content the collector will not find on the Part.
+  // The two that report content the collector will not find on the Part at all.
   'spine-truncated': 'error',
+  'insert-pages-short': 'error',
 };
 
 export interface PartBandOptions {
@@ -113,14 +124,57 @@ function describeWarning(warning: SheetWarning): string {
         `${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the artist or the ` +
         `album.`
       );
+    case 'insert-pages-short':
+      return describeShortfall(warning);
   }
 }
+
+/**
+ * Why the Insert has fewer Pages than this Release wanted, and what to do about
+ * it.
+ *
+ * Two different sentences, because there are two different causes and only one of
+ * them has a remedy. The paper being too small is fixable — lower the margin, or
+ * change paper — and the numbers to do it with are on the warning. Pages that
+ * could not be *filled* are not fixable and should not pretend to be: ADR-0012
+ * will not fold a blank Page, so a Release with nothing for a third Page gets
+ * two, and telling the collector to adjust something would send them looking for
+ * a control that cannot help.
+ *
+ * The `maxPages` comparison is what tells the two apart, which is why the warning
+ * carries it rather than a cause field — the geometry stays geometry and the
+ * wording stays here (layout.ts).
+ */
+function describeShortfall(warning: Extract<SheetWarning, { kind: 'insert-pages-short' }>): string {
+  const lost = warning.dropped.map((role) => (role === 'credits' ? 'credits' : 'back cover')).join(' and the ');
+  if (warning.maxPages < warning.wantedPages) {
+    return (
+      `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin has room for ` +
+      `${warning.maxPages} Pages, not ${warning.wantedPages}, so the ${lost} is not printed. ` +
+      `${LOWER_THE_MARGIN}`
+    );
+  }
+  return (
+    `This Release fills ${warning.pages} Pages, not ${warning.wantedPages}, so the ${lost} is not ` +
+    `printed. An Insert folds an even number of Pages and none of them may be blank.`
+  );
+}
+
+/**
+ * What actually helps when the paper is the limit.
+ *
+ * A4 takes a four-Page Insert up to a 7.25 mm printable margin and Letter takes
+ * one at no margin at all — 282.5 mm of strip against 279.4 mm of long edge — so
+ * the two papers need different advice and only one of them has any.
+ */
+const LOWER_THE_MARGIN =
+  'A four-Page Insert needs A4 and a printable margin of 7.25 mm or less; Letter is 3 mm too short for one at any margin.';
 
 /** 87.5 stays 87.5, 79 does not become 79.0. */
 const trim = (mm: number): string => String(Math.round(mm * 100) / 100);
 
 export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand {
-  let jcardView: JCardView = 'assembled';
+  let insertView: InsertView = 'assembled';
 
   const specimens = el('div', { class: 'specimens' });
   const scaleNote = el('span', { class: 'eyebrow__tail' });
@@ -157,15 +211,15 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
     return { element, set };
   }
 
-  const viewSeg = segment<JCardView>(
-    'J-Card view',
+  const viewSeg = segment<InsertView>(
+    'Insert view',
     [
       { value: 'assembled', text: 'Assembled' },
       { value: 'flat', text: 'Flat' },
     ],
     'assembled',
     (view) => {
-      jcardView = view;
+      insertView = view;
       redraw();
     },
   );
@@ -235,7 +289,7 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
       return;
     }
     scaleNote.textContent =
-      `all ${drawn.size === 1 ? 'one' : drawn.size === 2 ? 'two' : 'three'} at one scale — ` +
+      `${drawn.size === 1 ? 'one Part' : 'both Parts'} at one scale — ` +
       `${px.toFixed(2)} px/mm · click a Part to enlarge it`;
   }
 
@@ -343,20 +397,38 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
   /**
    * What the caption says beyond the name.
    *
-   * The millimetres are the point of a specimen, so the J-Card says both
-   * numbers when it is assembled: what is on screen, what actually prints, and
-   * where the difference went.
+   * The millimetres are the point of a specimen, so the Insert says every number
+   * that matters when it is assembled: what is on screen, how long the strip
+   * actually is, and how many Pages that is. Flat, the box on screen *is* the
+   * strip, so the Page count is all that is left to say.
+   *
+   * The Page count comes off the placement rather than out of the measurements,
+   * because it is not one: it is derived from this Release's content and capped by
+   * the paper (ADR-0012), so the specimen is the only thing that knows.
    */
-  function captionFacts(part: PartKind, box: { width: number; height: number }): string {
-    if (part !== 'jcard' || jcardView === 'flat') {
-      return `${trim(box.width)} × ${trim(box.height)} mm`;
-    }
-    const { jcard } = dimensions;
-    const flat = jcard.innerFlapWidth + jcard.spineWidth + jcard.frontPanelWidth;
+  function captionFacts(
+    part: PartKind,
+    box: { width: number; height: number },
+    placement: PartPlacement | undefined,
+  ): string {
+    const shown = `${trim(box.width)} × ${trim(box.height)}`;
+    if (part !== 'insert') return `${shown} mm`;
+
+    const pages = pageCountOf(placement);
+    const pageNote = `${pages} ${pages === 1 ? 'Page' : 'Pages'}`;
+    if (insertView === 'flat') return `${shown} mm flat · ${pageNote}`;
+
+    const { insert } = dimensions;
+    const flat = insertSize(insert, pages).width;
     return (
-      `${trim(box.width)} × ${trim(box.height)} shown · ${trim(flat)} flat · ` +
-      `flap ${trim(jcard.innerFlapWidth)} behind`
+      `${shown} shown · ${trim(flat)} flat · ${pageNote} · ` +
+      `flap ${trim(insert.innerFlapWidth)} behind`
     );
+  }
+
+  /** How many Pages this Insert folded into, counted off its own sections. */
+  function pageCountOf(placement: PartPlacement | undefined): number {
+    return (placement?.panels ?? []).filter((panel) => panel.panel === 'page').length;
   }
 
   /**
@@ -384,7 +456,7 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
     const specimen = drawn.get(part);
     if (!found || !specimen) return;
 
-    const view = part === 'jcard' ? jcardView : 'flat';
+    const view = part === 'insert' ? insertView : 'flat';
     const rendered = await rasterizeSheet(partSheet(found.sheet.paper, found.placement, view), dpi);
     if (token !== drawToken) return;
 
@@ -409,7 +481,7 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
       drawn.set(part, specimen);
 
       const found = placements.find((entry) => entry.placement.part === part);
-      const view = part === 'jcard' ? jcardView : 'flat';
+      const view = part === 'insert' ? insertView : 'flat';
       const box = found ? partSheet(found.sheet.paper, found.placement, view).paper : undefined;
 
       // The Part's size in millimetres, handed to CSS so that its width can be
@@ -423,7 +495,7 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
         specimen.art.style.setProperty('--h', String(box.height));
         specimen.caption.append(
           el('b', { text: PART_LABELS[part] }),
-          el('span', { text: captionFacts(part, box) }),
+          el('span', { text: captionFacts(part, box, found?.placement) }),
         );
       }
 
