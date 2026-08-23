@@ -1,32 +1,48 @@
 import type { PaperSize } from '../domain/paper.ts';
-import {
-  JCARD_PANEL_ORDER,
-  jCardSize,
-  partShape,
-  partSize,
-} from '../domain/parts.ts';
-import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
+import { insertSize, partShape, partSize } from '../domain/parts.ts';
+import type { PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
-import type { Mm, Rect, Size } from '../domain/units.ts';
+import type { Mm, Size } from '../domain/units.ts';
 import { DEFAULT_PART_GAP_MM, packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
+import { hasCredits } from '../domain/credits.ts';
+import { insertFolds, insertPanels, maxInsertPages, planInsert } from './insert-plan.ts';
+import type { InsertPlan } from './insert-plan.ts';
+import { splitTracks } from './tracklist-layout.ts';
 import type { Guide, PanelBounds, PartPlacement, SheetLayout, SheetWarning } from './layout.ts';
 import { CLASSIC_TEMPLATE } from './templates/classic.ts';
 import { FULLBLEED_TEMPLATE } from './templates/fullbleed.ts';
 import { MINIMAL_TEMPLATE } from './templates/minimal.ts';
 import type {
   DesignChoice,
-  JCardContext,
+  InsertContext,
+  InsertPage,
   PartContext,
   Template,
   TemplateId,
 } from './templates/template.ts';
 import type { TextMeasurer } from './text.ts';
 
-export type { SheetLayout, PartPlacement, Guide, DrawOp, PrintFace, TextStyle, TextOp, SheetWarning } from './layout.ts';
+export type {
+  SheetLayout,
+  PartPlacement,
+  Guide,
+  CutGuide,
+  FoldGuide,
+  FoldKind,
+  PageRole,
+  PanelBounds,
+  DrawOp,
+  PrintFace,
+  TextStyle,
+  TextOp,
+  SheetWarning,
+} from './layout.ts';
 export type { TextMeasurer } from './text.ts';
 export type {
   DesignChoice,
+  InsertContext,
+  InsertPage,
   Template,
   TemplateFaces,
   TemplateId,
@@ -57,6 +73,23 @@ export { TEMPLATES };
  */
 export interface ReleaseDesign extends DesignChoice {
   readonly release: Release;
+  /**
+   * How many Pages this Release's Insert folds into, when the collector said
+   * rather than let the content decide (ADR-0012's manual override).
+   *
+   * On the Design and deliberately **not** on `DesignChoice`, which is the half
+   * that carries forward (CONTEXT.md, Design choice). A collector who forced a
+   * four-Page Insert meant it about *this* record's credits, and carrying it to
+   * the next Release would fold Pages for content that is not there. Absent is
+   * the ordinary case and means "work it out".
+   *
+   * Not a measurement either, which is the other place it could have gone: every
+   * field of `Measurements` is a length in millimetres and a count is not one.
+   * There is no app-level default because the derived count already is one, and a
+   * better one — it is about the record in front of the collector rather than
+   * about their preferences.
+   */
+  readonly pageCount?: number;
 }
 
 export interface SheetConfig {
@@ -74,8 +107,7 @@ interface PartRef {
 
 /** Human names for the Parts, used when one has to be named in an error. */
 const PART_LABELS: Readonly<Record<PartKind, string>> = {
-  jcard: 'J-Card',
-  'back-card': 'Back Card',
+  insert: 'Insert',
   label: 'Label',
 };
 
@@ -89,35 +121,62 @@ export function templateFor(id: TemplateId): Template {
   return TEMPLATES[id];
 }
 
-function jCardPanels(dimensions: PartDimensions): Readonly<Record<JCardPanel, Rect>> {
-  const { innerFlapWidth, spineWidth, frontPanelWidth, height } = dimensions.jcard;
-  return {
-    'inner-flap': { x: 0, y: 0, width: innerFlapWidth, height },
-    spine: { x: innerFlapWidth, y: 0, width: spineWidth, height },
-    'front-panel': { x: innerFlapWidth + spineWidth, y: 0, width: frontPanelWidth, height },
-  };
+/**
+ * How many Pages this Design's Insert folds into, and what goes on each.
+ *
+ * Worked out here rather than inside the drawing, because the strip's *length*
+ * depends on it and the packer needs a length before anything is drawn. That is
+ * the whole reason the plan is a separate step: an Insert is the one Part whose
+ * size is not a measurement.
+ *
+ * The Template is asked one question — whether it has a back cover for this
+ * Release — and the paper is asked another: how long a strip it will take. Both
+ * answers change the count, which is why neither can be left to the Template
+ * that eventually draws the Pages.
+ */
+function planFor(design: ReleaseDesign, dimensions: PartDimensions, config: SheetConfig): InsertPlan {
+  const { release } = design;
+  return planInsert(
+    {
+      trackCount: release.tracks.length,
+      hasCredits: !!release.credits && hasCredits(release.credits),
+      hasBackCover: templateFor(design.templateId).hasBackCover(release),
+    },
+    dimensions.insert,
+    maxInsertPages(dimensions.insert, config.paper, config.marginMm),
+    design.pageCount,
+  );
 }
 
 /**
  * Cut guides trace what has to be cut out — including the Label's diagonal
- * corner. Fold guides mark where the J-Card folds into its three panels.
+ * corner. Fold guides mark every crease across the Insert, each one carrying
+ * which kind it is so the Sheet can draw the three differently: a collector who
+ * folds a fore-edge the way the spine goes gets a booklet with a blank face
+ * showing (ADR-0012).
  */
-function guidesFor(part: PartKind, dimensions: PartDimensions, size: Size): Guide[] {
-  const cut: Guide = { kind: 'cut', points: partShape(part, dimensions).outline, closed: true };
-  if (part !== 'jcard') return [cut];
+function guidesFor(
+  part: PartKind,
+  dimensions: PartDimensions,
+  pageCount: number,
+  size: Size,
+): Guide[] {
+  const cut: Guide = {
+    kind: 'cut',
+    points: partShape(part, dimensions, pageCount).outline,
+    closed: true,
+  };
+  if (part !== 'insert') return [cut];
 
-  const panels = jCardPanels(dimensions);
-  const folds: Guide[] = [panels['inner-flap'], panels.spine].map((panel) => {
-    const x = panel.x + panel.width;
-    return {
-      kind: 'fold' as const,
-      points: [
-        { x, y: 0 },
-        { x, y: size.height },
-      ],
-      closed: false,
-    };
-  });
+  const folds: Guide[] = insertFolds(dimensions.insert, pageCount).map((fold) => ({
+    kind: 'fold' as const,
+    fold: fold.kind,
+    points: [
+      { x: fold.atMm, y: 0 },
+      { x: fold.atMm, y: size.height },
+    ],
+    closed: false,
+  }));
   return [cut, ...folds];
 }
 
@@ -125,6 +184,7 @@ function drawPart(
   part: PartKind,
   design: ReleaseDesign,
   dimensions: PartDimensions,
+  plan: InsertPlan,
   size: Size,
   measure: TextMeasurer,
 ): { ops: PartPlacement['ops']; warnings?: readonly SheetWarning[]; panels?: readonly PanelBounds[] } {
@@ -141,19 +201,80 @@ function drawPart(
   };
 
   switch (part) {
-    case 'jcard': {
-      const panels = jCardPanels(dimensions);
-      const jCardContext: JCardContext = { ...context, panels };
-      return {
-        ...template.drawJCard(jCardContext),
-        panels: JCARD_PANEL_ORDER.map((panel) => ({ panel, rect: panels[panel] })),
+    case 'insert': {
+      const panels = insertPanels(dimensions.insert, plan.pages);
+      // Dealt out once, here, so every Template splits a long list the same way
+      // and none of them can lose a track doing it.
+      const shares = splitTracks(
+        design.release.tracks,
+        plan.pages.filter((role) => role === 'tracklist').length,
+      );
+      let listPage = 0;
+      const pages: InsertPage[] = panels.flatMap((panel): InsertPage[] => {
+        if (panel.panel !== 'page') return [];
+        const tracks = panel.role === 'tracklist' ? shares[listPage++] : undefined;
+        return [
+          {
+            page: panel.page,
+            role: panel.role,
+            rect: panel.rect,
+            ...(tracks ? { tracks } : {}),
+          },
+        ];
+      });
+      const insertContext: InsertContext = {
+        ...context,
+        // Non-null: `insertPanels` always emits these two first, in this order.
+        innerFlap: (panels[0] as Extract<PanelBounds, { panel: 'inner-flap' | 'spine' }>).rect,
+        spine: (panels[1] as Extract<PanelBounds, { panel: 'inner-flap' | 'spine' }>).rect,
+        pages,
       };
+      return { ...template.drawInsert(insertContext), panels };
     }
-    case 'back-card':
-      return template.drawBackCard(context);
     case 'label':
       return template.drawLabel(context);
   }
+}
+
+/**
+ * Something the collector can see on screen is not on the paper, said as data.
+ *
+ * Either of two things brings it on, and they come apart in both directions.
+ * **Content was dropped** — a credits Page or a back cover the Release has and
+ * the strip does not. **The strip is shorter than what was asked for** — which
+ * happens with nothing dropped at all, when a collector asks for four Pages on a
+ * two-Page Release: there was nothing more to print, so nothing was lost, but
+ * they still asked and still did not get it, and saying nothing there left the
+ * Design fold reading "4 Pages" over a specimen reading "2 Pages".
+ *
+ * Reported even when the collector chose it, which is the third case: asking for
+ * two Pages on a Release with credits gets exactly two, so nothing fell short —
+ * and the credits are still not on the paper. The Insert is the only place that
+ * says so, and a deliberate choice is not a reason to stop saying it. The wording
+ * is the UI's and it does not scold; see `describeShortfall`.
+ */
+function shortfall(
+  design: ReleaseDesign,
+  plan: InsertPlan,
+  maxPages: number,
+  config: SheetConfig,
+): SheetWarning[] {
+  if (plan.dropped.length === 0 && plan.pages.length >= plan.requestedPages) return [];
+  const { release } = design;
+  return [
+    {
+      kind: 'insert-pages-short',
+      releaseId: release.id,
+      releaseTitle: release.album || release.artist || release.id,
+      requestedPages: plan.requestedPages,
+      requestedByCollector: design.pageCount !== undefined,
+      pages: plan.pages.length,
+      maxPages,
+      paperName: config.paper.name,
+      marginMm: config.marginMm,
+      dropped: plan.dropped,
+    },
+  ];
 }
 
 export function renderSheets(
@@ -174,11 +295,21 @@ export function renderSheets(
     throw new Error('minicovered: two Releases share an id, so their Parts cannot be told apart');
   }
 
+  // Planned before anything is packed, because the Insert is the one Part whose
+  // length is not a measurement: how many Pages it folds into decides how much
+  // paper it takes.
+  const plans = new Map(designs.map((design) => [design.release.id, planFor(design, dimensions, config)]));
+  const planOf = (releaseId: string): InsertPlan => {
+    const plan = plans.get(releaseId);
+    if (!plan) throw new Error(`minicovered: no Insert plan for Release "${releaseId}"`);
+    return plan;
+  };
+
   const items: Array<PackItem<PartRef>> = designs.flatMap((design) =>
     config.parts.map((part) => ({
       ref: { releaseId: design.release.id, part },
       label: `the ${PART_LABELS[part]} of ${design.release.album || design.release.id}`,
-      size: partSize(part, dimensions),
+      size: partSize(part, dimensions, planOf(design.release.id).pages.length),
     })),
   );
 
@@ -194,7 +325,17 @@ export function renderSheets(
     columns: true,
   });
 
-  return packed.sheets.map((sheet) => {
+  // Said once per Release rather than once per Sheet: a Release's Insert is on
+  // exactly one Sheet, and the warning is about the strip rather than the paper
+  // it landed on. Collected up front so it is reported even when the Insert is
+  // not among the Parts this job prints — the Pages it lost are still Pages the
+  // collector will not have.
+  const maxPages = maxInsertPages(dimensions.insert, config.paper, config.marginMm);
+  const shortfalls = designs.flatMap((design) =>
+    shortfall(design, planOf(design.release.id), maxPages, config),
+  );
+
+  const sheets = packed.sheets.map((sheet): SheetLayout => {
     const warnings: SheetWarning[] = [];
 
     const placements = sheet.placements.map(({ item, rect, turned }): PartPlacement => {
@@ -205,10 +346,12 @@ export function renderSheets(
       // `item.size` throughout, never `rect`: a turned Part is drawn and cut in
       // its own upright millimetres, and the turn is applied to the whole of it
       // at once by whoever draws it.
+      const plan = planOf(releaseId);
       const { ops, panels, warnings: partWarnings } = drawPart(
         part,
         design,
         dimensions,
+        plan,
         item.size,
         measure,
       );
@@ -219,7 +362,7 @@ export function renderSheets(
         bounds: rect,
         turned,
         ops,
-        guides: guidesFor(part, dimensions, item.size),
+        guides: guidesFor(part, dimensions, plan.pages.length, item.size),
         ...(panels ? { panels } : {}),
       };
     });
@@ -231,7 +374,16 @@ export function renderSheets(
       ...(warnings.length > 0 ? { warnings } : {}),
     };
   });
+
+  // On the first Sheet, which is the one a collector is looking at, and only
+  // there — the Sheet check lists every Sheet's warnings together anyway, and
+  // repeating these on each would count one lost credits Page several times.
+  const [first, ...rest] = sheets;
+  if (!first || shortfalls.length === 0) return sheets;
+  return [{ ...first, warnings: [...shortfalls, ...(first.warnings ?? [])] }, ...rest];
 }
 
 /** Re-exported so callers of the seam do not have to reach into the domain. */
-export { jCardSize, partSize };
+export { insertSize, partSize };
+export { insertFolds, insertPanels, maxInsertPages, planInsert } from './insert-plan.ts';
+export type { InsertFold, InsertPlan } from './insert-plan.ts';

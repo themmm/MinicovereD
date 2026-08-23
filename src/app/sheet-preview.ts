@@ -2,6 +2,7 @@ import { buildPdf } from '../render/pdf.ts';
 import { EXPORT_DPI, rasterizeSheet, sheetToPng } from '../render/raster.ts';
 import type { SheetLayout, SheetWarning } from '../render/sheet-renderer.ts';
 import { errorMessage } from '../errors.ts';
+import { describeDropped } from './part-band.ts';
 import { clear, el } from './dom.ts';
 
 /**
@@ -234,6 +235,29 @@ function describeWarning(warning: SheetWarning): string {
         `stays at ${warning.sizeMm.toFixed(2)} mm so a shelved case can be read — shorten the ` +
         `artist or the album instead.`
       );
+    case 'insert-pages-short': {
+      // Named and quantified, unlike the band's version of the same warning: this
+      // list has no Part beside it and covers every Release at once, so it says
+      // which Release, what it lost and — when the paper is the limit — the two
+      // numbers the collector can act on. The names and the verb come from the
+      // band's own `describeDropped`, so the two sentences cannot disagree about
+      // what was lost or about how many things it was.
+      const why =
+        warning.maxPages < warning.requestedPages
+          ? `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin folds ` +
+            `${warning.maxPages} Pages, not ${warning.requestedPages}. A4 at 7.25 mm or less folds ` +
+            `four; Letter never does.`
+          : warning.pages < warning.requestedPages
+            ? `it fills ${warning.pages} Pages, not ${warning.requestedPages}, and no Page may be blank.`
+            : // Exactly as long as asked: the collector shortened it themselves, so
+              // there is nothing to explain beyond the count they chose.
+              `its Insert is set to ${warning.pages} Pages.`;
+      const lost =
+        warning.dropped.length === 0
+          ? 'its Insert is shorter than asked for'
+          : `${describeDropped(warning.dropped)} not on the Insert`;
+      return `${warning.releaseTitle}: ${lost} — ${why}`;
+    }
   }
 }
 

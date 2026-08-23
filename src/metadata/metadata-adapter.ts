@@ -244,7 +244,7 @@ function trackLengthMs(track: MbTrack): number | undefined {
 
 function tracksOf(release: MbRelease): Track[] {
   // A track with no title anywhere still occupies its position, so it gets a
-  // visible placeholder rather than a numbered blank line on the Back Card.
+  // visible placeholder rather than a numbered blank line on the tracklist Page.
   const found = (release.media ?? []).flatMap((medium) =>
     (medium.tracks ?? []).map((track) => ({
       title: track.title || track.recording?.title || '[untitled]',
@@ -252,7 +252,7 @@ function tracksOf(release: MbRelease): Track[] {
     })),
   );
   // Numbered by position in the printed list, so a two-disc Release still
-  // reads 1..n down the Back Card.
+  // reads 1..n down the tracklist Page.
   return found.map(({ title, lengthMs }, index) => ({
     position: index + 1,
     title,

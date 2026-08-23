@@ -1,22 +1,28 @@
 import { printableArea } from '../domain/paper.ts';
 import type { PaperSize } from '../domain/paper.ts';
-import { LABEL_PRESETS, partShape } from '../domain/parts.ts';
+import { insertSize, LABEL_PRESETS, labelShape, MAX_INSERT_PAGES } from '../domain/parts.ts';
 import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import { packParts } from '../pack/sheet-packer.ts';
 import type { PackItem } from '../pack/sheet-packer.ts';
-import type { Mm, Point, Rect } from '../domain/units.ts';
+import type { Mm, Point, Rect, Size } from '../domain/units.ts';
 import type { DrawOp, Guide, PrintFace, SheetLayout, TextStyle } from './layout.ts';
 import { ellipsise } from './text.ts';
 import type { TextMeasurer } from './text.ts';
 
 /**
  * The calibration sheet: a Sheet that prints nothing but measurements. A
- * 100 mm test square to check a printer against a ruler, and every Part and
- * Label preset outlined at 1:1 so a collector can hold a cartridge against the
- * paper before committing a design to it.
+ * 100 mm test square to check a printer against a ruler, and every shape a case
+ * or a cartridge decides, outlined at 1:1 so a collector can hold the hardware
+ * against the paper before committing a design to it.
  *
  * The dimensions in this project come from sources that disagree by a
  * millimetre or two. This page is how that argument gets settled.
+ *
+ * The Insert appears as its **case end** and **one Page** rather than as the
+ * whole strip, and that is a decision rather than a shortcut — see where the
+ * figures are built. A 282.5 mm strip does not fit any printable area this app
+ * can produce standing up, and this page never turns a figure; it is not what a
+ * collector holds against a case either.
  */
 
 /** Long enough that a percent of scaling error is a visible millimetre. */
@@ -53,7 +59,7 @@ export interface CalibrationFigure {
   readonly bounds: Rect;
   /** Its outline in Part-local coordinates — notched, where the shape is. */
   readonly outline: readonly Point[];
-  /** Fold positions along the outline's width, for the J-Card. */
+  /** Fold positions along the outline's width, for the Insert's case end. */
   readonly folds?: readonly Mm[];
 }
 
@@ -100,6 +106,9 @@ interface Figure {
   readonly folds?: readonly Mm[];
 }
 
+/** 87.5 stays 87.5, 79 does not become 79.0. */
+const trim = (mm: Mm): string => String(Math.round(mm * 100) / 100);
+
 /** Room under every figure for its two caption lines. */
 const CAPTION_ROOM: Mm = CAPTION_GAP + CAPTION_LINES * CAPTION_LINE;
 
@@ -108,16 +117,20 @@ const FIRST_PAGE_TOP: Mm = 22;
 const LATER_PAGE_TOP: Mm = 8;
 
 /** A Label preset's shape, without disturbing the dimensions in use. */
-function presetShape(dimensions: PartDimensions, label: LabelDimensions) {
-  return partShape('label', { ...dimensions, label });
+function presetShape(label: LabelDimensions) {
+  return labelShape(label);
 }
 
 function squareOutline(size: Mm): Point[] {
+  return rectangleOutline({ width: size, height: size });
+}
+
+function rectangleOutline({ width, height }: Size): Point[] {
   return [
     { x: 0, y: 0 },
-    { x: size, y: 0 },
-    { x: size, y: size },
-    { x: 0, y: size },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
   ];
 }
 
@@ -174,11 +187,24 @@ export function renderCalibrationSheet(
     ),
   ];
 
-  const jcard = partShape('jcard', dimensions);
-  const backCard = partShape('back-card', dimensions);
-  const { innerFlapWidth, spineWidth } = dimensions.jcard;
+  // The case end and one Page, rather than the whole strip.
+  //
+  // A four-Page Insert is 282.5 mm long and this page draws its outlines in
+  // paper coordinates from the packed box. It never turns one — the `packParts`
+  // call below passes no `turn`, and the packer's default is `never` — so the
+  // strip is omitted at every printable margin including zero, and the footer
+  // would then tell a collector to reduce a margin that cannot help. It is also not
+  // what anyone holds against a case: what a case decides is the 87.5 mm that
+  // wraps it and how wide a Page is, and both of those are here at 1:1 with the
+  // folds marked. The strip's own length is a number rather than an outline, and
+  // it is printed as one in the footer below.
+  // One Page — which is the Front Panel — and nothing after it, so this is the
+  // Inner Flap plus the Spine plus the Front Panel and no more.
+  const caseEnd = insertSize(dimensions.insert, 1);
+  const onePage = { width: dimensions.insert.pageWidth, height: dimensions.insert.height };
+  const { innerFlapWidth, spineWidth } = dimensions.insert;
 
-  const currentLabel = partShape('label', dimensions);
+  const currentLabel = labelShape(dimensions.label);
   const matchesPreset = LABEL_PRESETS.some(
     (preset) =>
       preset.dimensions.width === dimensions.label.width &&
@@ -194,14 +220,18 @@ export function renderCalibrationSheet(
     },
     {
       ref: {
-        label: 'J-Card',
-        outline: jcard.outline,
+        label: 'Insert — case end',
+        outline: rectangleOutline(caseEnd),
         folds: [innerFlapWidth, innerFlapWidth + spineWidth],
       },
-      label: 'J-Card',
-      size: jcard.size,
+      label: 'Insert — case end',
+      size: caseEnd,
     },
-    { ref: { label: 'Back Card', outline: backCard.outline }, label: 'Back Card', size: backCard.size },
+    {
+      ref: { label: 'Insert — one Page', outline: rectangleOutline(onePage) },
+      label: 'Insert — one Page',
+      size: onePage,
+    },
     // The Label this Release is actually set to, when it is not one of the
     // presets. Nudging the size is exactly when you want your own outline to
     // hold a cartridge against (story 18).
@@ -215,7 +245,7 @@ export function renderCalibrationSheet(
           },
         ]),
     ...LABEL_PRESETS.map((preset): PackItem<Figure> => {
-      const shape = presetShape(dimensions, preset.dimensions);
+      const shape = presetShape(preset.dimensions);
       return {
         ref: { label: `Label — ${preset.name}`, outline: shape.outline },
         label: `Label — ${preset.name}`,
@@ -276,6 +306,11 @@ export function renderCalibrationSheet(
     for (const fold of figure.folds ?? []) {
       (guides[figure.sheet] as Guide[]).push({
         kind: 'fold',
+        // Every fold on this page is a case fold: the only figure with any is the
+        // Insert's case end, whose two creases are the ones that wrap the case.
+        // The fore-edge and spine folds belong to the strip, which this page
+        // prints as a number rather than as an outline.
+        fold: 'case',
         points: [
           { x: figure.bounds.x + fold, y: figure.bounds.y },
           { x: figure.bounds.x + fold, y: figure.bounds.y + figure.bounds.height },
@@ -312,6 +347,15 @@ export function renderCalibrationSheet(
   };
 
   footer('Every outline above is drawn from the dimensions this app is currently set to.');
+  // The one measurement on this page that is a number rather than an outline,
+  // and the reason it is: the flat strip is longer than any printable area, so
+  // there is nothing to hold a case against — only something to check a ruler
+  // against once it is cut out.
+  footer(
+    `The Insert prints as one flat strip: ${trim(insertSize(dimensions.insert, 2).width)} mm at ` +
+      `2 Pages, ${trim(insertSize(dimensions.insert, MAX_INSERT_PAGES).width)} mm at ` +
+      `${MAX_INSERT_PAGES}. Above is the ${trim(caseEnd.width)} mm that wraps the case, and one Page.`,
+  );
   if (omitted.length > 0) {
     footer(`Too large for this printable area, so not shown: ${omitted.join(', ')}.`);
     footer('Reduce the printable margin to fit them.');

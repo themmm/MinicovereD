@@ -6,9 +6,11 @@ import type { PaperSize } from '../domain/paper.ts';
 import {
   DEFAULT_PART_DIMENSIONS,
   LABEL_SIZE_RANGE,
+  MAX_INSERT_PAGES,
+  PAGE_WIDTH_RANGE,
   PART_KINDS,
 } from '../domain/parts.ts';
-import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
+import type { InsertDimensions, LabelDimensions, PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Artwork, Credit, Credits, Release, Track } from '../domain/release.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
@@ -29,14 +31,16 @@ import type { ReleaseDesign, SheetConfig, TemplateId, TemplateParams } from '../
 export const PROJECT_FORMAT = 'minicovered-project';
 
 /**
- * Version 2: the measurements left the Designs.
+ * Version 2: the measurements left the Designs, and the J-Card and the Back Card
+ * became the Insert.
  *
  * A version-1 file carries a `dimensions` block inside every design, because
- * v1 gave each Release its own Part sizes. A version-2 file carries one
- * `measurements` block for the project, because that is what a set of cartridges
- * is. `readProjectFile` still reads both — see `readMeasurements` — but it writes
- * only the new shape, and that is the break: this is the first version whose
- * files a v1.x build refuses outright rather than misreading.
+ * v1 gave each Release its own Part sizes, and inside it a `jcard` block and a
+ * `backCard` one. A version-2 file carries one `measurements` block for the
+ * project with an `insert` block inside it. `readProjectFile` still reads the old
+ * shapes — see `readMeasurements`, `readInsert` and `readParts` — but it writes
+ * only the new ones, and that is the break: this is the first version whose files
+ * a v1.x build refuses outright rather than misreading.
  *
  * Refusing is the intended half. The unintended half is what an older reader
  * does with anything *additive*, which it cannot refuse because it cannot see
@@ -77,6 +81,11 @@ export function writeProjectFile({ entries, sheet, measurements }: Project): str
         release: design.release,
         templateId: design.templateId,
         params: design.params,
+        // Written only when the collector set one, so a project whose Inserts
+        // follow their content reads the same as one written before the override
+        // existed — and reopens deriving the count rather than freezing today's
+        // answer into the file.
+        ...(design.pageCount === undefined ? {} : { pageCount: design.pageCount }),
         // Written only when true, so a project of ordinary Releases reads the
         // same as one written before this flag existed. The reason the lookup
         // failed is deliberately not written; see QueueEntry.error.
@@ -268,29 +277,100 @@ function readLabel(value: unknown): LabelDimensions {
   };
 }
 
-function readDimensions(value: unknown): PartDimensions {
-  const source = isRecord(value) ? value : {};
-  const jcard = isRecord(source['jcard']) ? source['jcard'] : {};
-  const backCard = isRecord(source['backCard']) ? source['backCard'] : {};
-  const defaults = DEFAULT_PART_DIMENSIONS;
+/**
+ * The Insert's five measurements, out of a version-2 `insert` block or a version-1
+ * `jcard` one.
+ *
+ * Four of the five are the J-Card's own numbers under a new name — the Inner
+ * Flap, the Spine, the Front Panel and the height are the same lengths measured
+ * off the same case (ADR-0012 keeps all three panels) — so a v1 file's `jcard`
+ * block is read straight into them rather than being discarded. `pageWidth` has
+ * no v1 source, there being no Pages, and takes the default.
+ *
+ * Not branched on the version: a file states one key or the other, and looking
+ * for `insert` first and falling back is the same answer with one less thing that
+ * can be wrong. A version-1 file's `backCard` block is not read at all — the Back
+ * Card is gone and its 69 mm width has no counterpart on the strip, whose Pages
+ * are 65 by the case rather than 69 by the old rectangle.
+ */
+function readInsert(value: unknown, legacyJCard: unknown): InsertDimensions {
+  const source = isRecord(value) ? value : isRecord(legacyJCard) ? legacyJCard : {};
+  const defaults = DEFAULT_PART_DIMENSIONS.insert;
   // Bounded at both ends: a Part wider than any paper this app knows is not a
   // Part, and letting it through only moves the failure into the renderer.
   const positive = (raw: unknown, fallback: number): number =>
     clamp(asNumber(raw, fallback), MIN_PART_MM, MAX_PART_MM);
 
   return {
-    jcard: {
-      innerFlapWidth: positive(jcard['innerFlapWidth'], defaults.jcard.innerFlapWidth),
-      spineWidth: positive(jcard['spineWidth'], defaults.jcard.spineWidth),
-      frontPanelWidth: positive(jcard['frontPanelWidth'], defaults.jcard.frontPanelWidth),
-      height: positive(jcard['height'], defaults.jcard.height),
-    },
-    backCard: {
-      width: positive(backCard['width'], defaults.backCard.width),
-      height: positive(backCard['height'], defaults.backCard.height),
-    },
+    innerFlapWidth: positive(source['innerFlapWidth'], defaults.innerFlapWidth),
+    spineWidth: positive(source['spineWidth'], defaults.spineWidth),
+    frontPanelWidth: positive(source['frontPanelWidth'], defaults.frontPanelWidth),
+    // Its own range rather than the shared 1–300: a Page is what makes the strip
+    // long, and at four Pages every millimetre here is three on the paper.
+    pageWidth: clamp(
+      asNumber(source['pageWidth'], defaults.pageWidth),
+      PAGE_WIDTH_RANGE.min,
+      PAGE_WIDTH_RANGE.max,
+    ),
+    height: positive(source['height'], defaults.height),
+  };
+}
+
+function readDimensions(value: unknown): PartDimensions {
+  const source = isRecord(value) ? value : {};
+  return {
+    insert: readInsert(source['insert'], source['jcard']),
     label: readLabel(source['label']),
   };
+}
+
+/**
+ * A Page count the collector set by hand, or nothing.
+ *
+ * Even, at least two and at most {@link MAX_INSERT_PAGES}, because those are the
+ * only counts ADR-0012 can fold — and a file is not trusted to agree. Anything
+ * else is no override at all rather than a clamped one: a file saying `3` did not
+ * come from this app, and guessing which of 2 and 4 it meant would be inventing a
+ * decision on the collector's behalf. Absent means "work it out from the
+ * content", which is the ordinary case and the better default.
+ */
+function readPageCount(value: unknown): number | undefined {
+  const pages = asNumber(value, 0);
+  if (!Number.isSafeInteger(pages) || pages % 2 !== 0) return undefined;
+  return pages >= 2 && pages <= MAX_INSERT_PAGES ? pages : undefined;
+}
+
+/**
+ * Which Parts a print job wants, including out of a version-1 file that names
+ * Parts this version no longer has.
+ *
+ * `jcard` and `back-card` both become the Insert, which is the toggle collapse
+ * ADR-0012 describes: a v1 Design has exactly one J-Card and one Back Card, and
+ * that is exactly a two-Page Insert. Mapping them rather than filtering them out
+ * matters for the one case where it shows — a collector who printed J-Cards only
+ * would otherwise fall through to "everything" and get Labels they did not ask
+ * for.
+ */
+const LEGACY_PARTS: Readonly<Record<string, PartKind>> = {
+  jcard: 'insert',
+  'back-card': 'insert',
+  insert: 'insert',
+  label: 'label',
+};
+
+function readParts(value: unknown): readonly PartKind[] {
+  if (!Array.isArray(value)) return PART_KINDS;
+  const named = new Set(
+    value.flatMap((entry) => {
+      const part = LEGACY_PARTS[asString(entry)];
+      return part ? [part] : [];
+    }),
+  );
+  // Read back through `PART_KINDS` so the order is canonical however the file
+  // listed them, and so two legacy names collapsing to one Part cannot duplicate
+  // it.
+  const parts = PART_KINDS.filter((part) => named.has(part));
+  return parts.length > 0 ? parts : PART_KINDS;
 }
 
 function readTemplateId(value: unknown): TemplateId {
@@ -331,15 +411,12 @@ function readSheet(value: unknown): SheetConfig | string {
   const paper: PaperSize | undefined = PAPER_SIZES.find((candidate) => candidate.id === paperId);
   if (!paper) return `This project was saved for a paper size this version does not know: "${paperId}".`;
 
-  const parts = Array.isArray(source['parts'])
-    ? PART_KINDS.filter((part) => (source['parts'] as unknown[]).includes(part))
-    : PART_KINDS;
-
   return {
     paper,
     marginMm: clamp(asNumber(source['marginMm'], DEFAULT_PRINTABLE_MARGIN_MM), 0, MAX_MARGIN_MM),
-    // A project with nothing to print is a project that cannot be opened.
-    parts: parts.length > 0 ? parts : PART_KINDS,
+    // A project with nothing to print is a project that cannot be opened, which
+    // is why `readParts` falls back to everything rather than to nothing.
+    parts: readParts(source['parts']),
   };
 }
 
@@ -383,10 +460,12 @@ export function readProjectFile(text: string): ProjectReadResult {
     }
     seenIds.add(release.id);
 
+    const pageCount = readPageCount(source['pageCount']);
     const design: ReleaseDesign = {
       release,
       templateId: readTemplateId(source['templateId']),
       params: readParams(source['params'], version),
+      ...(pageCount === undefined ? {} : { pageCount }),
     };
     // A file written before this flag existed has no such key, and every
     // Release in it was one the collector had finished with.

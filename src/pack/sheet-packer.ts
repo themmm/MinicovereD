@@ -71,8 +71,25 @@ export interface PackResult<T> {
   readonly contentBottom: readonly Mm[];
 }
 
-/** Breathing room between Parts so two cut lines never end up on top of each other. */
-export const DEFAULT_PART_GAP_MM: Mm = 4;
+/**
+ * Breathing room between Parts so two cut lines never end up on top of each
+ * other.
+ *
+ * 3.5 rather than 4, and the half-millimetre was bought with a ruler. ADR-0014
+ * claims two turned Inserts and a column of five Labels on one A4 Sheet, and at
+ * 4 mm that claim is false by one millimetre: 79 + 79 + 35 is 193, and two 4 mm
+ * gaps against 200 mm of printable width leaves it 1 mm over. Ticket 07
+ * measured the four ways out — this gap, the printable margin, the Insert's
+ * height, the Label's width — and left the choice to the paper test in 08.
+ *
+ * The gap is the one of the four that is not a measurement of anything physical.
+ * The Insert's height is how tall a case's front cover is; the Label's width is
+ * how wide a cartridge is; the printable margin is what a home printer will not
+ * reach. This is scissor room, and what it has to clear is two cut lines at
+ * `GUIDE_WIDTH_MM` — 0.15 mm each in `raster.ts` — so 3.5 mm leaves better than
+ * twenty line widths between them.
+ */
+export const DEFAULT_PART_GAP_MM: Mm = 3.5;
 
 export interface PackPlacement<T> {
   readonly item: PackItem<T>;
@@ -117,11 +134,39 @@ export type OversizePolicy = 'throw' | 'omit';
  *
  * The calibration sheet stays on `never`, and not only by inertia: its figures
  * are outlines it draws itself in paper coordinates from the packed box, and it
- * has no idea a box can be turned. A turned J-Card would put an upright 87.5 mm
- * outline inside a 79 mm box, overflowing it to the right and stopping short at
- * the bottom, under a caption reading 79 × 87.5.
+ * has no idea a box can be turned. A turned Insert case end would put an upright
+ * 87.5 mm outline inside a 79 mm box, overflowing it to the right and stopping
+ * short at the bottom, under a caption reading 79 × 87.5.
  */
 export type TurnPolicy = 'never' | 'to-fit';
+
+/** What deciding whether a rectangle fits a Sheet at all needs. */
+export interface PaperFit {
+  readonly paper: PaperSize;
+  readonly marginMm: Mm;
+  readonly captionRoomMm?: Mm;
+  readonly turn?: TurnPolicy;
+}
+
+/**
+ * Whether `size` can be placed on this paper at all, standing up or — under
+ * `turn: 'to-fit'` — lying down.
+ *
+ * Exported, and this is the only fit rule in the app. Two things have to agree
+ * about it: this packer, deciding where a rectangle goes, and whatever decided
+ * how big the rectangle was in the first place. An Insert's Page count is chosen
+ * against the paper (ADR-0012's four-Page A4 maximum), so a count derived by one
+ * rule and packed by another is a strip the packer refuses — and refusing a Part
+ * blanks the whole preview.
+ */
+export function fitsPaper(size: Size, config: PaperFit): boolean {
+  const area = printableArea(config.paper, config.marginMm);
+  const captionRoomMm = config.captionRoomMm ?? 0;
+  const standing = size.width <= area.width && size.height + captionRoomMm <= area.height;
+  if (standing || config.turn !== 'to-fit') return standing;
+  const lying = turnedSize(size);
+  return lying.width <= area.width && lying.height + captionRoomMm <= area.height;
+}
 
 /** The geometry every placement decision is made against. */
 interface Bed {
@@ -270,7 +315,7 @@ function downTo2dp(mm: Mm): Mm {
  * Bin-packs rectangles onto as few Sheets as possible: first-fit-decreasing-height,
  * the standard shelf heuristic. Sorting by height first means the tallest
  * rectangle of each row opens the shelf and shorter ones fill the width beside
- * it — so a Label rides along on the J-Card's row instead of stranding a row of
+ * it — so a Label rides along on the Insert's row instead of stranding a row of
  * its own. A good heuristic, not an optimal packing.
  *
  * Order is preserved for the caller: `sortByHeight` can be turned off where a
@@ -299,8 +344,10 @@ export function packParts<T>(
   const turn = config.turn ?? 'never';
   const columnsAllowed = config.columns ?? false;
 
+  // The exported rule, standing up only: the turn is decided one line at a time
+  // below, so that a rectangle which already fits is never turned.
   const fitsArea = (size: Size): boolean =>
-    size.width <= area.width && size.height + captionRoomMm <= area.height;
+    fitsPaper(size, { paper: config.paper, marginMm: config.marginMm, captionRoomMm });
 
   const omitted: string[] = [];
   const usable: Array<Piece<T>> = [];

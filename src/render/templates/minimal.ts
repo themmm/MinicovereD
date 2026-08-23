@@ -1,14 +1,15 @@
-import { labelNotchDepth, partShape } from '../../domain/parts.ts';
-import type { Release } from '../../domain/release.ts';
+import { labelNotchDepth, labelShape } from '../../domain/parts.ts';
+import type { Release, Track } from '../../domain/release.ts';
 import { formatTrackLength, totalTrackLength } from '../../domain/tracklist.ts';
 import type { Mm, Point, Rect, Size } from '../../domain/units.ts';
 import { readableInkFor } from '../colors.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
-import { drawJCard, drawTracklist, PAD, text } from './shared.ts';
+import { drawCredits, drawInsert, drawTracklist, PAD, text } from './shared.ts';
 import { ellipsise, wrapText } from '../text.ts';
 import type { TextMeasurer } from '../text.ts';
+import { LIST_TOP_MM } from '../tracklist-layout.ts';
 import type { PartDimensions } from '../../domain/parts.ts';
-import type { JCardContext, PartContext, PartDrawing, Template, TemplateFaces } from './template.ts';
+import type { InsertContext, PartContext, PartDrawing, Template, TemplateFaces } from './template.ts';
 
 /**
  * Minimal: type and nothing else. No artwork, and no tint standing in for
@@ -23,22 +24,30 @@ import type { JCardContext, PartContext, PartDrawing, Template, TemplateFaces } 
  * go, hung from the top-left corner, and what is left below it is air on
  * purpose.
  *
- * Three rules hold across the three Parts this Template draws itself:
+ * Three rules hold across everything this Template draws:
  *
  *  - **The record is named first.** Album above artist on the Front Panel, the
- *    Back Card and the Label. Classic does it on the Back Card only and
+ *    tracklist Page and the Label. Classic does it on the tracklist Page only and
  *    Full-bleed does the opposite. The Spine is not this Template's to order —
  *    `spineLine` is shared, and it reads `artist — album` under all three.
  *  - **Everything hangs from a left edge**, at each Part's own margin: `PAD` on
- *    the J-Card and the Back Card, the tighter `LABEL_PAD` on a 35 mm sticker.
- *    Nothing is centred, because centring needs a shape to be centred in and
- *    this Template has none.
+ *    the Insert, the tighter `LABEL_PAD` on a 35 mm sticker. Nothing is centred,
+ *    because centring needs a shape to be centred in and this Template has none.
  *  - **One face for all three roles.** See `MINIMAL_TEMPLATE.faces`.
  *
- * And a colour spends itself once. Paper is the J-Card, ink is the type on it;
- * the Back Card is that same card the other way round, the ink as a ground with
- * the list reversed out; and the accent is the two small things a collector
- * finds a disc by — the Spine bar on the shelf, and the Label on the cartridge.
+ * And a colour spends itself once. Paper is the Front Panel, ink is the type on
+ * it; the tracklist Page is that same surface the other way round, the ink as a
+ * ground with the list reversed out; and the accent is the two small things a
+ * collector finds a disc by — the Spine bar on the shelf, and the Label on the
+ * cartridge.
+ *
+ * **This Template has no back cover** (`hasBackCover`), and that is not an
+ * omission. The odd Page out reprints the artwork under the other two Templates,
+ * and this one draws no artwork at all — so it has nothing to put there, which is
+ * exactly why a mixtape under it is always two Pages however long its list runs
+ * (ADR-0012). Its credits Page goes back to paper rather than inverting a second
+ * time: the inversion is the one gesture this design makes, and making it twice
+ * would spend it.
  */
 
 /**
@@ -56,7 +65,7 @@ import type { JCardContext, PartContext, PartDrawing, Template, TemplateFaces } 
  * *is* the design has to stop before the title becomes a body of text.
  *
  * 4.5 mm is where shrinking stops, so that a title cannot go on giving up size
- * until it is smaller than the tracklist on the other card and the panel is
+ * until it is smaller than the tracklist on the next Page and the panel is
  * back to looking unfinished by a different road.
  */
 const HEADLINE_MAX: Mm = 11;
@@ -224,7 +233,7 @@ function footerOps(
  */
 function drawFrontPanel({ release, params, faces, measure }: PartContext, panel: Rect): DrawOp[] {
   const left = panel.x + PAD;
-  // Clamped, because a project file may carry a 1 mm J-Card and a negative
+  // Clamped, because a project file may carry a 1 mm Insert and a negative
   // measure is not a narrower column.
   const room = Math.max(0, panel.width - 2 * PAD);
   const top = panel.y + PAD;
@@ -283,63 +292,104 @@ function drawFrontPanel({ release, params, faces, measure }: PartContext, panel:
 }
 
 /**
- * The Back Card's heading: the album at twice the artist, hung from `PAD` at
+ * The interior Pages' heading: the album at twice the artist, hung from `PAD` at
  * the top-left. 3 + 4.8 puts the album's ink at 7.8, the artist starts 1.2
  * below that and is 2.4 tall, so the heading is done at 11.4.
  */
-const BACK_ALBUM_SIZE: Mm = 4.8;
-const BACK_ARTIST_SIZE: Mm = 2.4;
-const BACK_ARTIST_TOP: Mm = 9;
-/** Where the list starts: the artist's ink ends at 11.4, so this leaves 4.6 mm of air. */
-const BACK_LIST_TOP: Mm = 16;
+const PAGE_ALBUM_SIZE: Mm = 4.8;
+const PAGE_ARTIST_SIZE: Mm = 2.4;
+const PAGE_ARTIST_TOP: Mm = 9;
 
 /**
- * The Back Card: the Front Panel printed the other way round. The ink stops
+ * The tracklist Page: the Front Panel printed the other way round. The ink stops
  * being the type and becomes the ground; the heading keeps the same order and
  * the same left edge; and the list fills the space the front leaves as air.
  *
  * The ink rather than the accent because that inversion is the only gesture
  * this Template makes, and it needs the two colours the type is already made
  * of. The accent has the Spine and the Label, which is where a collector looks
- * to find a disc; this is the card they read once it is in their hand.
+ * to find a disc; this is the Page they read once it is in their hand.
  *
- * The list starts at 16 rather than at Classic's 19 or Full-bleed's 18: there
- * is no band here and no centred title block, so the heading takes as little of
- * the card as it can and the tracklist gets the rest.
+ * The list starts at `LIST_TOP_MM` rather than at Classic's 19 or Full-bleed's
+ * 18: there is no band here and no centred title block, so the heading takes as
+ * little of the Page as it can and the list gets the rest. That constant is read
+ * from `tracklist-layout.ts` rather than restated, because it is also the box the
+ * *Page count* is decided against — this Template is the roomiest of the three,
+ * and pinning it here is what keeps that claim true.
  */
-function drawBackCard(context: PartContext): PartDrawing {
-  const { release, params, size, faces, measure } = context;
+function drawTracklistPage(context: PartContext, page: Rect, tracks: readonly Track[]): PartDrawing {
+  const { params } = context;
   const ground = params.inkColor;
   // Chosen rather than configured, exactly as on the Spine and on the other two
-  // Back Cards: no pair of colours a collector picks may produce a list that
-  // cannot be read.
+  // tracklist Pages: no pair of colours a collector picks may produce a list
+  // that cannot be read.
   const ink = readableInkFor(ground);
-  const room = size.width - 2 * PAD;
-
-  const { title, under } = naming(release);
-  const albumStyle: TextStyle = { sizeMm: BACK_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'left', baseline: 'top' };
-  const artistStyle: TextStyle = { sizeMm: BACK_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'left', baseline: 'top' };
-
   const tracklist = drawTracklist(
     context,
     {
-      x: PAD,
-      y: BACK_LIST_TOP,
-      width: room,
-      height: size.height - BACK_LIST_TOP - PAD,
+      x: page.x + PAD,
+      y: page.y + LIST_TOP_MM,
+      width: page.width - 2 * PAD,
+      height: page.height - LIST_TOP_MM - PAD,
     },
     ink,
+    tracks,
   );
 
   return {
     ops: [
-      { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: ground },
-      text(title, { x: PAD, y: PAD }, albumStyle, room, measure),
-      ...(under ? [text(under, { x: PAD, y: BACK_ARTIST_TOP }, artistStyle, room, measure)] : []),
+      { op: 'fill-rect', rect: page, color: ground },
+      ...headingOps(context, page, ink),
       ...tracklist.ops,
     ],
     ...(tracklist.warnings ? { warnings: tracklist.warnings } : {}),
   };
+}
+
+/**
+ * The credits Page: paper again, and the same heading over a different block.
+ *
+ * Paper rather than a second inversion, for the reason the module comment gives:
+ * the ink-as-ground is this design's one gesture and it is spent on the
+ * tracklist. It also puts the two Pages a collector reads on two surfaces, which
+ * is the only hierarchy a Template with no rules and no bands has to offer.
+ */
+function drawCreditsPage(context: PartContext, page: Rect): PartDrawing {
+  const { params } = context;
+  const block = drawCredits(
+    context,
+    {
+      x: page.x + PAD,
+      y: page.y + LIST_TOP_MM,
+      width: page.width - 2 * PAD,
+      height: page.height - LIST_TOP_MM - PAD,
+    },
+    params.inkColor,
+  );
+
+  return {
+    ops: [
+      { op: 'fill-rect', rect: page, color: params.paperColor },
+      ...headingOps(context, page, params.inkColor),
+      ...block.ops,
+    ],
+    ...(block.warnings ? { warnings: block.warnings } : {}),
+  };
+}
+
+/** The two heading lines both interior Pages carry, in whichever ink reads. */
+function headingOps({ release, faces, measure }: PartContext, page: Rect, ink: string): DrawOp[] {
+  const room = page.width - 2 * PAD;
+  const { title, under } = naming(release);
+  const albumStyle: TextStyle = { sizeMm: PAGE_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'left', baseline: 'top' };
+  const artistStyle: TextStyle = { sizeMm: PAGE_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'left', baseline: 'top' };
+
+  return [
+    text(title, { x: page.x + PAD, y: page.y + PAD }, albumStyle, room, measure),
+    ...(under
+      ? [text(under, { x: page.x + PAD, y: page.y + PAGE_ARTIST_TOP }, artistStyle, room, measure)]
+      : []),
+  ];
 }
 
 const LABEL_PAD: Mm = 2.5;
@@ -389,7 +439,7 @@ function drawLabel({ release, params, size, dimensions, faces, measure }: PartCo
   return [
     // Cut to the outline rather than filled as a rectangle: the notched corner
     // is not sticker, and a chip is exactly the shape of the paper it is on.
-    { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: ground },
+    { op: 'fill-polygon', points: labelShape(dimensions.label).outline, color: ground },
     text(
       title,
       { x: LABEL_PAD, y: LABEL_PAD },
@@ -454,7 +504,14 @@ export const MINIMAL_TEMPLATE: Template = {
    * beats setting 20 % more of them in a face that cannot.
    */
   faces: { display: 'sans', text: 'sans', spine: 'sans' },
-  drawJCard: (context: JCardContext) => drawJCard(context, drawFrontPanel),
-  drawBackCard,
+  // Never: the odd Page out reprints the artwork, and this Template draws none.
+  // See the module comment — it is what keeps a mixtape at two Pages.
+  hasBackCover: () => false,
+  drawInsert: (context: InsertContext) =>
+    drawInsert(context, {
+      cover: drawFrontPanel,
+      tracklist: drawTracklistPage,
+      credits: drawCreditsPage,
+    }),
   drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
 };

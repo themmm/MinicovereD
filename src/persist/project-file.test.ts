@@ -42,7 +42,7 @@ const design: ReleaseDesign = {
   params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
 };
 
-const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['jcard', 'label'] };
+const sheet: SheetConfig = { paper: LETTER, marginMm: 7.5, parts: ['insert', 'label'] };
 
 /** A collector who has nudged their Label away from both presets. */
 const measurements: Measurements = {
@@ -229,12 +229,32 @@ describe('reading a project file back', () => {
     expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(false);
   });
 
+  it('carries a Page count the collector set through a whole round trip', () => {
+    // Written only when set, so a project whose Inserts follow their content
+    // reads the same as one written before the override existed — and read back
+    // when it is there, or reopening the file would quietly re-derive a count the
+    // collector had overruled.
+    const forced: ReleaseDesign = { ...design, pageCount: 2 };
+    const { designs } = roundTrip([forced, design2]);
+
+    expect(designs[0]?.pageCount).toBe(2);
+    expect(designs[1]?.pageCount).toBeUndefined();
+  });
+
+  it('writes no Page count for a Design that never overrode one', () => {
+    // The absence is the ordinary case and has to stay absent in the file: a
+    // written-out 2 would freeze today's derived answer into a document that
+    // should still follow its content when it is next opened.
+    expect(JSON.parse(write())).toMatchObject({ designs: [{}] });
+    expect(write()).not.toContain('pageCount');
+  });
+
   it('restores the Sheet configuration, paper and all', () => {
     const { sheet: restored } = roundTrip();
 
     expect(restored.paper.id).toBe('letter');
     expect(restored.marginMm).toBe(7.5);
-    expect(restored.parts).toEqual(['jcard', 'label']);
+    expect(restored.parts).toEqual(['insert', 'label']);
   });
 
   it('restores an adjusted Label, once, for the whole project', () => {
@@ -494,6 +514,87 @@ describe('reading a project file with values that would break a render', () => {
     return JSON.stringify(base);
   };
 
+  it('reads a version-1 J-Card block as the Insert’s first four measurements', () => {
+    // Four of the Insert's five are the J-Card's own numbers under a new name —
+    // the same lengths measured off the same case (ADR-0012 keeps all three
+    // panels) — so a v1 collector's nudged J-Card survives the format break
+    // rather than being discarded for the defaults.
+    const text = project((base) => {
+      base['version'] = 1;
+      delete base['measurements'];
+      const designs = base['designs'] as Array<Record<string, unknown>>;
+      (designs[0] as Record<string, unknown>)['dimensions'] = {
+        jcard: { innerFlapWidth: 13, spineWidth: 5, frontPanelWidth: 67, height: 78 },
+        backCard: { width: 68, height: 78 },
+        label: { width: 34.5, height: 52, notch: true, notchSize: 5.5 },
+      };
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.insert).toEqual({
+      innerFlapWidth: 13,
+      spineWidth: 5,
+      frontPanelWidth: 67,
+      // No v1 source for this one — there were no Pages — so it takes the default.
+      pageWidth: 65,
+      height: 78,
+    });
+    // The Back Card's 68 mm width in that file is deliberately not read: it has no
+    // counterpart on the strip, whose Pages are 65 by the case rather than 68 by
+    // the old rectangle — which the `pageWidth: 65` above says, since 68 was there
+    // to be picked up and was not.
+  });
+
+  it('refuses a Page count a file states that could not be folded', () => {
+    // Even, at least two, at most four — and anything else is *no* override
+    // rather than a clamped one. A file saying 3 did not come from this app, and
+    // guessing which of 2 and 4 it meant would invent a decision.
+    for (const pageCount of [3, 1, 0, -2, 6, 2.5, 'four']) {
+      const text = project((base) => {
+        const designs = base['designs'] as Array<Record<string, unknown>>;
+        (designs[0] as Record<string, unknown>)['pageCount'] = pageCount;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(designsOf(result.project)[0]?.pageCount, `pageCount ${pageCount}`).toBeUndefined();
+    }
+  });
+
+  it('keeps a Page count a file states that could be folded', () => {
+    for (const pageCount of [2, 4]) {
+      const text = project((base) => {
+        const designs = base['designs'] as Array<Record<string, unknown>>;
+        (designs[0] as Record<string, unknown>)['pageCount'] = pageCount;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(designsOf(result.project)[0]?.pageCount).toBe(pageCount);
+    }
+  });
+
+  it('holds the Page width to its own range rather than to any Part’s', () => {
+    // A Page is what makes the strip long — at four Pages every millimetre here
+    // is three on the paper — so it has a floor of 30 and a ceiling of 80 where
+    // the other measurements are clamped to 1–300.
+    for (const [asked, expected] of [
+      [5, 30],
+      [500, 80],
+      [62.5, 62.5],
+    ] as const) {
+      const text = project((base) => {
+        const measurements = base['measurements'] as Record<string, Record<string, Record<string, unknown>>>;
+        measurements['dimensions']!['insert']!['pageWidth'] = asked;
+      });
+      const result = readProjectFile(text);
+
+      if (!result.ok) throw new Error(result.error);
+      expect(result.project.measurements.dimensions.insert.pageWidth, `asked ${asked}`).toBe(expected);
+    }
+  });
+
   it('falls back to a safe colour rather than trusting the file', () => {
     const text = project((base) => {
       const designs = base['designs'] as Array<Record<string, Record<string, unknown>>>;
@@ -532,13 +633,64 @@ describe('reading a project file with values that would break a render', () => {
 
   it('drops a Part toggle it does not recognise instead of packing it', () => {
     const text = project((base) => {
-      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard', 'sleeve', 'label'];
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['insert', 'sleeve', 'label'];
     });
     const result = readProjectFile(text);
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.project.sheet.parts).toEqual(['jcard', 'label']);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
     expect(result.project.sheet.parts.every((part) => PART_KINDS.includes(part))).toBe(true);
+  });
+
+  it('collapses a version-1 file’s J-Card and Back Card into the one Insert', () => {
+    // ADR-0012's own migration sentence: a v1 Design has exactly one J-Card and
+    // one Back Card, which is exactly a two-Page Insert.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard', 'back-card', 'label'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('puts the Parts back in canonical order however the file listed them', () => {
+    // The checkboxes are the state and are read back through `PART_KINDS`, so the
+    // order in the file cannot reach the UI. Every other test here happens to list
+    // them already in order, which is exactly how "canonical however the file
+    // listed them" goes untested.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['label', 'insert'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('does not name one Part twice when a v1 file names both halves of it', () => {
+    // `jcard` and `back-card` both map to the Insert, so a naive concat would list
+    // it twice and the Sheet would pack two Inserts per Release.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['back-card', 'jcard', 'label'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('does not turn a J-Cards-only job into everything', () => {
+    // The one case where mapping the old names beats filtering them out. Filtered,
+    // this list would come back empty, fall through to "keep at least one Part"
+    // and hand the collector Labels they switched off.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert']);
   });
 
   it('keeps at least one Part, so a restored project can still print', () => {

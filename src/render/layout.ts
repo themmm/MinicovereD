@@ -1,4 +1,4 @@
-import type { JCardPanel, PartKind } from '../domain/parts.ts';
+import type { PartKind } from '../domain/parts.ts';
 import type { PaperSize } from '../domain/paper.ts';
 import type { Mm, Point, Rect } from '../domain/units.ts';
 
@@ -80,19 +80,82 @@ export type TextOp = {
   readonly style: TextStyle;
 };
 
-/** A print-only mark showing where to cut or fold (CONTEXT.md: Cutting Guide). */
-export interface Guide {
-  readonly kind: 'cut' | 'fold';
+/**
+ * What a fold in the paper is for, and therefore which way it goes.
+ *
+ * Single-sided printing fixes the whole pattern (ADR-0012): a face is only ever
+ * visible if the printed side points outward, so the paper has to double back
+ * blank against blank, which makes every leaf two Pages thick.
+ *
+ *  - `case` — the two folds that wrap the case: the Spine around its edge and
+ *    the Inner Flap in behind. The J-Card's own two folds, unchanged.
+ *  - `fore-edge` — **blank meets blank**, folded away from the printed side.
+ *    Where a leaf doubles back on itself.
+ *  - `spine` — **printed meets printed**, folded toward the printed side. The
+ *    booklet's hinge, and the one fold that goes the other way: open the cover
+ *    and the two Pages either side of it face you as a spread.
+ *
+ * Three kinds rather than one, because a collector folding the wrong one the
+ * wrong way gets a booklet with a blank face showing, and the printed Sheet is
+ * the only instruction they have.
+ */
+export type FoldKind = 'case' | 'fore-edge' | 'spine';
+
+/** A print-only mark showing where to cut (CONTEXT.md: Cutting Guide). */
+export interface CutGuide {
+  readonly kind: 'cut';
   /** Polyline in Part-local coordinates. A cut guide for a Part is its closed outline. */
   readonly points: readonly Point[];
   readonly closed: boolean;
 }
 
-/** One panel of the J-Card, in Part-local coordinates, so tests can assert the fold pattern. */
-export interface PanelBounds {
-  readonly panel: JCardPanel;
-  readonly rect: Rect;
+/** A print-only mark showing where — and which way — to fold. */
+export interface FoldGuide {
+  readonly kind: 'fold';
+  readonly fold: FoldKind;
+  readonly points: readonly Point[];
+  readonly closed: boolean;
 }
+
+/**
+ * A cut or fold mark. A union rather than one shape with an optional field,
+ * because `fold` means nothing on a cut line and a cut line with a fold kind on
+ * it is a mark nobody could draw.
+ */
+export type Guide = CutGuide | FoldGuide;
+
+/**
+ * What one Page of the Insert carries (ADR-0012).
+ *
+ * Part of the layout model rather than of the module that decides it, because
+ * two sides read it: `insert-plan.ts`, which works out how many Pages a Release
+ * needs and what goes where, and the Templates, which draw one Page at a time
+ * and have to be told which.
+ *
+ * `artwork` is the odd Page out — the back cover a real booklet has, which
+ * exists because the Page count is even and costs nothing because the image is
+ * already embedded at full resolution.
+ */
+export type PageRole = 'cover' | 'tracklist' | 'credits' | 'artwork';
+
+/**
+ * One section of the Insert, in Part-local coordinates, so tests can assert the
+ * fold pattern in millimetres.
+ *
+ * `page` carries its 1-based number because that is the only way to say which
+ * Page a rectangle is, and the numbers are what the fold pattern is expressed
+ * in. Page 1 *is* the Front Panel (ADR-0012), which is why there is no
+ * `front-panel` member here any more.
+ */
+export type PanelBounds =
+  | { readonly panel: 'inner-flap' | 'spine'; readonly rect: Rect }
+  | {
+      readonly panel: 'page';
+      /** 1-based, counting along the flat strip. Page 1 is the Front Panel. */
+      readonly page: number;
+      readonly role: PageRole;
+      readonly rect: Rect;
+    };
 
 export interface PartPlacement {
   readonly releaseId: string;
@@ -121,7 +184,10 @@ export interface PartPlacement {
   readonly ops: readonly DrawOp[];
   /** Cut and fold guides in Part-local coordinates. */
   readonly guides: readonly Guide[];
-  /** Present for the J-Card: the three panels it folds into. */
+  /**
+   * Present for the Insert: the Inner Flap, the Spine and every Page, in the
+   * order they sit on the flat strip. Absent for the Label, which does not fold.
+   */
   readonly panels?: readonly PanelBounds[];
 }
 
@@ -179,4 +245,49 @@ export interface SpineTruncated {
   readonly sizeMm: Mm;
 }
 
-export type SheetWarning = TypeBelowPrintFloor | SpineTruncated;
+/**
+ * The Insert folds into fewer Pages than this Release's content asked for, so
+ * something the collector can see on screen is not on the paper.
+ *
+ * Two things cause it and the fields say which without naming it, because
+ * wording is the UI's (see the note on {@link SheetLayout.warnings}). When
+ * `maxPages` is below `requestedPages` the paper is the limit — a 282.5 mm strip
+ * needs a printable margin of 7.25 mm or less on A4, and never fits Letter at
+ * all. Otherwise the paper had room and the *content* could not fill the Pages:
+ * ADR-0012's even-Page rule may not produce a blank sheet the collector did not
+ * ask for, so a fourth Page nothing would go on is not folded.
+ */
+export interface InsertPagesShort {
+  readonly kind: 'insert-pages-short';
+  readonly releaseId: string;
+  /** What to call the Release on screen. */
+  readonly releaseTitle: string;
+  /**
+   * Pages that were asked for: the collector's own count when they set one,
+   * otherwise the Release's content.
+   *
+   * The number the shortfall is measured against, and the number a sentence about
+   * it has to quote — a collector who typed 4 into the Pages control is owed an
+   * answer about 4 and not about what the content would have chosen.
+   */
+  readonly requestedPages: number;
+  /** Whether it was the collector who asked, rather than the content. */
+  readonly requestedByCollector: boolean;
+  /** Pages the Insert actually folds into. */
+  readonly pages: number;
+  /** The most Pages this paper at this printable margin would take (ADR-0014). */
+  readonly maxPages: number;
+  readonly paperName: string;
+  readonly marginMm: Mm;
+  /**
+   * What is not on the Insert as a result, in reading order. Never the tracklist.
+   *
+   * **Can be empty**, and that is a real case rather than a contradiction: a
+   * collector who asks for four Pages on a Release with two Pages of content has
+   * lost nothing, because there was nothing more to print. The strip is still
+   * shorter than they asked for and the report still fires.
+   */
+  readonly dropped: readonly PageRole[];
+}
+
+export type SheetWarning = TypeBelowPrintFloor | SpineTruncated | InsertPagesShort;

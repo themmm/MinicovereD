@@ -18,8 +18,12 @@ interface Call {
   readonly args: readonly number[];
 }
 
-function recordingContext(): Canvas2D & { readonly calls: Call[] } {
+function recordingContext(): Canvas2D & { readonly calls: Call[]; readonly dashes: number[][] } {
   const calls: Call[] = [];
+  // `setLineDash` takes an array, and `calls` keeps only the numeric arguments —
+  // so the pattern itself needs its own record. It is the whole of how a fold
+  // guide says which fold it is on the printed Sheet.
+  const dashes: number[][] = [];
   const record =
     (method: string) =>
     (...args: unknown[]): void => {
@@ -28,6 +32,7 @@ function recordingContext(): Canvas2D & { readonly calls: Call[] } {
 
   return {
     calls,
+    dashes,
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 0,
@@ -47,7 +52,10 @@ function recordingContext(): Canvas2D & { readonly calls: Call[] } {
     clip: record('clip'),
     fillRect: record('fillRect'),
     fillText: record('fillText'),
-    setLineDash: record('setLineDash'),
+    setLineDash: (segments: readonly number[]): void => {
+      dashes.push([...segments]);
+      record('setLineDash')(segments);
+    },
     drawImage: record('drawImage'),
   };
 }
@@ -59,7 +67,7 @@ const HUNDRED_MM_PART: SheetLayout = {
   placements: [
     {
       releaseId: 'r1',
-      part: 'back-card',
+      part: 'insert',
       bounds: { x: 0, y: 0, width: 100, height: 100 },
       turned: false,
       ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 100, height: 100 }, color: '#fff' }],
@@ -199,6 +207,98 @@ function lastFillOnPage(calls: readonly Call[]): { x: number; y: number; width: 
   return box;
 }
 
+describe('rasterising the three kinds of fold (ADR-0012)', () => {
+  /**
+   * A strip with one of each fold on it, drawn at export resolution.
+   *
+   * The dash patterns are in millimetres and are scaled to pixels like
+   * everything else, so the assertions below are about the *relationships*
+   * between the three — which is what a collector reads — rather than about the
+   * three literals, which would be the constant restated.
+   */
+  const FOLDED: SheetLayout = {
+    paper: A4,
+    marginMm: 0,
+    placements: [
+      {
+        releaseId: 'r1',
+        part: 'insert',
+        bounds: { x: 0, y: 0, width: 282.5, height: 79 },
+        turned: false,
+        ops: [],
+        guides: [
+          { kind: 'cut', points: [{ x: 0, y: 0 }, { x: 282.5, y: 0 }, { x: 282.5, y: 79 }, { x: 0, y: 79 }], closed: true },
+          { kind: 'fold', fold: 'case', points: [{ x: 14, y: 0 }, { x: 14, y: 79 }], closed: false },
+          { kind: 'fold', fold: 'fore-edge', points: [{ x: 87.5, y: 0 }, { x: 87.5, y: 79 }], closed: false },
+          { kind: 'fold', fold: 'spine', points: [{ x: 152.5, y: 0 }, { x: 152.5, y: 79 }], closed: false },
+        ],
+      },
+    ],
+  };
+
+  /** Every non-empty dash pattern the sheet asked for, in the order asked. */
+  const patternsOf = (layout: SheetLayout): number[][] => {
+    const context = recordingContext();
+    drawSheet(context, layout, EXPORT_DPI);
+    return context.dashes.filter((pattern) => pattern.length > 0);
+  };
+
+  it('gives each kind of fold its own dash pattern', () => {
+    // Three folds, three patterns, and no two the same: a collector has to fold
+    // the fore-edges away from the printed side and the spine toward it, and the
+    // Sheet is the only instruction they get.
+    const patterns = patternsOf(FOLDED);
+
+    expect(patterns).toHaveLength(3);
+    expect(new Set(patterns.map((pattern) => pattern.join(','))).size, 'three distinct patterns').toBe(3);
+  });
+
+  it('leaves the cut outline solid, so no fold can be mistaken for a cut line', () => {
+    const context = recordingContext();
+    drawSheet(context, FOLDED, EXPORT_DPI);
+
+    // Solid strokes outnumber dashed ones here, and not only because of the cut:
+    // each fold is drawn twice, once as a solid white halo under the mark and once
+    // as the mark itself. So the count to expect is one empty pattern for the cut
+    // plus one per fold — four — against three non-empty ones.
+    expect(context.dashes.filter((pattern) => pattern.length === 0)).toHaveLength(4);
+    expect(patternsOf(FOLDED)).toHaveLength(3);
+    // And no fold is drawn solid, which is what would let one be cut along.
+    expect(patternsOf(FOLDED).every((pattern) => pattern.length >= 2)).toBe(true);
+  });
+
+  it('marks the spine as a dash-dot, which is the fold that reverses', () => {
+    const [, foreEdge, spine] = patternsOf(FOLDED);
+
+    // A dash-dot has four segments where a plain dash has two: that is what the
+    // drafting convention for a reversed fold looks like, and it is what makes
+    // the hinge tellable from the two creases either side of it at a glance.
+    expect(foreEdge).toHaveLength(2);
+    expect(spine).toHaveLength(4);
+  });
+
+  it('gives the fore-edge a longer dash than the case folds it shares a strip with', () => {
+    const [caseFold, foreEdge] = patternsOf(FOLDED);
+
+    // The case folds keep the fine dash the J-Card's two folds have always had,
+    // and the fore-edge is the commonest crease on the strip, so it is the one
+    // that has to read at a glance.
+    expect(caseFold?.[0]).toBeGreaterThan(0);
+    expect(foreEdge?.[0]).toBeGreaterThan(caseFold?.[0] ?? Infinity);
+  });
+
+  it('scales the pattern with the resolution, like every other length', () => {
+    const at300 = patternsOf(FOLDED);
+    const at150 = (() => {
+      const context = recordingContext();
+      drawSheet(context, FOLDED, EXPORT_DPI / 2);
+      return context.dashes.filter((pattern) => pattern.length > 0);
+    })();
+
+    expect(at300[0]?.[0]).toBeCloseTo((at150[0]?.[0] ?? 0) * 2, 6);
+  });
+});
+
 describe('rasterising a Part packed on its side (ADR-0014)', () => {
   /** An Insert-shaped Part: 282.5 × 79 mm of drawing inside a 79 × 282.5 box. */
   const turnedPart: SheetLayout = {
@@ -207,7 +307,7 @@ describe('rasterising a Part packed on its side (ADR-0014)', () => {
     placements: [
       {
         releaseId: 'r1',
-        part: 'jcard',
+        part: 'insert',
         bounds: { x: 5, y: 5, width: 79, height: 282.5 },
         turned: true,
         ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 282.5, height: 79 }, color: '#123456' }],

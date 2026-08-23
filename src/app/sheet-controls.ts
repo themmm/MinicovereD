@@ -8,8 +8,7 @@ import { el } from './dom.ts';
 /** Paper size, printable margin and which Parts this print job wants. */
 
 const PART_LABELS: Readonly<Record<PartKind, string>> = {
-  jcard: 'J-Card',
-  'back-card': 'Back Card',
+  insert: 'Insert',
   label: 'Label',
 };
 

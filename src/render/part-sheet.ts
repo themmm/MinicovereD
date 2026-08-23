@@ -15,17 +15,27 @@ import type { PartPlacement, SheetLayout } from './layout.ts';
  * `drawPlacement` clips a Part's drawing to its cut outline, so a Label shown
  * without its outline would fill the notched corner the cartridge does not
  * have. The specimen is a true crop of what prints, cut line included — which
- * at `#8a8a8a` on paper is 3.45:1 and is the hairline ADR-0010 asks for.
+ * at `#8a8a8a` on paper is 3.45:1 and is the hairline ADR-0010 asks for. The
+ * fold guides come with it, which is how the Flat view shows a collector where
+ * the strip creases and which way each crease goes.
  */
 
 /**
- * How a J-Card is shown. `flat` is the 87.5 mm strip that prints; `assembled`
- * is what sits in the case — Front Panel face-on with the Spine beside it and
- * the Inner Flap folded away behind (ADR-0010).
+ * How an Insert is shown. `flat` is the whole strip that prints — 152.5 mm at two
+ * Pages, 282.5 at four; `assembled` is the closed booklet as it sits in the case,
+ * the Front Panel face-on with the 5.5 mm Spine beside it and everything else
+ * folded away behind (ADR-0010).
  *
- * Only the J-Card folds, so only the J-Card has two of these.
+ * Only the Insert folds, so only the Insert has two of these.
+ *
+ * Assembled is 73.5 × 79 whatever the Page count, which is the same box the
+ * J-Card's assembled view was — and that is what keeps ADR-0010's one shared
+ * scale working now that a Part can be 282.5 mm long. The default view of a
+ * four-Page Insert is no wider on screen than a v1 J-Card's was. Only `flat`
+ * needs room, and the band gives it a scroll container rather than the page a
+ * sideways scrollbar.
  */
-export type JCardView = 'assembled' | 'flat';
+export type InsertView = 'assembled' | 'flat';
 
 /**
  * Negation that cannot produce a signed zero.
@@ -67,17 +77,27 @@ function union(rects: readonly Rect[]): Rect | undefined {
 /**
  * The part of a Part that is on screen, in Part-local millimetres.
  *
- * Assembled means the Inner Flap is behind the Front Panel and cannot be seen,
- * so the box is what the other panels occupy. Taken as their union rather than
- * by arithmetic on the flap's width, so it stays right if the panel order ever
- * changes — and it falls back to the whole Part whenever there are no panels to
- * reason about, which is every Part except the J-Card.
+ * Assembled is the closed booklet: the Spine standing beside Page 1, with the
+ * Inner Flap folded in behind and every Page after the first folded behind that.
+ * So the box is the union of exactly two sections — and it is taken as a union
+ * rather than by arithmetic on the flap's width, so it stays right whatever order
+ * the sections are declared in.
+ *
+ * Page 1 rather than "not the flap", which is what this said when there were
+ * three panels and only the flap was hidden. A four-Page Insert has three more
+ * sections behind the cover, and unioning them would give back the whole 282.5 mm
+ * strip under a control labelled Assembled.
+ *
+ * Falls back to the whole Part whenever there are no sections to reason about,
+ * which is every Part except the Insert.
  */
-export function visibleBox(placement: PartPlacement, view: JCardView): Rect {
+export function visibleBox(placement: PartPlacement, view: InsertView): Rect {
   const whole: Rect = { x: 0, y: 0, ...uprightSize(placement) };
   if (view === 'flat' || !placement.panels) return whole;
 
-  const shown = placement.panels.filter((panel) => panel.panel !== 'inner-flap');
+  const shown = placement.panels.filter(
+    (panel) => panel.panel === 'spine' || (panel.panel === 'page' && panel.page === 1),
+  );
   return union(shown.map((panel) => panel.rect)) ?? whole;
 }
 
@@ -98,7 +118,7 @@ export function visibleBox(placement: PartPlacement, view: JCardView): Rect {
 export function partSheet(
   paper: PaperSize,
   placement: PartPlacement,
-  view: JCardView = 'flat',
+  view: InsertView = 'flat',
 ): SheetLayout {
   const box = visibleBox(placement, view);
   return {

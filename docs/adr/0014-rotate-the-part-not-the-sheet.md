@@ -30,13 +30,19 @@ shape. Orientation would be a setting that changes everything and solves nothing
 Two corrections to that table, both found by running the packer in ticket 07 rather than by deriving
 them again.
 
-**It assumes no gap between the pieces, and the app packs with one.** `DEFAULT_PART_GAP_MM` is 4 mm.
-Two turned Inserts and one column of Labels need 79 + 79 + 35 = 193 mm of width plus two gaps, against
-200 mm of printable width, so the picture holds up to a 3.5 mm gap and no further — at 4 mm the Labels
-are pushed onto a second Sheet by one millimetre. Nothing was changed for it: there is no Insert yet,
-so moving the gap would have changed how v1's three Parts pack for the sake of a Part that does not
-exist. Ticket 08 has the choice, and a printed strip to settle it against — a 3.5 mm gap, a 4.5 mm
-printable margin, or a millimetre off the strip.
+**It assumes no gap between the pieces, and the app packs with one.** Two turned Inserts and one
+column of Labels need 79 + 79 + 35 = 193 mm of width plus two gaps, against 200 mm of printable
+width, so the picture holds up to a 3.5 mm gap and no further — and `DEFAULT_PART_GAP_MM` was 4, which
+pushed the Labels onto a second Sheet by one millimetre. Ticket 07 measured the four ways out and
+changed none of them, there being no Insert yet to justify moving a constant that changes how v1's
+Parts pack.
+
+**Ticket 08 spent the half-millimetre: the gap is 3.5 mm.** Of the four numbers in that sum it is the
+only one that is not a measurement of physical hardware — the Insert's 79 mm height is how tall a
+front cover is, the Label's 35 mm width is how wide a cartridge is, the 5 mm printable margin is what
+a home printer will not reach, and this is scissor room. 3.5 mm is still more than three times the
+distance two cut lines need to stay apart. The table above is now true at the settings the app ships
+with, which is what it always claimed to be.
 
 **Turning alone does not draw the picture either.** Shelf packing puts every rectangle on a shelf at
 that shelf's own top edge, so the 42 mm strip beside two turned Inserts can only ever hold the one
@@ -55,6 +61,22 @@ printable margin above 7.25 mm loses the four-Page Insert entirely. The app must
 cannot be placed is already reported by the packer, and this is the case that will actually happen,
 because 5 mm is a default that home printers routinely need raised.
 
+Two corrections to *that*, both from ticket 08.
+
+**It is worse than a raised margin, because it is not only A4.** Letter's long edge is 279.4 mm
+against the strip's 282.5, so a four-Page Insert does not fit Letter at *any* printable margin,
+including none. The arithmetic above checked A4's 287 and never checked the other paper this app
+offers. Turning the sheet would not have helped either: Letter landscape is 279.4 in the long
+direction too, which is the same 3.1 mm short.
+
+**It is better than "loses the four-Page Insert entirely", because losing a Page is not losing a
+Part.** The Page count is now chosen against the paper before anything is packed, so a margin above
+7.25 mm — or Letter at all — produces a two-Page Insert rather than an unplaceable four-Page one, and
+the collector is told which Page went and why. A two-Page strip is 152.5 × 79 and fits every paper
+this app offers at every margin the control can reach, so **an Insert is never unplaceable in
+practice**, and the blank preview this ADR predicted cannot happen. What is left of the packer's
+refusal is a hand-edited project file, which is the case it was written for.
+
 Rotation goes into `SheetPacker`, which the spec names as one of the three testing seams and which is
 already generic over `PackItem<T>`, so it is tested as rectangles rather than as pixels: nothing
 overlaps, nothing crosses the margin, a turned item's placement reports its turned dimensions. The
@@ -68,6 +90,12 @@ that one had happened. It gained `turned`, and `raster.ts` gained one rotation i
 translate to the Part's box — which turns the drawing, the cut-outline clip and the guides together,
 because all three are already drawn under that one transform. The PDF path really did need nothing: it
 takes rasterised PNGs. Neither did any Template, which is the point.
+
+The Templates held to that through ticket 08 as well, which is the property worth naming: an Insert
+is the Part this ADR was written for and no Template asks which way up its strip was packed. What the
+renderer *did* need was the other direction — the strip's length has to be known before it can be
+packed, because the Page count decides it, so the plan runs before the packer rather than inside the
+drawing.
 
 ## Rejected
 

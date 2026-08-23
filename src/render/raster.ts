@@ -1,7 +1,7 @@
 import type { Mm, Point } from '../domain/units.ts';
 import { pxPerMm, rasterSizePx } from '../domain/units.ts';
 import { fitImage } from './image-fit.ts';
-import type { DrawOp, Guide, PartPlacement, PrintFace, SheetLayout, TextStyle } from './layout.ts';
+import type { DrawOp, FoldKind, Guide, PartPlacement, PrintFace, SheetLayout, TextStyle } from './layout.ts';
 
 /**
  * Draws a Sheet layout onto a canvas. This is the one place that knows about
@@ -17,14 +17,39 @@ export const EXPORT_DPI = 300;
 const GUIDE_WIDTH_MM: Mm = 0.15;
 const GUIDE_COLOR = '#8a8a8a';
 /**
- * A fold guide runs along a panel boundary, where a dark Spine would swallow a
- * grey hairline. Laying the mark over a wider light stroke keeps it readable on
- * any background — and unlike ticks reaching past the Part, it stays inside the
- * printable margin.
+ * A fold guide runs along a panel boundary, where a dark Spine or a full-bleed
+ * Page would swallow a grey hairline. Laying the mark over a wider light stroke
+ * keeps it readable on any background — and unlike ticks reaching past the Part,
+ * it stays inside the printable margin.
  */
 const GUIDE_HALO_COLOR = '#ffffff';
 const GUIDE_HALO_WIDTH_MM: Mm = 0.5;
-const FOLD_DASH_MM: readonly [Mm, Mm] = [1.6, 1.2];
+
+/**
+ * One dash pattern per kind of fold, because the collector has to fold two of
+ * them in opposite directions and the printed Sheet is the only instruction they
+ * get (ADR-0012).
+ *
+ *  - `case` keeps the fine dash the J-Card's two folds have always had. Nothing
+ *    about them changed, so nothing about how they read should.
+ *  - `fore-edge` is a long dash: the fold that goes *away* from the printed side,
+ *    where blank meets blank. Long because it is the commonest crease on the
+ *    strip — every Insert has at least one — and because it has to be told apart
+ *    at a glance from the one crease that goes the other way.
+ *  - `spine` is dash-dot, the drafting convention for a fold that reverses. It is
+ *    the booklet's hinge, printed meets printed, and there is exactly one of it
+ *    on a four-Page strip.
+ *
+ * All three stay dashed and none is solid, deliberately: the cut outline is the
+ * solid line on a Sheet, and a solid fold at the same colour and width would be
+ * a line a collector could cut along by mistake. Being uncuttable is worth more
+ * than the extra contrast.
+ */
+const FOLD_DASH_MM: Readonly<Record<FoldKind, readonly Mm[]>> = {
+  case: [1.6, 1.2],
+  'fore-edge': [4, 2],
+  spine: [4, 1.2, 0.6, 1.2],
+};
 
 /**
  * The type a Part can be set in, and the print side of the quarantine (ADR-0008
@@ -201,7 +226,9 @@ function drawGuide(surface: Surface, guide: Guide): void {
   }
   context.strokeStyle = GUIDE_COLOR;
   context.lineWidth = Math.max(1, GUIDE_WIDTH_MM * scale);
-  context.setLineDash(guide.kind === 'fold' ? FOLD_DASH_MM.map((mm) => mm * scale) : []);
+  context.setLineDash(
+    guide.kind === 'fold' ? FOLD_DASH_MM[guide.fold].map((mm) => mm * scale) : [],
+  );
   tracePath(surface, guide.points, guide.closed);
   context.stroke();
   context.restore();
@@ -227,7 +254,7 @@ function drawPlacement(surface: Surface, placement: PartPlacement): void {
   }
 
   // Nothing a Template draws may leave the Part: an overlong tracklist has to
-  // spill inside the Back Card, not onto the Sheet around it.
+  // spill inside its own Page, not onto the Sheet around it.
   const outline = placement.guides.find((guide) => guide.kind === 'cut');
   context.save();
   if (outline) {

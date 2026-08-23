@@ -5,7 +5,7 @@ import { DEFAULT_PART_DIMENSIONS, partSize } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import { rectsOverlap } from '../domain/units.ts';
 import type { Size } from '../domain/units.ts';
-import { DEFAULT_PART_GAP_MM, packParts } from './sheet-packer.ts';
+import { DEFAULT_PART_GAP_MM, fitsPaper, packParts } from './sheet-packer.ts';
 import type { PackConfig, PackItem, PackedSheet } from './sheet-packer.ts';
 
 /** What the renderer hangs off a packed rectangle: which Release, which Part. */
@@ -30,16 +30,20 @@ const A4_CONFIG: PackConfig = { paper: A4, marginMm: 5, gapMm: 4 };
 
 const quarters = (count: number): Item[] =>
   Array.from({ length: count }, (_, index) => ({
-    ref: { releaseId: `r${index}`, part: 'back-card' as PartKind },
-    label: `Back Card r${index}`,
+    ref: { releaseId: `r${index}`, part: 'insert' as PartKind },
+    label: `a quarter r${index}`,
     size: { width: 98, height: 140 },
   }));
 
+/**
+ * A Release's Parts at the app's own sizes. Two Pages, which is the common case
+ * and the only Insert that fits A4 standing up.
+ */
 const partsOf = (releaseId: string, only?: readonly PartKind[]): Item[] =>
-  (only ?? (['jcard', 'back-card', 'label'] as const)).map((part) => ({
+  (only ?? (['insert', 'label'] as const)).map((part) => ({
     ref: { releaseId, part },
     label: `${part} of ${releaseId}`,
-    size: partSize(part, DEFAULT_PART_DIMENSIONS),
+    size: partSize(part, DEFAULT_PART_DIMENSIONS, 2),
   }));
 
 /** Generic over the ref, because the ADR-0014 blocks below pack plain shapes. */
@@ -82,14 +86,14 @@ describe('SheetPacker — sheet count', () => {
 
   it('reports what it could not fit instead of throwing, when asked to', () => {
     const huge: Item = {
-      ref: { releaseId: 'r1', part: 'jcard' },
-      label: 'the J-Card of Too Wide',
+      ref: { releaseId: 'r1', part: 'insert' },
+      label: 'the Insert of Too Wide',
       size: { width: 250, height: 79 },
     };
 
     const result = packParts([huge, ...quarters(1)], { ...A4_CONFIG, oversize: 'omit' });
 
-    expect(result.omitted).toEqual(['the J-Card of Too Wide']);
+    expect(result.omitted).toEqual(['the Insert of Too Wide']);
     expect(result.sheets.flatMap((sheet) => sheet.placements)).toHaveLength(1);
   });
 
@@ -124,22 +128,24 @@ describe('SheetPacker — sheet count', () => {
 });
 
 describe('SheetPacker — a single Release', () => {
-  it('puts all three Parts of one Release on one Sheet', () => {
+  it('puts both Parts of one Release side by side on one Sheet', () => {
     const sheets = pack(partsOf('r1'), A4_CONFIG);
 
     expect(sheets).toHaveLength(1);
     expect(sheets[0]?.placements.map(({ item }) => item.ref.part).sort()).toEqual([
-      'back-card',
-      'jcard',
+      'insert',
       'label',
     ]);
+    // 152.5 of Insert, a 4 mm gap and a 35 mm Label is 191.5 of 200: two Parts
+    // where v1 needed a row for three.
+    expect(new Set(sheets[0]?.placements.map(({ rect }) => rect.y)).size).toBe(1);
   });
 
-  it('fits three whole Releases — nine Parts — on one A4 Sheet', () => {
+  it('fits three whole Releases — six Parts — on one A4 Sheet', () => {
     const sheets = pack([...partsOf('r1'), ...partsOf('r2'), ...partsOf('r3')], A4_CONFIG);
 
     expect(sheets).toHaveLength(1);
-    expect(allPlacements(sheets)).toHaveLength(9);
+    expect(allPlacements(sheets)).toHaveLength(6);
     expectNoOverlaps(sheets);
     expectInsideMargin(sheets, A4, 5);
   });
@@ -149,9 +155,10 @@ describe('SheetPacker — a single Release', () => {
     const sheets = pack(items, A4_CONFIG);
 
     // Pinned: this is the heuristic's current quality, so a regression to a
-    // worse packing has to be a deliberate change to this number.
+    // worse packing has to be a deliberate change to this number. Twenty Parts
+    // rather than v1's thirty, because a Release has two.
     expect(sheets).toHaveLength(4);
-    expect(allPlacements(sheets)).toHaveLength(30);
+    expect(allPlacements(sheets)).toHaveLength(20);
     expectNoOverlaps(sheets);
     expectInsideMargin(sheets, A4, 5);
   });
@@ -197,10 +204,31 @@ describe('SheetPacker — paper and margin', () => {
     expectNoOverlaps(pack(quarters(4), roomy));
   });
 
+  it('counts the caption room a figure needs beneath it, not only the figure', () => {
+    // The calibration sheet reserves room under every outline for its two caption
+    // lines, and a figure that fits the paper but not the paper minus its caption
+    // has to be refused rather than printed with the caption off the page. The
+    // fit rule is shared with `fitsPaper`, so this is also what says that export
+    // reads the caption room.
+    const area = printableArea(A4, 5);
+    const tall: Item = {
+      ref: { releaseId: 'r1', part: 'insert' },
+      label: 'a figure as tall as the bed',
+      // Exactly the printable height, so it fits alone and does not fit with a
+      // caption under it.
+      size: { width: 50, height: area.height },
+    };
+
+    expect(pack([tall], { ...A4_CONFIG, oversize: 'omit' })).toHaveLength(1);
+    expect(
+      packParts([tall], { ...A4_CONFIG, captionRoomMm: 8.8, oversize: 'omit' }).omitted,
+    ).toEqual(['a figure as tall as the bed']);
+  });
+
   it('refuses a Part that cannot fit the printable area at all', () => {
     const huge: Item = {
-      ref: { releaseId: 'r1', part: 'jcard' },
-      label: 'the J-Card of Too Wide',
+      ref: { releaseId: 'r1', part: 'insert' },
+      label: 'the Insert of Too Wide',
       size: { width: 250, height: 79 },
     };
 
@@ -209,9 +237,8 @@ describe('SheetPacker — paper and margin', () => {
 });
 
 /**
- * ADR-0012's Insert, as rectangles. There is none in the app yet — it is ticket
- * 08, and it is gated on a printed strip — and ADR-0014 asks for the turn to be
- * "tested as rectangles rather than as pixels" in any case.
+ * ADR-0012's Insert, as rectangles: ADR-0014 asks for the turn to be "tested as
+ * rectangles rather than as pixels", and this seam knows nothing about Parts.
  */
 const INSERT_4PAGE: Size = { width: 282.5, height: 79 };
 /** The common case: Inner Flap, Spine, Front Panel and one Page. */
@@ -229,18 +256,85 @@ const insertsAndLabels = (): Array<PackItem<string>> => [
   ...Array.from({ length: 5 }, (_, index) => shape(`Label ${index}`, LABEL)),
 ];
 
+describe('SheetPacker — the one fit rule, asked directly', () => {
+  /*
+   * `fitsPaper` is exported because two things have to agree about it: this
+   * packer, and whatever sized the rectangle. An Insert's Page count is chosen
+   * against it (`maxInsertPages`), so a rule that disagreed with the placement
+   * would be a strip the packer refuses — and refusing a Part blanks the whole
+   * preview.
+   *
+   * Asked here directly rather than only through `packParts`, because no caller
+   * in the app combines a caption room with a turn: the calibration sheet
+   * reserves captions and never turns, and the renderer turns and reserves
+   * nothing. The rule is general even where the callers are not, and the untested
+   * half of it is exactly where a wrong answer would hide.
+   */
+  const A4_AT_5 = { paper: A4, marginMm: 5 } as const;
+
+  it('takes a rectangle that fits standing up', () => {
+    expect(fitsPaper({ width: 200, height: 287 }, A4_AT_5)).toBe(true);
+    expect(fitsPaper({ width: 200.1, height: 287 }, A4_AT_5)).toBe(false);
+    expect(fitsPaper({ width: 200, height: 287.1 }, A4_AT_5)).toBe(false);
+  });
+
+  it('turns only when asked, and only when turning helps', () => {
+    const overlong = { width: 282.5, height: 79 };
+
+    expect(fitsPaper(overlong, A4_AT_5)).toBe(false);
+    expect(fitsPaper(overlong, { ...A4_AT_5, turn: 'never' })).toBe(false);
+    expect(fitsPaper(overlong, { ...A4_AT_5, turn: 'to-fit' })).toBe(true);
+    // Longer than the paper either way round: no policy rescues it.
+    expect(fitsPaper({ width: 400, height: 79 }, { ...A4_AT_5, turn: 'to-fit' })).toBe(false);
+  });
+
+  it('counts the caption room whichever way the rectangle goes', () => {
+    // Standing up, the caption comes off the height; turned, off the *width* the
+    // rectangle used to have — because that is what the height becomes. Both
+    // halves matter even though no caller in this app reaches the second, and
+    // both are one `+ captionRoomMm` away from being silently wrong.
+    const captionRoomMm = 8.8;
+
+    expect(fitsPaper({ width: 50, height: 287 }, A4_AT_5)).toBe(true);
+    expect(fitsPaper({ width: 50, height: 287 }, { ...A4_AT_5, captionRoomMm })).toBe(false);
+    expect(fitsPaper({ width: 50, height: 287 - captionRoomMm }, { ...A4_AT_5, captionRoomMm })).toBe(true);
+
+    // Turned: 287 × 50 becomes a 50 × 287 box, so the same caption room bites.
+    const turning = { ...A4_AT_5, turn: 'to-fit' } as const;
+    expect(fitsPaper({ width: 287, height: 50 }, turning)).toBe(true);
+    expect(fitsPaper({ width: 287, height: 50 }, { ...turning, captionRoomMm })).toBe(false);
+    expect(fitsPaper({ width: 287 - captionRoomMm, height: 50 }, { ...turning, captionRoomMm })).toBe(true);
+  });
+
+  it('agrees with the packer it is part of, which is the whole point of sharing it', () => {
+    // The property `maxInsertPages` leans on: anything this rule accepts, the
+    // packer places, and anything it refuses, the packer refuses.
+    for (const size of [
+      { width: 282.5, height: 79 },
+      { width: 152.5, height: 79 },
+      { width: 201, height: 79 },
+      { width: 79, height: 288 },
+    ]) {
+      const config = { ...A4_AT_5, gapMm: 3.5, turn: 'to-fit' } as const;
+      const item: Item = { ref: { releaseId: 'r1', part: 'insert' }, label: 'a strip', size };
+      const placed = packParts([item], { ...config, oversize: 'omit' });
+
+      expect(placed.omitted.length === 0, `${size.width} × ${size.height}`).toBe(
+        fitsPaper(size, config),
+      );
+    }
+  });
+});
+
 describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
   it('is measured against the sizes the app and the ADRs actually use', () => {
     // Every sheet count below is about these two rectangles, so both are
     // measured against the domain rather than against themselves. The Insert
     // keeps the J-Card's three panels and adds Pages at 65 mm (ADR-0012), so
     // its length is the J-Card's flat strip plus three of them.
-    const { jcard } = DEFAULT_PART_DIMENSIONS;
-    const strip = jcard.innerFlapWidth + jcard.spineWidth + jcard.frontPanelWidth;
-
-    expect(LABEL).toEqual(partSize('label', DEFAULT_PART_DIMENSIONS));
-    expect(INSERT_4PAGE).toEqual({ width: strip + 3 * 65, height: jcard.height });
-    expect(INSERT_2PAGE).toEqual({ width: strip + 65, height: jcard.height });
+    expect(LABEL).toEqual(partSize('label', DEFAULT_PART_DIMENSIONS, 2));
+    expect(INSERT_4PAGE).toEqual(partSize('insert', DEFAULT_PART_DIMENSIONS, 4));
+    expect(INSERT_2PAGE).toEqual(partSize('insert', DEFAULT_PART_DIMENSIONS, 2));
   });
 
   it('turns a rectangle too long for the paper, and the placement says so', () => {
@@ -309,16 +403,17 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     );
   });
 
-  it('lands two Inserts and five Labels on one A4 portrait Sheet', () => {
-    // ADR-0014's picture: two turned Inserts side by side, and the column that
-    // leaves holds the Labels. At the 3 mm gap below they take 161 of the
-    // 200 mm — the ADR's 158 is the same pair with no gap between them. It
-    // needs the column as much as the turn: every rectangle on a shelf shares
-    // that shelf's top edge, so without one only the first Label reaches the
-    // strip.
+  it('lands two Inserts and five Labels on one A4 portrait Sheet, at the gap the app ships', () => {
+    // ADR-0014's picture, at `DEFAULT_PART_GAP_MM` rather than at a gap chosen to
+    // make it come out: two turned Inserts side by side, and the column that
+    // leaves holds the Labels. 79 + 3.5 + 79 + 3.5 + 35 is exactly the 200 mm of
+    // printable width, with nothing to spare — the ADR's 158 is the same pair of
+    // Inserts with no gap between them, before the Labels. It needs the column as
+    // much as the turn: every rectangle on a shelf shares that shelf's top edge,
+    // so without one only the first Label reaches the strip.
     const sheets = packParts(insertsAndLabels(), {
       ...TURNING,
-      gapMm: 3,
+      gapMm: DEFAULT_PART_GAP_MM,
       columns: true,
     }).sheets;
 
@@ -326,30 +421,42 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     const placed = allPlacements(sheets);
     expect(placed).toHaveLength(7);
     expect(placed.filter((placement) => placement.turned)).toHaveLength(2);
+    // Side by side: 79 of Insert, the gap, 79 more.
+    expect(placed.filter((placement) => placement.turned).map(({ rect }) => rect.x)).toEqual([
+      5,
+      5 + 79 + DEFAULT_PART_GAP_MM,
+    ]);
 
     const labels = placed.filter((placement) => placement.item.label.startsWith('Label '));
     expect(labels).toHaveLength(5);
     // One column: the same left edge, each Label under the last.
     expect(new Set(labels.map((placement) => placement.rect.x)).size).toBe(1);
-    expect(labels.map((placement) => placement.rect.y)).toEqual([5, 60.5, 116, 171.5, 227]);
+    expect(labels.map((placement) => placement.rect.y)).toEqual([5, 61, 117, 173, 229]);
 
     expectNoOverlaps(sheets);
     expectInsideMargin(sheets, A4, 5);
   });
 
-  it('misses that by a millimetre at the gap the app actually packs with', () => {
+  it('would miss it by a millimetre at a 4 mm gap, which is why the gap is 3.5', () => {
     // ADR-0014's table works the arithmetic with no gap at all. Two 79 mm
     // Inserts and a 35 mm Label need 193 mm plus two gaps against 200 mm of
-    // printable width, so the picture holds up to a 3.5 mm gap and no further —
-    // and `DEFAULT_PART_GAP_MM` is 4. The Labels are pushed to a second Sheet
-    // by one millimetre.
+    // printable width, so the picture holds up to a 3.5 mm gap and no further.
+    // v1 shipped 4 and the ADR's claim was false by one millimetre; ticket 08
+    // spent the half-millimetre, because the gap is scissor room and the other
+    // three numbers in the sum are a case, a cartridge and a printer.
+    //
+    // The 4 is a literal on purpose: it pins what v1 shipped, so this half stays
+    // a statement about arithmetic rather than about the constant. The half that
+    // guards the constant is the second one — and the test above, whose
+    // [5, 61, 117, 173, 229] Label positions are gap-3.5 arithmetic and move if it
+    // goes either way.
     const withColumns = { ...TURNING, columns: true };
 
-    expect(packParts(insertsAndLabels(), { ...withColumns, gapMm: 3.5 }).sheets).toHaveLength(1);
+    expect(packParts(insertsAndLabels(), { ...withColumns, gapMm: 4 }).sheets).toHaveLength(2);
     expect(
       packParts(insertsAndLabels(), { ...withColumns, gapMm: DEFAULT_PART_GAP_MM }).sheets,
-    ).toHaveLength(2);
-    expect(DEFAULT_PART_GAP_MM).toBeGreaterThan(3.5);
+    ).toHaveLength(1);
+    expect(DEFAULT_PART_GAP_MM).toBeLessThanOrEqual(3.5);
   });
 
   it('names the margin, and the margin that would work, when it cannot place a Part', () => {
@@ -594,7 +701,7 @@ describe('SheetPacker — invariants over arbitrary rectangle sets', () => {
       });
 
       const items: Item[] = Array.from({ length: 1 + Math.floor(random() * 20) }, (_, index) => ({
-        ref: { releaseId: `r${index}`, part: pick(['jcard', 'back-card', 'label'] as const) },
+        ref: { releaseId: `r${index}`, part: pick(['insert', 'label'] as const) },
         label: `r${index}`,
         size:
           turn === 'to-fit' && area.height > area.width && random() < 0.2

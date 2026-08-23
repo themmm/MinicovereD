@@ -1,3 +1,4 @@
+import { MAX_INSERT_PAGES } from '../domain/parts.ts';
 import { DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
 import type { DesignChoice, TemplateId, TemplateParams, TemplateToggle } from '../render/sheet-renderer.ts';
 import { clear, el } from './dom.ts';
@@ -13,6 +14,15 @@ import { clear, el } from './dom.ts';
  * Template declares that itself (`Template.toggles`), so the list changes when
  * the Template does — in place, because the collector is standing in the picker
  * when it happens and rebuilding the panel would take their focus with it.
+ *
+ * The Page count is in here too, and that is the one field on this panel that is
+ * not about how the Insert *looks*. It is here because of what it is a decision
+ * about: this record, and only this record. It is not a measurement — every field
+ * of `Measurements` is a length in millimetres and a count is not one — and it
+ * is not a Design choice either, because a Design choice carries forward
+ * (CONTEXT.md) and a four-Page override carried onto the next Release would fold
+ * Pages for content that is not there. So it sits on the Design, beside the
+ * things that describe one record, and starts on Auto for every new one.
  */
 
 interface ColourField {
@@ -66,7 +76,11 @@ const togglesFor = (templateId: TemplateId): ToggleField[] =>
  * the panel does — the Templates and the toggle labels — and a summary naming a
  * control the panel does not show would be a summary of a different fold.
  */
-export function describeDesign({ templateId, params }: DesignChoice): string {
+export function describeDesign({
+  templateId,
+  params,
+  pageCount,
+}: DesignChoice & { readonly pageCount?: number }): string {
   // The control labels verbatim, capitals and all: the summary is a list of what
   // is switched on in the fold below it, and renaming them here would make two
   // names for one checkbox.
@@ -77,13 +91,36 @@ export function describeDesign({ templateId, params }: DesignChoice): string {
   const recoloured = COLOURS.some(
     (colour) => params[colour.key] !== DEFAULT_TEMPLATE_PARAMS[colour.key],
   );
-  const notes = [...on.map((toggle) => toggle.label), ...(recoloured ? ['recoloured'] : [])];
+  const notes = [
+    // Only when the collector set one: a fold's summary is for what has been
+    // decided in it, and "Auto" is the state of not having decided.
+    ...(pageCount === undefined ? [] : [`${pageCount} Pages`]),
+    ...on.map((toggle) => toggle.label),
+    ...(recoloured ? ['recoloured'] : []),
+  ];
   return `${TEMPLATES[templateId].name} · ${notes.join(', ') || 'nothing on, default colours'}`;
 }
 
+/** How the Page count is offered: worked out from the content, or said. */
+const AUTO = 'auto';
+
+/** What the collector can ask for, once the derived answer is not what they want. */
+const PAGE_CHOICES: readonly number[] = [2, MAX_INSERT_PAGES];
+
+export interface DesignChange extends Partial<DesignChoice> {
+  /**
+   * The Page count the collector asked for, or `null` to go back to deriving it.
+   *
+   * `null` rather than `undefined`, because `undefined` on a partial cannot be
+   * told apart from "not mentioned" — and "derive it" is a change the collector
+   * makes on purpose.
+   */
+  readonly pageCount?: number | null;
+}
+
 export function createDesignControls(
-  initial: DesignChoice,
-  onChange: (change: Partial<DesignChoice>) => void,
+  initial: DesignChoice & { readonly pageCount?: number },
+  onChange: (change: DesignChange) => void,
 ): HTMLElement {
   let params = initial.params;
   let templateId = initial.templateId;
@@ -131,6 +168,41 @@ export function createDesignControls(
       ),
     );
   }
+
+  /**
+   * Pages: Auto, or a count.
+   *
+   * Auto is first and is what every Release starts on, because the derived answer
+   * is right far more often than not — two Pages for a record with nothing but a
+   * tracklist, four once there are credits (ADR-0012). The two explicit counts
+   * are here for the two cases the derivation cannot know about: a collector who
+   * wants the credits left off, and one who wants a back cover on a record whose
+   * list would have fitted one Page.
+   *
+   * An asked-for count that cannot be folded is refused rather than clamped — the
+   * paper may have no room for four, and no Page may be blank — and the Insert
+   * then says so under the specimen rather than here. This control is where the
+   * request goes; whether it could be met is a fact about the strip.
+   */
+  const pages = el('select', {
+    class: 'field__input',
+    attrs: { id: 'design-pages' },
+    on: {
+      change: (event) => {
+        const value = (event.target as HTMLSelectElement).value;
+        onChange({ pageCount: value === AUTO ? null : Number(value) });
+      },
+    },
+  });
+  for (const option of [
+    el('option', { text: 'Auto — from the content', attrs: { value: AUTO } }),
+    ...PAGE_CHOICES.map((count) =>
+      el('option', { text: `${count} Pages`, attrs: { value: String(count) } }),
+    ),
+  ]) {
+    pages.appendChild(option);
+  }
+  pages.value = initial.pageCount === undefined ? AUTO : String(initial.pageCount);
 
   const toggles = el('div', { class: 'toggles toggles--stacked' });
 
@@ -192,6 +264,12 @@ export function createDesignControls(
       el('span', { class: 'field__label', text: 'Template' }),
       picker,
       description,
+    ),
+    el(
+      'label',
+      { class: 'field', attrs: { for: 'design-pages' } },
+      el('span', { class: 'field__label', text: 'Insert Pages' }),
+      pages,
     ),
     el(
       'div',

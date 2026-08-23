@@ -1,22 +1,33 @@
-import { partShape } from '../../domain/parts.ts';
+import { labelShape } from '../../domain/parts.ts';
+import type { Release, Track } from '../../domain/release.ts';
 import type { Mm, Rect } from '../../domain/units.ts';
 import { readableInkFor } from '../colors.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
 import {
   artworkOrPlaceholder,
-  drawJCard,
+  drawArtworkBackCover,
+  drawCredits,
+  drawInsert,
   drawTracklist,
   FRONT_LOGO_WIDTH,
+  hasArtworkBackCover,
   logoOp,
   PAD,
   text,
 } from './shared.ts';
-import type { JCardContext, PartContext, PartDrawing, Template } from './template.ts';
+import type { InsertContext, PartContext, PartDrawing, Template } from './template.ts';
 
 /**
- * Classic: the artwork runs to three edges of the Front Panel with the type on
- * solid paper below it, and the tracklist is a title page — the Release's
- * accent, edge to edge, with everything reversed out of it.
+ * Classic: a book. The artwork runs to three edges of the Front Panel with the
+ * type on solid paper below it; the tracklist Page is a title page — the
+ * Release's accent, edge to edge, with everything reversed out of it — and the
+ * credits Page is the colophon at the back, set on paper.
+ *
+ * The colophon is the one place this Template goes back to paper after the title
+ * page, and that is the whole reason it reads as a book rather than as two
+ * coloured cards: a title page is colour and a colophon is not. Two Pages of the
+ * same accent ground would have made the Insert's interior one surface with a
+ * fold in it.
  *
  * The counterpart to Full-bleed, where the artwork covers the Part entirely and
  * the type sits on top of the picture rather than beside it.
@@ -47,7 +58,7 @@ const ALBUM_GAP: Mm = 7.2;
  * and there is no bleed allowance anywhere (spec: the artwork edge is the cut
  * line). Inset, it is v1's square: `PAD` on all four sides of the panel's width.
  *
- * Both are clamped at zero, because a project file may carry a 1 mm J-Card and
+ * Both are clamped at zero, because a project file may carry a 1 mm Insert and
  * a negative rectangle is not a smaller picture.
  */
 function artworkRect(panel: Rect, inset: boolean): Rect {
@@ -120,7 +131,7 @@ function drawLabel({ release, params, size, dimensions, faces, measure }: PartCo
   const captionTop = pad + artSide + (size.height - pad - (pad + artSide) - captionHeight) / 2;
 
   return [
-    { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: params.paperColor },
+    { op: 'fill-polygon', points: labelShape(dimensions.label).outline, color: params.paperColor },
     artworkOrPlaceholder(release, { x: artLeft, y: pad, width: artSide, height: artSide }, params),
     // Beside the artwork rather than on top of it, so `showOverlayText` — which
     // governs type over artwork — leaves this caption alone.
@@ -129,61 +140,106 @@ function drawLabel({ release, params, size, dimensions, faces, measure }: PartCo
   ];
 }
 
-/** The Back Card's heading, above the list. Album first: this is a title page. */
-const BACK_ALBUM_SIZE: Mm = 3.8;
-const BACK_ARTIST_SIZE: Mm = 2.6;
-const BACK_ALBUM_TOP: Mm = 6;
-const BACK_ARTIST_TOP: Mm = 10.8;
+/** The tracklist Page's heading, above the list. Album first: this is a title page. */
+const PAGE_ALBUM_SIZE: Mm = 3.8;
+const PAGE_ARTIST_SIZE: Mm = 2.6;
+const PAGE_ALBUM_TOP: Mm = 6;
+const PAGE_ARTIST_TOP: Mm = 10.8;
 /** Where the list starts, leaving 5.6 mm of air under the artist line. */
-const BACK_LIST_TOP: Mm = 19;
+const PAGE_LIST_TOP: Mm = 19;
 
 /**
- * The Back Card: the Release's accent as a full-bleed ground, the album and the
- * artist centred at the top, and the tracklist reversed out below them.
+ * The tracklist Page: the Release's accent as a full-bleed ground, the album and
+ * the artist centred at the top, and the tracklist reversed out below them.
  *
- * The accent rather than the ink because the Spine bar is already the accent,
- * so the card behind the disc and the edge that shows on the shelf are the one
- * colour — the two halves of the same case, printed the same. Classic's paper
- * stays paper on the J-Card and the Label, which is what makes this Part read
- * as a different surface rather than as more of the same.
+ * The accent rather than the ink because the Spine bar is already the accent, so
+ * the Page a collector opens the case to and the edge that shows on the shelf are
+ * the one colour — the two halves of the same object, printed the same. Classic's
+ * paper stays paper on the Front Panel, on the colophon and on the Label, which
+ * is what makes this Page read as a different surface rather than as more of the
+ * same.
  *
- * Centred, and the album above the artist: a title page names the work first
- * and centres it, which is the whole of what "Classic is a book" means here.
- * There is no rule under the heading — a 0.2 mm hairline dividing two things
- * that a 5.6 mm gap already divides was decoration.
+ * Centred, and the album above the artist: a title page names the work first and
+ * centres it, which is the whole of what "Classic is a book" means here. There is
+ * no rule under the heading — a 0.2 mm hairline dividing two things that a 5.6 mm
+ * gap already divides was decoration.
  */
-function drawBackCard(context: PartContext): PartDrawing {
-  const { release, params, size, faces, measure } = context;
+function drawTracklistPage(context: PartContext, page: Rect, tracks: readonly Track[]): PartDrawing {
+  const { release, params, faces, measure } = context;
   const ground = params.accentColor;
   // Chosen rather than configured, exactly as on the Spine: a collector is free
-  // to pick a dark accent and dark ink, and no combination may produce a card
+  // to pick a dark accent and dark ink, and no combination may produce a Page
   // whose tracklist cannot be read.
   const ink = readableInkFor(ground);
-  const contentWidth = size.width - 2 * PAD;
-  const centreX = size.width / 2;
+  const contentWidth = page.width - 2 * PAD;
+  const centreX = page.x + page.width / 2;
 
-  const albumStyle: TextStyle = { sizeMm: BACK_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'center', baseline: 'top' };
-  const artistStyle: TextStyle = { sizeMm: BACK_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'center', baseline: 'top' };
+  const albumStyle: TextStyle = { sizeMm: PAGE_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'center', baseline: 'top' };
+  const artistStyle: TextStyle = { sizeMm: PAGE_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'center', baseline: 'top' };
 
   const tracklist = drawTracklist(
     context,
     {
-      x: PAD,
-      y: BACK_LIST_TOP,
+      x: page.x + PAD,
+      y: page.y + PAGE_LIST_TOP,
       width: contentWidth,
-      height: size.height - BACK_LIST_TOP - PAD,
+      height: page.height - PAGE_LIST_TOP - PAD,
     },
     ink,
+    tracks,
   );
 
   return {
     ops: [
-      { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: ground },
-      text(release.album, { x: centreX, y: BACK_ALBUM_TOP }, albumStyle, contentWidth, measure),
-      text(release.artist, { x: centreX, y: BACK_ARTIST_TOP }, artistStyle, contentWidth, measure),
+      { op: 'fill-rect', rect: page, color: ground },
+      text(release.album, { x: centreX, y: page.y + PAGE_ALBUM_TOP }, albumStyle, contentWidth, measure),
+      text(release.artist, { x: centreX, y: page.y + PAGE_ARTIST_TOP }, artistStyle, contentWidth, measure),
       ...tracklist.ops,
     ],
     ...(tracklist.warnings ? { warnings: tracklist.warnings } : {}),
+  };
+}
+
+/** The colophon's one word, and the air under it before the block starts. */
+const COLOPHON_HEADING_SIZE: Mm = 2.8;
+const COLOPHON_BLOCK_TOP: Mm = 9;
+
+/**
+ * The credits Page: a colophon on paper, headed by one word and ranged left.
+ *
+ * Ranged left where the title page is centred, because this is the Page that is
+ * read rather than looked at — a colophon is a table of who did what, and a
+ * centred table has no edge for the eye to come back to. Which is also why the
+ * one word at the top is small: it is a label on a block, not a title.
+ */
+function drawCreditsPage(context: PartContext, page: Rect): PartDrawing {
+  const { params, faces } = context;
+  const headingStyle: TextStyle = {
+    sizeMm: COLOPHON_HEADING_SIZE,
+    weight: 700,
+    face: faces.display,
+    color: params.inkColor,
+    align: 'left',
+    baseline: 'top',
+  };
+  const block = drawCredits(
+    context,
+    {
+      x: page.x + PAD,
+      y: page.y + COLOPHON_BLOCK_TOP,
+      width: page.width - 2 * PAD,
+      height: page.height - COLOPHON_BLOCK_TOP - PAD,
+    },
+    params.inkColor,
+  );
+
+  return {
+    ops: [
+      { op: 'fill-rect', rect: page, color: params.paperColor },
+      { op: 'text', text: 'Credits', at: { x: page.x + PAD, y: page.y + PAD }, style: headingStyle },
+      ...block.ops,
+    ],
+    ...(block.warnings ? { warnings: block.warnings } : {}),
   };
 }
 
@@ -194,7 +250,7 @@ export const CLASSIC_TEMPLATE: Template = {
   // `insetArtwork` reaches the Front Panel and nowhere else — `artworkRect`
   // above; the Label's square is sized around the cartridge's cut corner
   // instead. `showLogo` reaches the Front Panel here *and* the Spine, through
-  // the shared `drawJCard` below, where it also shortens the line the Spine has
+  // the shared `drawInsert` below, where it also shortens the line the Spine has
   // room for. Nothing Classic sets is drawn over artwork, which is what
   // `showOverlayText` governs, so this Template never reads that one.
   toggles: ['showLogo', 'insetArtwork'],
@@ -210,7 +266,15 @@ export const CLASSIC_TEMPLATE: Template = {
    * second helping of Noto.
    */
   faces: { display: 'serif', text: 'humanist', spine: 'condensed' },
-  drawJCard: (context: JCardContext) => drawJCard(context, drawFrontPanel),
-  drawBackCard,
+  // The artwork again, so the back cover exists exactly when there is artwork to
+  // put on it (ADR-0012's odd Page out).
+  hasBackCover: (release: Release) => hasArtworkBackCover(release),
+  drawInsert: (context: InsertContext) =>
+    drawInsert(context, {
+      cover: drawFrontPanel,
+      tracklist: drawTracklistPage,
+      credits: drawCreditsPage,
+      backCover: drawArtworkBackCover,
+    }),
   drawLabel: (context: PartContext) => ({ ops: drawLabel(context) }),
 };

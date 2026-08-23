@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
+import { LIST_TOP_MM } from './tracklist-layout.ts';
 import { rectsOverlap } from '../domain/units.ts';
-import { DEFAULT_PART_DIMENSIONS, jCardSize, partShape, PART_KINDS } from '../domain/parts.ts';
-import type { JCardPanel, PartDimensions, PartKind } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, labelShape, PART_KINDS } from '../domain/parts.ts';
+import type { PartDimensions, PartKind } from '../domain/parts.ts';
 import type { Release } from '../domain/release.ts';
-import type { Rect } from '../domain/units.ts';
+import type { Point, Rect } from '../domain/units.ts';
 import {
   DEFAULT_TEMPLATE_PARAMS,
   renderSheets,
@@ -13,6 +14,8 @@ import {
   TEMPLATES,
 } from './sheet-renderer.ts';
 import type {
+  DrawOp,
+  PageRole,
   PartPlacement,
   PrintFace,
   ReleaseDesign,
@@ -69,7 +72,7 @@ const aDesign = (
  *
  * The measurements are app-level from v2 and arrive beside the designs rather
  * than inside one, so a test that is not about them says nothing about them.
- * Five call sites are about them — two nudged Labels and three 1 mm J-Cards out
+ * Five call sites are about them — two nudged Labels and three 1 mm Inserts out
  * of a project file — and pass their own.
  */
 const renderSheetsAt = (
@@ -84,7 +87,7 @@ const A4_SHEET: SheetConfig = { paper: A4, marginMm: 5, parts: PART_KINDS };
  * Every Template there is, read off the registry rather than listed here.
  *
  * The invariants below hold for all of them — a Template sets type only in its
- * own faces, grounds its Back Card in a colour, keeps its heading clear of its
+ * own faces, grounds its tracklist Page in a colour, keeps its heading clear of its
  * list — and a third Template should have to satisfy them on the day it is
  * added rather than on the day somebody remembers to extend this array. Where a
  * test really is about Classic against Full-bleed it names both, which is then
@@ -114,38 +117,150 @@ const boundsOf = (sheet: SheetLayout, part: PartKind): Rect => {
   return placement.bounds;
 };
 
+/**
+ * The Insert of the first Sheet, which is where every fold and every Page is.
+ *
+ * Named apart from `boundsOf` because almost every test below wants the sections
+ * rather than the box: the Insert is one Part carrying what v1 spread over two,
+ * so "the Back Card" is now "the tracklist Page of the Insert".
+ */
+const insertOf = (sheet: SheetLayout | undefined): PartPlacement => {
+  const placement = sheet?.placements.find((candidate) => candidate.part === 'insert');
+  if (!placement) throw new Error('no Insert on this Sheet');
+  return placement;
+};
+
+/** The Inner Flap or the Spine, in Part-local millimetres. */
+const sectionOf = (placement: PartPlacement, panel: 'inner-flap' | 'spine'): Rect => {
+  const found = (placement.panels ?? []).find((candidate) => candidate.panel === panel);
+  if (!found) throw new Error(`the Insert has no ${panel}`);
+  return found.rect;
+};
+
+/** Every Page of the Insert, in reading order along the strip. */
+const pagesOf = (placement: PartPlacement): Array<{ page: number; role: PageRole; rect: Rect }> =>
+  (placement.panels ?? []).flatMap((panel) =>
+    panel.panel === 'page' ? [{ page: panel.page, role: panel.role, rect: panel.rect }] : [],
+  );
+
+/** The first Page carrying `role`. The cover is Page 1 and is the Front Panel. */
+const pageOf = (placement: PartPlacement, role: PageRole): Rect => {
+  const found = pagesOf(placement).find((page) => page.role === role);
+  if (!found) throw new Error(`the Insert has no ${role} Page`);
+  return found.rect;
+};
+
+/**
+ * Where a drawing op is anchored, which is what says which section it belongs to.
+ *
+ * Every op on the strip is now inside one of its sections, and the sections are
+ * side by side along one axis — so the x of an op's anchor is what tells the
+ * Front Panel's type from the tracklist Page's. A `fill-rect` is anchored at its
+ * own top-left, which for a full-Page ground is the Page's left edge.
+ */
+const anchorOf = (op: DrawOp): Point => {
+  switch (op.op) {
+    case 'text':
+      return op.at;
+    case 'line':
+      return op.from;
+    case 'fill-polygon':
+      // A polygon's first point, which for a Part outline is its top-left corner.
+      return op.points[0] ?? { x: 0, y: 0 };
+    default:
+      return { x: op.rect.x, y: op.rect.y };
+  }
+};
+
+/** Every op anchored inside `box`, which is how one section's drawing is picked out. */
+const opsIn = (placement: PartPlacement, box: Rect): DrawOp[] =>
+  placement.ops.filter((op) => {
+    const { x, y } = anchorOf(op);
+    return x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
+  });
+
+/** Just the type, anchored inside `box`. */
+const textsIn = (placement: PartPlacement, box: Rect): TextOp[] =>
+  opsIn(placement, box).flatMap((op) => (op.op === 'text' ? [op] : []));
+
+/** Cover art, so a Release can have a back cover to print (ADR-0012's odd Page out). */
+const ARTWORK = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 } as const;
+
+/**
+ * A Release with credits, which is what takes an Insert to four Pages.
+ *
+ * With artwork too, and that matters: the fourth Page is the *odd Page out* and
+ * carries the artwork, so a Release with credits and no artwork spends that Page
+ * on a second tracklist Page instead. Both arrangements are asserted below; this
+ * is the one ADR-0012's diagram draws.
+ */
+const withCredits = (release: Release = aRelease()): Release => ({
+  ...creditsWithoutArtwork(release),
+  artwork: ARTWORK,
+});
+
+/**
+ * The same credits with no cover art, which is the arrangement where the odd Page
+ * goes to the tracklist instead of to a back cover.
+ */
+const creditsWithoutArtwork = (release: Release = aRelease()): Release => ({
+  ...release,
+  credits: {
+    people: [
+      { role: 'Producer', name: 'Al De Lory' },
+      { role: 'Written-By', name: 'Jimmy Webb' },
+      { role: '', name: 'The Wrecking Crew' },
+    ],
+    label: 'Capitol',
+    catalogNumber: 'ST-103',
+    country: 'US',
+    year: '1968',
+    genres: ['Pop'],
+    styles: ['Country'],
+  },
+});
+
 /** The ticket's tolerance: Part bounding boxes within ±0.2 mm of the defaults. */
 const expectMm = (actual: number, expected: number, what: string): void => {
   expect(Math.abs(actual - expected), `${what}: expected ${expected} mm, got ${actual} mm`).toBeLessThanOrEqual(0.2);
 };
 
 describe('SheetRenderer — Part geometry', () => {
-  it('renders the three Parts of one Release at their physical defaults', () => {
+  it('renders the two Parts of one Release at their physical defaults', () => {
     const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     if (!sheet) throw new Error('no sheet rendered');
 
-    // J-Card unfolded: Inner Flap 14 + Spine 5.5 + Front Panel 68, height 79 (ADR-0005).
-    const jcard = boundsOf(sheet, 'jcard');
-    expectMm(jcard.width, 87.5, 'J-Card width');
-    expectMm(jcard.height, 79, 'J-Card height');
-
-    const backCard = boundsOf(sheet, 'back-card');
-    expectMm(backCard.width, 69, 'Back Card width');
-    expectMm(backCard.height, 79, 'Back Card height');
+    // A two-Page Insert flat: Inner Flap 14 + Spine 5.5 + Front Panel 68 + one
+    // 65 mm Page, height 79 (ADR-0012). Three tracks and no credits, so two
+    // Pages is what the content asks for.
+    const insert = boundsOf(sheet, 'insert');
+    expectMm(insert.width, 152.5, 'Insert width');
+    expectMm(insert.height, 79, 'Insert height');
 
     const label = boundsOf(sheet, 'label');
     expectMm(label.width, 35, 'Label width');
     expectMm(label.height, 52.5, 'Label height');
   });
 
-  it('puts all three Parts of a single Release on one A4 Sheet', () => {
+  it('grows the strip to 282.5 mm once the Release has four Pages of content', () => {
+    const [sheet] = renderSheetsAt([aDesign(withCredits())], A4_SHEET);
+    if (!sheet) throw new Error('no sheet rendered');
+
+    const insert = boundsOf(sheet, 'insert');
+    // Turned, because 282.5 does not fit 200 mm of printable width (ADR-0014) —
+    // so the *box* is swapped and the strip's own length is the box's height.
+    expect(insertOf(sheet).turned).toBe(true);
+    expectMm(insert.width, 79, 'turned Insert box width');
+    expectMm(insert.height, 282.5, 'turned Insert box height');
+  });
+
+  it('puts both Parts of a single Release on one A4 Sheet', () => {
     const sheets = renderSheetsAt([aDesign()], A4_SHEET);
 
     expect(sheets).toHaveLength(1);
     expect(sheets[0]?.paper.name).toBe('A4');
     expect(sheets[0]?.placements.map((placement) => placement.part).sort()).toEqual([
-      'back-card',
-      'jcard',
+      'insert',
       'label',
     ]);
   });
@@ -170,19 +285,34 @@ describe('SheetRenderer — Part geometry', () => {
   });
 });
 
-describe('SheetRenderer — J-Card panels and guides', () => {
-  it('folds the J-Card into Inner Flap 14, Spine 5.5 and Front Panel 68', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const panels = Object.fromEntries((jcard?.panels ?? []).map((panel) => [panel.panel, panel.rect]));
+describe('SheetRenderer — the Insert’s sections and its folds (ADR-0012)', () => {
+  it('lays the strip out as Inner Flap 14, Spine 5.5, Front Panel 68, then Pages at 65', () => {
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
 
-    expectMm(panels['inner-flap']?.x ?? -1, 0, 'Inner Flap x');
-    expectMm(panels['inner-flap']?.width ?? -1, 14, 'Inner Flap width');
-    expectMm(panels['spine']?.x ?? -1, 14, 'Spine x');
-    expectMm(panels['spine']?.width ?? -1, 5.5, 'Spine width');
-    expectMm(panels['front-panel']?.x ?? -1, 19.5, 'Front Panel x');
-    expectMm(panels['front-panel']?.width ?? -1, 68, 'Front Panel width');
-    for (const panel of Object.values(panels)) expectMm(panel.height, 79, 'panel height');
+    expectMm(sectionOf(insert, 'inner-flap').x, 0, 'Inner Flap x');
+    expectMm(sectionOf(insert, 'inner-flap').width, 14, 'Inner Flap width');
+    expectMm(sectionOf(insert, 'spine').x, 14, 'Spine x');
+    expectMm(sectionOf(insert, 'spine').width, 5.5, 'Spine width');
+
+    const pages = pagesOf(insert);
+    expect(pages.map((page) => page.page)).toEqual([1, 2, 3, 4]);
+    expect(pages.map((page) => page.rect.x)).toEqual([19.5, 87.5, 152.5, 217.5]);
+    // Page 1 *is* the Front Panel, at the Front Panel's own 68 mm; the inner
+    // Pages come out slightly narrower, as a book cover does.
+    expect(pages.map((page) => page.rect.width)).toEqual([68, 65, 65, 65]);
+    for (const page of pages) expectMm(page.rect.height, 79, `Page ${page.page} height`);
+  });
+
+  it('makes Page 1 the cover, then the tracklist, the credits and the artwork', () => {
+    // ADR-0012's own diagram, in the ADR's order.
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
+
+    expect(pagesOf(insert).map((page) => page.role)).toEqual([
+      'cover',
+      'tracklist',
+      'credits',
+      'artwork',
+    ]);
   });
 
   it('marks a cutting guide around every Part', () => {
@@ -203,7 +333,7 @@ describe('SheetRenderer — J-Card panels and guides', () => {
     }
   });
 
-  it('marks fold guides on the J-Card only, at both panel boundaries', () => {
+  it('marks fold guides on the Insert only, and none on the Label', () => {
     const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
     const foldsByPart = new Map(
       (sheet?.placements ?? []).map((placement) => [
@@ -212,19 +342,56 @@ describe('SheetRenderer — J-Card panels and guides', () => {
       ]),
     );
 
-    expect(foldsByPart.get('back-card')).toEqual([]);
     expect(foldsByPart.get('label')).toEqual([]);
+    expect((foldsByPart.get('insert') ?? []).length).toBeGreaterThan(0);
+  });
 
-    const folds = foldsByPart.get('jcard') ?? [];
-    expect(folds).toHaveLength(2);
-    const foldXs = folds.map((fold) => fold.points[0]?.x ?? -1).sort((a, b) => a - b);
-    expectMm(foldXs[0] ?? -1, 14, 'first fold');
-    expectMm(foldXs[1] ?? -1, 19.5, 'second fold');
+  it('creases a two-Page strip at 14, 19.5 and 87.5, and says which fold is which', () => {
+    const insert = insertOf(renderSheetsAt([aDesign()], A4_SHEET)[0]);
+    const folds = insert.guides.flatMap((guide) => (guide.kind === 'fold' ? [guide] : []));
 
+    expect(folds.map((fold) => [fold.points[0]?.x, fold.fold])).toEqual([
+      [14, 'case'],
+      [19.5, 'case'],
+      [87.5, 'fore-edge'],
+    ]);
     for (const fold of folds) {
       expect(fold.closed).toBe(false);
       expectMm(fold.points[0]?.y ?? -1, 0, 'fold start');
       expectMm(fold.points[1]?.y ?? -1, 79, 'fold end');
+    }
+  });
+
+  it('alternates fore-edge, spine, fore-edge along a four-Page strip', () => {
+    // The whole of ADR-0012's fold table, which single-sided printing fixes: the
+    // paper doubles back blank against blank at a fore-edge, and printed against
+    // printed at the one spine the booklet pages on. The count being even is what
+    // makes the last fold a fore-edge, so nothing blank is ever visible.
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
+    const folds = insert.guides.flatMap((guide) => (guide.kind === 'fold' ? [guide] : []));
+
+    expect(folds.map((fold) => [fold.points[0]?.x, fold.fold])).toEqual([
+      [14, 'case'],
+      [19.5, 'case'],
+      [87.5, 'fore-edge'],
+      [152.5, 'spine'],
+      [217.5, 'fore-edge'],
+    ]);
+    expect(folds.at(-1)?.fold).toBe('fore-edge');
+    // Exactly one hinge, whatever the Page count.
+    expect(folds.filter((fold) => fold.fold === 'spine')).toHaveLength(1);
+  });
+
+  it('puts a fold on every boundary between Pages, and nowhere else', () => {
+    for (const release of [aRelease(), withCredits()]) {
+      const insert = insertOf(renderSheetsAt([aDesign(release)], A4_SHEET)[0]);
+      const pages = pagesOf(insert);
+      const between = pages.slice(0, -1).map((page) => page.rect.x + page.rect.width);
+      const pageFolds = insert.guides.flatMap((guide) =>
+        guide.kind === 'fold' && guide.fold !== 'case' ? [guide.points[0]?.x] : [],
+      );
+
+      expect(pageFolds, `${pages.length} Pages`).toEqual(between);
     }
   });
 
@@ -254,111 +421,411 @@ describe('SheetRenderer — J-Card panels and guides', () => {
 });
 
 describe('SheetRenderer — Release content', () => {
-  it('prints every track of the Release on the Back Card', () => {
+  it('prints every track of the Release on the tracklist Page', () => {
     const release = aRelease();
-    const [sheet] = renderSheetsAt([aDesign(release)], A4_SHEET);
-    const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
-    const printed = (backCard?.ops ?? []).flatMap((op) => (op.op === 'text' ? [op.text] : []));
+    const insert = insertOf(renderSheetsAt([aDesign(release)], A4_SHEET)[0]);
+    const printed = textsIn(insert, pageOf(insert, 'tracklist')).map((op) => op.text);
 
     for (const track of release.tracks) {
       expect(printed.some((line) => line.startsWith(`${track.position}. `))).toBe(true);
     }
   });
 
-  it('carries artist and album onto Front Panel and Spine', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const texts = (jcard?.ops ?? []).flatMap((op) => (op.op === 'text' ? [op] : []));
+  it('carries artist and album onto the Front Panel and the Spine', () => {
+    const insert = insertOf(renderSheetsAt([aDesign()], A4_SHEET)[0]);
 
-    const frontPanel = jcard?.panels?.find((panel) => panel.panel === 'front-panel')?.rect;
-    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
-    if (!frontPanel || !spine) throw new Error('J-Card has no panels');
-
-    const within = (rect: Rect, x: number): boolean => x >= rect.x && x <= rect.x + rect.width;
-    const onFrontPanel = texts.filter((op) => within(frontPanel, op.at.x)).map((op) => op.text);
+    const onFrontPanel = textsIn(insert, pageOf(insert, 'cover')).map((op) => op.text);
     expect(onFrontPanel).toContain('Glen Campbell');
     expect(onFrontPanel).toContain('Wichita Lineman');
 
     // The Spine reads along the case edge, so its line is rotated.
-    const onSpine = texts.filter((op) => within(spine, op.at.x) && !within(frontPanel, op.at.x));
+    const onSpine = textsIn(insert, sectionOf(insert, 'spine'));
     expect(onSpine).toHaveLength(1);
     expect(onSpine[0]?.text).toBe('Glen Campbell — Wichita Lineman');
     expect(onSpine[0]?.style.rotationDeg).toBe(-90);
   });
 
-  it('places the uploaded artwork on Front Panel and Label', () => {
-    const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
-    const [sheet] = renderSheetsAt([aDesign(aRelease({ artwork }))], A4_SHEET);
+  it('prints the credits on their own Page, and the release facts above them', () => {
+    // ADR-0013 on paper: the facts line ADR-0013's own example opens with, then
+    // everyone the pressing credits, one to a line. The role is carried exactly
+    // as the source wrote it, and a name with no role is set on its own.
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
+    const printed = textsIn(insert, pageOf(insert, 'credits')).map((op) => op.text);
 
-    for (const part of ['jcard', 'label'] as const) {
+    expect(printed.join(' ')).toContain('Capitol');
+    expect(printed.join(' ')).toContain('ST-103');
+    expect(printed).toContain('Producer — Al De Lory');
+    expect(printed).toContain('Written-By — Jimmy Webb');
+    expect(printed).toContain('The Wrecking Crew');
+  });
+
+  it('reprints the artwork on the back cover, and sets nothing over it', () => {
+    // The odd Page out (ADR-0012). Nothing on top of it: the artwork is already
+    // named on the cover and on the Spine, and a third caption would be the strip
+    // saying the same words three times.
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
+    const back = pageOf(insert, 'artwork');
+    const ops = opsIn(insert, back);
+
+    expect(ops.filter((op) => op.op === 'image' && op.role === 'artwork')).toHaveLength(1);
+    expect(textsIn(insert, back)).toEqual([]);
+    // Edge to edge: a back cover is the whole Page.
+    const image = ops.find((op) => op.op === 'image');
+    expect(image?.op === 'image' ? image.rect : undefined).toEqual(back);
+  });
+
+  it('places the uploaded artwork on Front Panel and Label', () => {
+    const [sheet] = renderSheetsAt([aDesign(aRelease({ artwork: ARTWORK }))], A4_SHEET);
+
+    for (const part of ['insert', 'label'] as const) {
       const placement = sheet?.placements.find((candidate) => candidate.part === part);
       const images = (placement?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'artwork');
-      expect(images, `${part} artwork`).toHaveLength(1);
+      expect(images.length, `${part} artwork`).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('SheetRenderer — how many Pages, and what is on them (ADR-0012)', () => {
+  const pageRoles = (release: Release, config: SheetConfig = A4_SHEET, pageCount?: number) =>
+    pagesOf(
+      insertOf(
+        renderSheetsAt(
+          [{ ...aDesign(release), ...(pageCount === undefined ? {} : { pageCount }) }],
+          config,
+        )[0],
+      ),
+    ).map((page) => page.role);
+
+  it('gives a Release with no credits and no artwork exactly two Pages', () => {
+    expect(pageRoles(aRelease())).toEqual(['cover', 'tracklist']);
+  });
+
+  it('goes to four once there are credits to print', () => {
+    expect(pageRoles(withCredits())).toEqual(['cover', 'tracklist', 'credits', 'artwork']);
+  });
+
+  it('spends the odd Page on a second tracklist Page when there is no artwork', () => {
+    // No back cover to fill it, so the list takes the Page rather than a blank
+    // one being folded — and the credits still print, which is the point.
+    expect(pageRoles(creditsWithoutArtwork())).toEqual([
+      'cover',
+      'tracklist',
+      'tracklist',
+      'credits',
+    ]);
+  });
+
+  it('keeps a mixtape at two Pages however long its tracklist runs', () => {
+    // No credits and no cover: there is nothing to put on a third Page, so the
+    // list stays on one and shrinks — which is reported rather than hidden.
+    const long = aRelease({
+      tracks: Array.from({ length: 120 }, (_, index) => ({ position: index + 1, title: `Track ${index + 1}` })),
+    });
+    expect(pageRoles(long)).toEqual(['cover', 'tracklist']);
+  });
+
+  it('splits a long list across the tracklist Pages it gets, and loses no track', () => {
+    const tracks = Array.from({ length: 60 }, (_, index) => ({
+      position: index + 1,
+      title: `Track ${index + 1}`,
+    }));
+    const insert = insertOf(
+      renderSheetsAt([aDesign(creditsWithoutArtwork(aRelease({ tracks })))], A4_SHEET)[0],
+    );
+    const listPages = pagesOf(insert).filter((page) => page.role === 'tracklist');
+
+    expect(listPages).toHaveLength(2);
+    const printed = listPages.flatMap((page) => textsIn(insert, page.rect).map((op) => op.text));
+    for (const track of tracks) {
+      expect(printed.some((line) => line.startsWith(`${track.position}. `)), `track ${track.position}`).toBe(true);
+    }
+    // Dealt out evenly rather than filled Page by Page, so neither Page is empty.
+    for (const page of listPages) {
+      const lines = textsIn(insert, page.rect).filter((op) => /^\d+\. /.test(op.text));
+      expect(lines.length, `Page ${page.page}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('lets the collector ask for two Pages when the content wanted four', () => {
+    expect(pageRoles(withCredits(), A4_SHEET, 2)).toEqual(['cover', 'tracklist']);
+  });
+
+  it('lets the collector ask for four when the content wanted two, and fills them', () => {
+    expect(pageRoles(aRelease({ artwork: ARTWORK }), A4_SHEET, 4)).toEqual([
+      'cover',
+      'tracklist',
+      'tracklist',
+      'artwork',
+    ]);
+  });
+
+  it('refuses four Pages when nothing would go on them, and says it refused', () => {
+    // Two tracks, no credits, no artwork: the interior cannot be filled three
+    // ways without a blank Page, and no Page on the strip may be blank.
+    const bare = aRelease({ tracks: [{ position: 1, title: 'One' }, { position: 2, title: 'Two' }] });
+    expect(pageRoles(bare, A4_SHEET, 4)).toEqual(['cover', 'tracklist']);
+
+    // And the collector is told, which is the half that matters: nothing was
+    // *dropped* — there was nothing more to print — so a report keyed on `dropped`
+    // alone said nothing at all, while the Design fold read "4 Pages" over a
+    // specimen reading "2 Pages".
+    const short = onlyWarning(
+      renderSheetsAt([{ ...aDesign(bare), pageCount: 4 }], A4_SHEET)[0],
+      'insert-pages-short',
+    );
+    expect(short).toMatchObject({
+      requestedPages: 4,
+      requestedByCollector: true,
+      pages: 2,
+      dropped: [],
+    });
+  });
+
+  it('still reports what a deliberately shortened Insert leaves off', () => {
+    // The collector asked for two Pages on a Release with credits, so nothing fell
+    // short of what they asked — and the credits are still not on the paper. The
+    // Insert is the only place that says so, and choosing it is not a reason to
+    // stop saying it.
+    const short = onlyWarning(
+      renderSheetsAt([{ ...aDesign(withCredits()), pageCount: 2 }], A4_SHEET)[0],
+      'insert-pages-short',
+    );
+
+    expect(short).toMatchObject({
+      requestedPages: 2,
+      pages: 2,
+      requestedByCollector: true,
+      dropped: ['credits', 'artwork'],
+    });
+  });
+
+  it('says nothing when the collector shortens an Insert that had nothing to lose', () => {
+    // Two Pages asked for on a two-Page Release: nothing dropped, nothing short.
+    // The report has to stay quiet here or it would fire on every ordinary Insert.
+    const [sheet] = renderSheetsAt([{ ...aDesign(), pageCount: 2 }], A4_SHEET);
+
+    expect((sheet?.warnings ?? []).filter((warning) => warning.kind === 'insert-pages-short')).toEqual([]);
+  });
+
+  it('says the collector asked, not the content, when it was the collector', () => {
+    // Two different sentences hang off this: "You asked for 4 Pages" and "This
+    // Release needs 4 Pages" are answers to different questions, and a collector
+    // who typed 4 into a control is owed the first one.
+    const derived = onlyWarning(
+      renderSheetsAt([aDesign(withCredits())], { paper: LETTER, marginMm: 5, parts: PART_KINDS })[0],
+      'insert-pages-short',
+    );
+    const asked = onlyWarning(
+      renderSheetsAt([{ ...aDesign(withCredits()), pageCount: 4 }], {
+        paper: LETTER,
+        marginMm: 5,
+        parts: PART_KINDS,
+      })[0],
+      'insert-pages-short',
+    );
+
+    expect(derived.requestedByCollector).toBe(false);
+    expect(asked.requestedByCollector).toBe(true);
+    expect(asked.requestedPages).toBe(4);
+  });
+
+  it('never folds an odd number of Pages, whatever the content or the override', () => {
+    for (const release of [aRelease(), withCredits(), aRelease({ artwork: ARTWORK })]) {
+      for (const pageCount of [undefined, 2, 4]) {
+        const roles = pageRoles(release, A4_SHEET, pageCount);
+        expect(roles.length % 2, `override ${pageCount}`).toBe(0);
+      }
+    }
+  });
+
+  it('caps the strip at two Pages on Letter, at every margin, and says what was lost', () => {
+    // 282.5 mm of strip against Letter's 279.4 mm long edge. No margin makes room
+    // for it, so a Letter job never folds four — which nothing in ADR-0014
+    // noticed, because its arithmetic only checked A4's 287.
+    for (const marginMm of [0, 5]) {
+      const config: SheetConfig = { paper: LETTER, marginMm, parts: PART_KINDS };
+      expect(pageRoles(withCredits(), config), `${marginMm} mm margin`).toEqual([
+        'cover',
+        'tracklist',
+      ]);
+    }
+
+    const short = onlyWarning(
+      renderSheetsAt([aDesign(withCredits())], { paper: LETTER, marginMm: 5, parts: PART_KINDS })[0],
+      'insert-pages-short',
+    );
+    expect(short).toMatchObject({
+      requestedPages: 4,
+      requestedByCollector: false,
+      pages: 2,
+      maxPages: 2,
+      paperName: 'Letter',
+      dropped: ['credits', 'artwork'],
+    });
+  });
+
+  it('caps the strip on A4 above a 7.25 mm printable margin, and not at it', () => {
+    // ADR-0014's 4.5 mm of slack, reached from the other side: 297 − 2 × 7.25 is
+    // exactly 282.5. The margin control steps in half-millimetres, so 7.5 is the
+    // first step that loses the fourth Page.
+    const at = { paper: A4, marginMm: 7.25, parts: PART_KINDS } satisfies SheetConfig;
+    const above = { paper: A4, marginMm: 7.5, parts: PART_KINDS } satisfies SheetConfig;
+
+    expect(pageRoles(withCredits(), at)).toHaveLength(4);
+    expect(pageRoles(withCredits(), above)).toHaveLength(2);
+  });
+
+  it('says nothing when every Page the content wanted was folded', () => {
+    const [sheet] = renderSheetsAt([aDesign(withCredits())], A4_SHEET);
+    expect((sheet?.warnings ?? []).filter((warning) => warning.kind === 'insert-pages-short')).toEqual([]);
+  });
+
+  it('never reports the tracklist as lost, because it is only ever squeezed', () => {
+    // A list that loses a Page is a list set smaller, which `TypeBelowPrintFloor`
+    // reports. What a collector actually loses is a credits Page or a back cover.
+    const long = aRelease({
+      artwork: ARTWORK,
+      tracks: Array.from({ length: 60 }, (_, index) => ({ position: index + 1, title: `Track ${index + 1}` })),
+    });
+    const short = onlyWarning(
+      renderSheetsAt([aDesign(long)], { paper: LETTER, marginMm: 5, parts: PART_KINDS })[0],
+      'insert-pages-short',
+    );
+
+    expect(short.dropped).toEqual(['artwork']);
+  });
+
+  it('reports the shortfall once per Release, and all on the first Sheet', () => {
+    // How many, and *where*. Counting across every Sheet cannot tell the
+    // difference between "all on the first" and "all on the last" or "one copy on
+    // each" — and where they land matters: a Release's Insert is on exactly one
+    // Sheet, the shortfall is about the strip rather than the paper it happened to
+    // land on, and the Sheet check renders each Sheet's warnings under that Sheet.
+    // Put them anywhere else and a collector reads a Release's lost-Page sentence
+    // under a Sheet its Insert is not on.
+    const five = Array.from({ length: 5 }, (_, index) =>
+      aDesign(withCredits(aRelease({ id: `r${index}`, album: `Album ${index}` }))),
+    );
+    const sheets = renderSheetsAt(five, { paper: LETTER, marginMm: 5, parts: PART_KINDS });
+    const shortfallsOn = (sheet: SheetLayout | undefined) =>
+      (sheet?.warnings ?? []).filter((warning) => warning.kind === 'insert-pages-short');
+
+    expect(sheets.length, 'more than one Sheet, or first and last coincide').toBeGreaterThan(1);
+    expect(shortfallsOn(sheets[0])).toHaveLength(5);
+    expect(new Set(shortfallsOn(sheets[0]).map((warning) => warning.releaseId)).size).toBe(5);
+    for (const [index, sheet] of sheets.slice(1).entries()) {
+      expect(shortfallsOn(sheet), `Sheet ${index + 2} carries none`).toEqual([]);
+    }
+  });
+
+  it('reports it even when the job does not print the Insert at all', () => {
+    // The Pages are still Pages the collector will not have, and switching the
+    // Insert off is not a decision about that.
+    const [sheet] = renderSheetsAt([aDesign(withCredits())], {
+      paper: LETTER,
+      marginMm: 5,
+      parts: ['label'],
+    });
+
+    expect(onlyWarning(sheet, 'insert-pages-short').dropped).toEqual(['credits', 'artwork']);
+  });
+
+  it('gives every Template a Page count decided by the content, not by taste', () => {
+    // Choosing Full-bleed must not lengthen the paper (ticket 06's fit/taste
+    // line). The one thing a Template does decide is whether it *has* a back
+    // cover, which Minimal has not — and that is a fact about the drawing rather
+    // than about the collector's preferences.
+    for (const templateId of ['classic', 'fullbleed'] as const) {
+      const roles = pagesOf(
+        insertOf(renderSheetsAt([aDesign(withCredits(), { templateId })], A4_SHEET)[0]),
+      ).map((page) => page.role);
+      expect(roles, templateId).toEqual(['cover', 'tracklist', 'credits', 'artwork']);
+    }
+
+    // Minimal draws no artwork, so its odd Page goes to the list instead.
+    const minimal = pagesOf(
+      insertOf(renderSheetsAt([aDesign(withCredits(), { templateId: 'minimal' })], A4_SHEET)[0]),
+    ).map((page) => page.role);
+    expect(minimal).toEqual(['cover', 'tracklist', 'tracklist', 'credits']);
+  });
+
+  it('never hands a Template a back-cover Page it draws nothing on', () => {
+    // The one way a blank Page could still be folded. A Template declares whether
+    // it has a back cover; one that said yes and drew nothing would put a sheet of
+    // white paper in the case.
+    for (const templateId of TEMPLATE_IDS) {
+      const insert = insertOf(
+        renderSheetsAt([aDesign(withCredits(), { templateId })], A4_SHEET)[0],
+      );
+      for (const page of pagesOf(insert).filter((candidate) => candidate.role === 'artwork')) {
+        expect(opsIn(insert, page.rect).length, `${templateId} back cover`).toBeGreaterThan(0);
+      }
     }
   });
 });
 
 describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
-  /**
-   * A J-Card the width of a Sheet. Nothing in the app draws one — the Insert
-   * that will is ticket 08 — but a project file can: `readDimensions` clamps
-   * each measurement to 1–300 mm and nothing narrows a J-Card to the paper, so
-   * this is a Queue a collector can already open.
-   */
-  const WIDE_JCARD: PartDimensions = {
-    ...DEFAULT_PART_DIMENSIONS,
-    jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, frontPanelWidth: 250 },
-  };
-
-  it('leaves every Part standing up at the measurements the app ships with', () => {
+  it('leaves the Parts of an ordinary Release standing up', () => {
+    // Two Pages is 152.5 mm, which fits 200 mm of printable width as it stands.
     const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
 
-    expect(sheet?.placements.map((placement) => placement.turned)).toEqual([false, false, false]);
+    expect(sheet?.placements.map((placement) => placement.turned)).toEqual([false, false]);
   });
 
-  it('turns a J-Card too wide for the paper rather than refusing it', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET, WIDE_JCARD);
+  it('turns a four-Page Insert, which is the Part ADR-0014 was written for', () => {
+    const [sheet] = renderSheetsAt([aDesign(withCredits())], A4_SHEET);
     if (!sheet) throw new Error('no sheet rendered');
 
-    const jcard = sheet.placements.find((placement) => placement.part === 'jcard');
-    // 14 + 5.5 + 250 is 269.5 across, against 200 mm of printable width; on its
-    // side it is 79 × 269.5 and clears the 287 mm bed.
-    expect(jcard?.turned).toBe(true);
-    expect(jcard?.bounds.width).toBe(79);
-    expect(jcard?.bounds.height).toBe(269.5);
+    const insert = insertOf(sheet);
+    // 282.5 across, against 200 mm of printable width; on its side it is
+    // 79 × 282.5 and clears the 287 mm bed with 4.5 mm to spare.
+    expect(insert.turned).toBe(true);
+    expect(insert.bounds.width).toBe(79);
+    expect(insert.bounds.height).toBe(282.5);
 
-    // And the Parts that fit stay as they are, on the same Sheet.
-    for (const part of ['back-card', 'label'] as const) {
-      expect(sheet.placements.find((placement) => placement.part === part)?.turned).toBe(false);
-    }
+    // And the Label, which fits, stays as it is on the same Sheet.
+    expect(sheet.placements.find((placement) => placement.part === 'label')?.turned).toBe(false);
   });
 
   it('keeps the drawing, the cut outline and the folds in the Part’s own upright millimetres', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET, WIDE_JCARD);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    if (!jcard) throw new Error('no J-Card');
+    const insert = insertOf(renderSheetsAt([aDesign(withCredits())], A4_SHEET)[0]);
 
     // The turn belongs to the Sheet. A Template is never asked which way up its
-    // Part was packed, so everything here reads 269.5 across and 79 down — the
+    // Part was packed, so everything here reads 282.5 across and 79 down — the
     // opposite way round from the bounds above.
-    const cut = jcard.guides.find((guide) => guide.kind === 'cut');
-    expect(Math.max(...(cut?.points ?? []).map((point) => point.x))).toBe(269.5);
+    const cut = insert.guides.find((guide) => guide.kind === 'cut');
+    expect(Math.max(...(cut?.points ?? []).map((point) => point.x))).toBe(282.5);
     expect(Math.max(...(cut?.points ?? []).map((point) => point.y))).toBe(79);
 
-    const frontPanel = jcard.panels?.find((panel) => panel.panel === 'front-panel');
-    expect(frontPanel?.rect).toEqual({ x: 19.5, y: 0, width: 250, height: 79 });
+    expect(pageOf(insert, 'cover')).toEqual({ x: 19.5, y: 0, width: 68, height: 79 });
 
-    const folds = jcard.guides.filter((guide) => guide.kind === 'fold');
-    expect(folds.map((fold) => fold.points[0]?.x)).toEqual([14, 19.5]);
+    const folds = insert.guides.filter((guide) => guide.kind === 'fold');
+    expect(folds.map((fold) => fold.points[0]?.x)).toEqual([14, 19.5, 87.5, 152.5, 217.5]);
     expect(folds.every((fold) => fold.points[1]?.y === 79)).toBe(true);
   });
 
+  it('lands two turned four-Page Inserts side by side on one A4 Sheet', () => {
+    // ADR-0014's picture, drawn by the renderer rather than by the packer's own
+    // rectangles: two turned Inserts side by side and the Labels in the column
+    // that leaves. It needs both halves of ADR-0014 — the turn, and the column
+    // under a placed rectangle — and it needs `DEFAULT_PART_GAP_MM` to be 3.5,
+    // which is what ticket 08 spent to make the ADR's claim true.
+    const two = Array.from({ length: 2 }, (_, index) =>
+      aDesign(withCredits(aRelease({ id: `r${index}`, album: `Album ${index}` }))),
+    );
+    const sheets = renderSheetsAt(two, A4_SHEET);
+
+    expect(sheets).toHaveLength(1);
+    const inserts = (sheets[0]?.placements ?? []).filter((placement) => placement.part === 'insert');
+    expect(inserts.map((placement) => placement.turned)).toEqual([true, true]);
+    expect(inserts.map((placement) => placement.bounds.x)).toEqual([5, 87.5]);
+  });
+
   it('fills the room under a Part once the Label is small enough to sit there', () => {
-    // The other half of ADR-0014, and the one a collector can reach today. On
-    // the J-Card's 79 mm row a 35 mm Label leaves room for another up to 40 mm
-    // tall once the 4 mm gap is taken off, so five Releases of J-Cards and
-    // Labels at a 10 mm printable margin come off one Sheet instead of two.
-    // 37.5 mm is where that starts: any taller and two of them do not fit.
+    // The other half of ADR-0014. On the Insert's 79 mm row a 35 mm Label leaves
+    // room for another up to 40 mm tall once the 3.5 mm gap is taken off, so five
+    // Releases at a 10 mm printable margin get five Labels onto a Sheet that has
+    // room for only three rows.
     const nudged: PartDimensions = {
       ...DEFAULT_PART_DIMENSIONS,
       label: { ...DEFAULT_PART_DIMENSIONS.label, width: 30, height: 35 },
@@ -367,36 +834,55 @@ describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
       aDesign(aRelease({ id: `r${index}`, album: `Album ${index}` })),
     );
 
-    const sheets = renderSheetsAt(
-      five,
-      { paper: A4, marginMm: 10, parts: ['jcard', 'label'] },
-      nudged,
+    const sheets = renderSheetsAt(five, { paper: A4, marginMm: 10, parts: PART_KINDS }, nudged);
+    const first = sheets[0]?.placements ?? [];
+    const labels = first.filter((placement) => placement.part === 'label');
+    const rows = new Set(
+      first.filter((placement) => placement.part === 'insert').map((placement) => placement.bounds.y),
     );
 
-    expect(sheets).toHaveLength(1);
-    expect(sheets[0]?.placements).toHaveLength(10);
+    // More Labels than rows, which shelf packing alone cannot produce: every
+    // rectangle on a shelf shares that shelf's top edge, so without a column the
+    // fourth and fifth Labels would have gone to a Sheet of their own.
+    expect(rows.size).toBe(3);
+    expect(labels).toHaveLength(5);
 
-    // Two Labels sharing a left edge, one under the other: a column, not a row.
-    const labels = (sheets[0]?.placements ?? []).filter((placement) => placement.part === 'label');
+    // Sharing a left edge, one under the other: a column, not a row.
     const columns = new Map<number, number>();
     for (const label of labels) columns.set(label.bounds.x, (columns.get(label.bounds.x) ?? 0) + 1);
-    expect(Math.max(...columns.values())).toBeGreaterThan(1);
+    expect(columns.size, 'one column, not five').toBe(1);
+    expect(Math.max(...columns.values())).toBe(5);
   });
 
   it('still refuses a Part that no turn can save, and says what to do about it', () => {
-    // 500 mm of Front Panel is longer than A4 either way round.
+    // 500 mm of Front Panel is longer than A4 either way round. Only a
+    // hand-edited project file reaches this: `readInsert` clamps each measurement
+    // to 1–300 mm and nothing narrows an Insert to the paper.
     const enormous: PartDimensions = {
       ...DEFAULT_PART_DIMENSIONS,
-      jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, frontPanelWidth: 500 },
+      insert: { ...DEFAULT_PART_DIMENSIONS.insert, frontPanelWidth: 500 },
     };
 
     expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
-      /the J-Card of Wichita Lineman .* does not fit A4 with a printable margin of 5 mm, turned or not/,
+      /the Insert of Wichita Lineman .* does not fit A4 with a printable margin of 5 mm, turned or not/,
     );
-    // And the advice is the honest one: no margin rescues a 519.5 mm strip.
+    // And the advice is the honest one: no margin rescues a 584.5 mm strip.
     expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
       /No margin makes room for it: A4 is too small\./,
     );
+  });
+
+  it('never refuses an Insert at any margin the control can reach', () => {
+    // The case ADR-0014 said would actually happen, and now cannot: raising the
+    // margin past 7.25 mm drops the strip to two Pages instead of making it
+    // unplaceable, and a two-Page strip is 152.5 × 79. So a collector who raises
+    // the margin loses a credits Page — reported — rather than the whole preview.
+    for (const marginMm of [0, 5, 7.5, 12, 25]) {
+      expect(
+        () => renderSheetsAt([aDesign(withCredits())], { paper: A4, marginMm, parts: PART_KINDS }),
+        `${marginMm} mm margin`,
+      ).not.toThrow();
+    }
   });
 });
 
@@ -435,10 +921,10 @@ describe('SheetRenderer — Sheet configuration', () => {
     const sheets = renderSheetsAt([aDesign(first), aDesign(second)], A4_SHEET);
     const placements = sheets.flatMap((sheet) => sheet.placements);
 
-    expect(placements).toHaveLength(6);
+    expect(placements).toHaveLength(4);
     for (const releaseId of ['a', 'b']) {
       const own = placements.filter((placement) => placement.releaseId === releaseId);
-      expect(own).toHaveLength(3);
+      expect(own).toHaveLength(2);
       const printed = own.flatMap((placement) =>
         placement.ops.flatMap((op) => (op.op === 'text' ? [op.text] : [])),
       );
@@ -455,21 +941,22 @@ describe('SheetRenderer — Sheet configuration', () => {
     const sheets = renderSheetsAt(designs, A4_SHEET);
     const placements = sheets.flatMap((sheet) => sheet.placements);
 
-    expect(placements).toHaveLength(24);
+    expect(placements).toHaveLength(16);
     expect(sheets.length).toBeGreaterThan(1);
   });
 });
 
 describe('SheetRenderer — Template parameters', () => {
-  const opsFor = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label') => {
+  const opsFor = (design: ReleaseDesign, part: PartKind) => {
     const [sheet] = renderSheetsAt([design], A4_SHEET);
     return sheet?.placements.find((placement) => placement.part === part)?.ops ?? [];
   };
 
-  const textsOn = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label'): string[] =>
+  // Kept for the Label, which is the one Part whose whole drawing is its Part.
+  const textsOn = (design: ReleaseDesign, part: PartKind): string[] =>
     opsFor(design, part).flatMap((op) => (op.op === 'text' ? [op.text] : []));
 
-  const logosOn = (design: ReleaseDesign, part: 'jcard' | 'back-card' | 'label') =>
+  const logosOn = (design: ReleaseDesign, part: PartKind) =>
     opsFor(design, part).filter((op) => op.op === 'image' && op.role === 'logo');
 
   it('lets each Release choose its own Template', () => {
@@ -478,7 +965,7 @@ describe('SheetRenderer — Template parameters', () => {
     const fullbleed = aDesign(aRelease({ id: 'b', artwork }), { templateId: 'fullbleed' });
 
     const artworkRect = (design: ReleaseDesign): Rect => {
-      const op = opsFor(design, 'jcard').find((candidate) => candidate.op === 'image' && candidate.role === 'artwork');
+      const op = opsFor(design, 'insert').find((candidate) => candidate.op === 'image' && candidate.role === 'artwork');
       if (op?.op !== 'image') throw new Error('no artwork drawn');
       return op.rect;
     };
@@ -500,8 +987,8 @@ describe('SheetRenderer — Template parameters', () => {
       params: { paperColor: '#eaffea', inkColor: '#003300', accentColor: '#007700' },
     });
 
-    // Across all three Parts rather than the Back Card alone, which used to
-    // carry all three colours and now grounds itself in one of them.
+    // Across both Parts rather than one Page alone: no single Page carries all
+    // three colours any more, each grounding itself in one of them.
     const colours = new Set(
       PART_KINDS.flatMap((part) =>
         opsFor(green, part).flatMap((op) =>
@@ -526,28 +1013,34 @@ describe('SheetRenderer — Template parameters', () => {
       params: { showOverlayText: false },
     });
 
-    expect(textsOn(withText, 'jcard')).toContain('Glen Campbell');
-    expect(textsOn(withoutText, 'jcard')).not.toContain('Glen Campbell');
+    const insertOfDesign = (design: ReleaseDesign): PartPlacement =>
+      insertOf(renderSheetsAt([design], A4_SHEET)[0]);
+    const cleanInsert = insertOfDesign(withoutText);
+
+    expect(textsIn(insertOfDesign(withText), pageOf(insertOfDesign(withText), 'cover')).map((op) => op.text)).toContain(
+      'Glen Campbell',
+    );
+    expect(textsIn(cleanInsert, pageOf(cleanInsert, 'cover'))).toEqual([]);
     // The Spine still carries artist and album: it is not "over the cover".
-    expect(textsOn(withoutText, 'jcard')).toContain('Glen Campbell — Wichita Lineman');
-    // And the Back Card is untouched, or the tracklist would vanish with it:
+    expect(textsIn(cleanInsert, sectionOf(cleanInsert, 'spine')).map((op) => op.text)).toContain(
+      'Glen Campbell — Wichita Lineman',
+    );
+    // And the tracklist Page is untouched, or the list would vanish with it:
     // album, artist and one line per track.
-    expect(textsOn(withoutText, 'back-card')).toHaveLength(2 + aRelease().tracks.length);
+    expect(textsIn(cleanInsert, pageOf(cleanInsert, 'tracklist'))).toHaveLength(
+      2 + aRelease().tracks.length,
+    );
   });
 
   it('puts the MiniDisc logo on Front Panel and Spine when it is enabled', () => {
     const design = aDesign(aRelease(), { params: { showLogo: true } });
-    const [sheet] = renderSheetsAt([design], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const panels = Object.fromEntries((jcard?.panels ?? []).map((p) => [p.panel, p.rect]));
-    const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
+    const insert = insertOf(renderSheetsAt([design], A4_SHEET)[0]);
+    const logos = insert.ops.filter((op) => op.op === 'image' && op.role === 'logo');
 
     expect(logos).toHaveLength(2);
-    const within = (rect: { x: number; width: number }, x: number): boolean =>
-      x >= rect.x && x <= rect.x + rect.width;
-    const spine = panels['spine'];
-    const front = panels['front-panel'];
-    if (!spine || !front) throw new Error('J-Card has no panels');
+    const spine = sectionOf(insert, 'spine');
+    const front = pageOf(insert, 'cover');
+    const within = (rect: Rect, x: number): boolean => x >= rect.x && x <= rect.x + rect.width;
 
     expect(logos.some((op) => op.op === 'image' && within(spine, op.rect.x))).toBe(true);
     expect(logos.some((op) => op.op === 'image' && within(front, op.rect.x))).toBe(true);
@@ -556,15 +1049,15 @@ describe('SheetRenderer — Template parameters', () => {
   it('leaves the logo off entirely when it is disabled', () => {
     const design = aDesign(aRelease(), { params: { showLogo: false } });
 
-    expect(logosOn(design, 'jcard')).toEqual([]);
+    expect(logosOn(design, 'insert')).toEqual([]);
+    expect(textsOn(design, 'label')).not.toContain('');
   });
 
   it('keeps the logo inside the Part it sits on', () => {
     const design = aDesign(aRelease(), { params: { showLogo: true } });
-    const [sheet] = renderSheetsAt([design], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const { width, height } = jCardSize(DEFAULT_PART_DIMENSIONS.jcard);
-    const logos = (jcard?.ops ?? []).filter((op) => op.op === 'image' && op.role === 'logo');
+    const insert = insertOf(renderSheetsAt([design], A4_SHEET)[0]);
+    const { width, height } = insert.bounds;
+    const logos = insert.ops.filter((op) => op.op === 'image' && op.role === 'logo');
 
     expect(logos, 'there are logos to check').toHaveLength(2);
     for (const op of logos) {
@@ -584,15 +1077,13 @@ describe('SheetRenderer — Template parameters', () => {
       album: 'Lift Your Skinny Fists Like Antennas to Heaven',
     });
     const design = aDesign(wordy, { params: { showLogo: true, showOverlayText: true } });
-    const [sheet] = renderSheetsAt([design], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const ops = jcard?.ops ?? [];
+    const insert = insertOf(renderSheetsAt([design], A4_SHEET)[0]);
+    const ops = insert.ops;
 
     const logo = ops.find((op) => op.op === 'image' && op.role === 'logo' && !op.rotationDeg);
     if (logo?.op !== 'image') throw new Error('no upright logo on the Front Panel');
 
-    const frontPanel = jcard?.panels?.find((panel) => panel.panel === 'front-panel')?.rect;
-    if (!frontPanel) throw new Error('J-Card has no Front Panel');
+    const frontPanel = pageOf(insert, 'cover');
 
     for (const op of ops) {
       if (op.op !== 'text' || op.style.rotationDeg) continue;
@@ -613,51 +1104,33 @@ describe('SheetRenderer — Template parameters', () => {
   });
 
   it('turns the Spine logo with the Spine type, so both read the same way', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
-    if (!spine) throw new Error('J-Card has no Spine');
+    const insert = insertOf(renderSheetsAt([aDesign()], A4_SHEET)[0]);
+    const spine = sectionOf(insert, 'spine');
 
-    const onSpine = (x: number): boolean => x >= spine.x && x <= spine.x + spine.width;
-    const spineLogo = (jcard?.ops ?? []).find(
-      (op) => op.op === 'image' && op.role === 'logo' && onSpine(op.rect.x),
-    );
-    const spineText = (jcard?.ops ?? []).find((op) => op.op === 'text' && onSpine(op.at.x));
+    const spineLogo = opsIn(insert, spine).find((op) => op.op === 'image' && op.role === 'logo');
+    const [spineText] = textsIn(insert, spine);
 
     expect(spineLogo?.op === 'image' && spineLogo.rotationDeg).toBe(-90);
-    expect(spineText?.op === 'text' && spineText.style.rotationDeg).toBe(-90);
+    expect(spineText?.style.rotationDeg).toBe(-90);
   });
 
   it('keeps Spine type readable however dark the accent colour is', () => {
     const dark = aDesign(aRelease(), {
       params: { accentColor: '#101418', paperColor: '#0b0b0b', inkColor: '#0b0b0b' },
     });
-    const [sheet] = renderSheetsAt([dark], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
-    if (!spine) throw new Error('J-Card has no Spine');
-
-    const spineText = (jcard?.ops ?? []).find(
-      (op) => op.op === 'text' && op.at.x >= spine.x && op.at.x <= spine.x + spine.width,
-    );
+    const insert = insertOf(renderSheetsAt([dark], A4_SHEET)[0]);
+    const [spineText] = textsIn(insert, sectionOf(insert, 'spine'));
 
     // Dark paper on a dark accent would print the Spine as a solid block.
-    expect(spineText?.op === 'text' && spineText.style.color).toBe('#ffffff');
+    expect(spineText?.style.color).toBe('#ffffff');
   });
 
   it('reads the Spine bottom-to-top, the way a shelved case is read', () => {
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const spine = jcard?.panels?.find((panel) => panel.panel === 'spine')?.rect;
-    if (!spine) throw new Error('J-Card has no Spine');
+    const insert = insertOf(renderSheetsAt([aDesign()], A4_SHEET)[0]);
+    const [spineText] = textsIn(insert, sectionOf(insert, 'spine'));
 
-    const spineText = (jcard?.ops ?? []).find(
-      (op) => op.op === 'text' && op.at.x >= spine.x && op.at.x <= spine.x + spine.width,
-    );
-
-    expect(spineText?.op).toBe('text');
-    expect(spineText?.op === 'text' && spineText.style.rotationDeg).toBe(-90);
-    expect(spineText?.op === 'text' && spineText.text).toBe('Glen Campbell — Wichita Lineman');
+    expect(spineText?.style.rotationDeg).toBe(-90);
+    expect(spineText?.text).toBe('Glen Campbell — Wichita Lineman');
   });
 });
 
@@ -706,22 +1179,33 @@ describe('SheetRenderer — Label dimensions', () => {
 });
 
 describe('SheetRenderer — tracklist overflow', () => {
-  const backCardText = (trackCount: number): Array<{ text: string; x: number; y: number; sizeMm: number }> => {
+  /**
+   * Every line of type on the tracklist Page of a Release with `trackCount`
+   * tracks.
+   *
+   * No credits and no artwork, so the strip stays at two Pages and the list has
+   * exactly one Page to fit — which is the case this whole block is about. A
+   * Release that could reach four Pages is a different question, and the block
+   * above answers it.
+   */
+  const listPageText = (trackCount: number): Array<{ text: string; x: number; y: number; sizeMm: number }> => {
     const release = aRelease({
       tracks: Array.from({ length: trackCount }, (_, index) => ({
         position: index + 1,
         title: `Track ${index + 1}`,
       })),
     });
-    const [sheet] = renderSheetsAt([aDesign(release)], A4_SHEET);
-    const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
-    return (backCard?.ops ?? []).flatMap((op) =>
-      op.op === 'text' ? [{ text: op.text, x: op.at.x, y: op.at.y, sizeMm: op.style.sizeMm }] : [],
-    );
+    const insert = insertOf(renderSheetsAt([aDesign(release)], A4_SHEET)[0]);
+    return textsIn(insert, pageOf(insert, 'tracklist')).map((op) => ({
+      text: op.text,
+      x: op.at.x,
+      y: op.at.y,
+      sizeMm: op.style.sizeMm,
+    }));
   };
 
   const trackLines = (trackCount: number) =>
-    backCardText(trackCount).filter((line) => /^\d+\./.test(line.text));
+    listPageText(trackCount).filter((line) => /^\d+\./.test(line.text));
 
   it('prints all 25 tracks of a 25-track Release, in two columns', () => {
     const lines = trackLines(25);
@@ -745,27 +1229,29 @@ describe('SheetRenderer — tracklist overflow', () => {
     expect(enormous[0]?.sizeMm).toBeLessThan(modest[0]?.sizeMm ?? 0);
   });
 
-  it('keeps every track inside the Back Card', () => {
-    const [sheet] = renderSheetsAt(
-      [
-        aDesign(
-          aRelease({
-            tracks: Array.from({ length: 70 }, (_, index) => ({
-              position: index + 1,
-              title: `Track ${index + 1}`,
-            })),
-          }),
-        ),
-      ],
-      A4_SHEET,
+  it('keeps every track inside the Page it is on', () => {
+    const insert = insertOf(
+      renderSheetsAt(
+        [
+          aDesign(
+            aRelease({
+              tracks: Array.from({ length: 70 }, (_, index) => ({
+                position: index + 1,
+                title: `Track ${index + 1}`,
+              })),
+            }),
+          ),
+        ],
+        A4_SHEET,
+      )[0],
     );
-    const backCard = sheet?.placements.find((placement) => placement.part === 'back-card');
-    if (!backCard) throw new Error('no Back Card');
+    const page = pageOf(insert, 'tracklist');
 
-    for (const op of backCard.ops) {
-      if (op.op !== 'text') continue;
-      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(backCard.bounds.height);
-      expect(op.at.x, op.text).toBeGreaterThanOrEqual(0);
+    for (const op of textsIn(insert, page)) {
+      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(page.y + page.height);
+      // Inside the Page's own left edge, not merely inside the strip: a list that
+      // spilled left would run over the Front Panel rather than off the paper.
+      expect(op.at.x, op.text).toBeGreaterThanOrEqual(page.x);
     }
   });
 
@@ -822,15 +1308,42 @@ describe('SheetRenderer — warnings about what was drawn', () => {
     expect(warning.sizeMm).toBeLessThan(warning.floorMm);
   });
 
-  it('warns once per Release, from the Back Card that carries the list', () => {
-    // Three Parts are drawn; only one of them has a tracklist on it.
+  it('warns once per Release, from the one Page that carries the list', () => {
+    // Two Parts are drawn, and the Insert has a Front Panel and a tracklist Page
+    // on it; only one of the two has a list.
     const sheet = sheetFor(200);
 
-    expect(sheet?.placements).toHaveLength(3);
+    expect(sheet?.placements).toHaveLength(2);
     expect(sheet?.warnings).toHaveLength(1);
   });
 
-  it('reports nothing when the job does not print the Back Card at all', () => {
+  it('warns once for a list split over two Pages, not once per Page', () => {
+    // A list spread over two Pages measures itself twice, and two warnings for
+    // one Release would read as two problems. What is reported is the Release's
+    // whole track count and the smallest size any Page settled on.
+    const insert = renderSheetsAt(
+      [
+        aDesign(
+          creditsWithoutArtwork(
+            aRelease({
+              album: 'Everything At Once',
+              tracks: Array.from({ length: 400 }, (_, index) => ({
+                position: index + 1,
+                title: `Track ${index + 1}`,
+              })),
+            }),
+          ),
+        ),
+      ],
+      A4_SHEET,
+    )[0];
+    const warning = onlyWarning(insert, 'type-below-print-floor');
+
+    expect(pagesOf(insertOf(insert)).filter((page) => page.role === 'tracklist')).toHaveLength(2);
+    expect(warning.trackCount).toBe(400);
+  });
+
+  it('reports nothing when the job does not print the Insert at all', () => {
     const sheets = renderSheetsAt(
       [
         aDesign(
@@ -862,18 +1375,12 @@ describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
    */
   const TOO_LONG = 'Lift Your Skinny Fists Like Antennas to Heaven';
   const spineOf = (sheet: SheetLayout | undefined): string => {
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const panels = jcard?.panels?.find((bounds) => bounds.panel === 'spine')?.rect;
-    if (!jcard || !panels) throw new Error('no Spine');
-    // The Spine's line is the one rotated text op inside the Spine panel.
-    const found = jcard.ops.find(
-      (op) =>
-        op.op === 'text' &&
-        op.style.rotationDeg === -90 &&
-        op.at.x > panels.x &&
-        op.at.x < panels.x + panels.width,
+    const insert = insertOf(sheet);
+    // The Spine's line is the one rotated text op inside the Spine section.
+    const found = textsIn(insert, sectionOf(insert, 'spine')).find(
+      (op) => op.style.rotationDeg === -90,
     );
-    if (found?.op !== 'text') throw new Error('no Spine text');
+    if (!found) throw new Error('no Spine text');
     return found.text;
   };
   const sheetFor = (
@@ -936,23 +1443,30 @@ describe('SheetRenderer — the Spine, which cuts rather than wraps', () => {
   });
 
   it('says nothing for an empty line, however little room the edge has', () => {
-    // A project file may carry a 1 mm J-Card (`MIN_PART_MM`), which leaves the
+    // A project file may carry a 1 mm Insert (`MIN_PART_MM`), which leaves the
     // Spine a negative width — `ellipsise` then returns a bare ellipsis for
     // anything at all, and a Release with nothing to say has lost nothing.
     const sheets = renderSheetsAt(
       [aDesign(aRelease({ artist: '', album: '' }))],
-      { ...A4_SHEET, parts: ['jcard'] },
-      { ...DEFAULT_PART_DIMENSIONS, jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, height: 1 } },
+      { ...A4_SHEET, parts: ['insert'] },
+      { ...DEFAULT_PART_DIMENSIONS, insert: { ...DEFAULT_PART_DIMENSIONS.insert, height: 1 } },
     );
 
-    expect(sheets[0]?.warnings).toBeUndefined();
+    // The Spine's warning specifically, not "no warnings at all": a 1 mm Insert
+    // has a 1 mm tracklist Page on it too, and that one really does report itself
+    // — the type on it has shrunk past anything a printer holds. Which is exactly
+    // the difference between a warning about lost content and one about small
+    // content, and this test is about the first.
+    expect(
+      (sheets[0]?.warnings ?? []).filter((warning) => warning.kind === 'spine-truncated'),
+    ).toEqual([]);
   });
 
-  it('reports nothing when the job does not print the J-Card at all', () => {
-    const sheets = renderSheetsAt(
-      [aDesign(aRelease({ album: TOO_LONG }))],
-      { ...A4_SHEET, parts: ['back-card', 'label'] },
-    );
+  it('reports nothing when the job does not print the Insert at all', () => {
+    const sheets = renderSheetsAt([aDesign(aRelease({ album: TOO_LONG }))], {
+      ...A4_SHEET,
+      parts: ['label'],
+    });
 
     expect(sheets[0]?.warnings).toBeUndefined();
   });
@@ -1017,22 +1531,20 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
 
   it('gives each role the face it was assigned', () => {
     const { display, text, spine } = TEMPLATES.classic.faces;
-    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
+    const insert = insertOf(renderSheetsAt([aDesign()], A4_SHEET)[0]);
 
-    // The Spine is the one line on the J-Card that reads sideways up the edge.
-    const spineOp = textOpsOf(sheet, 'jcard').find(
-      (op) => op.style.rotationDeg === -90 && op.text.startsWith('Glen Campbell — '),
-    );
+    // The Spine is the one line on the strip that reads sideways up the edge.
+    const [spineOp] = textsIn(insert, sectionOf(insert, 'spine'));
     expect(spineOp?.style.face, 'the Spine').toBe(spine);
 
-    // The Front Panel's caption is display type; the tracklist under the rule is not.
-    const upright = textOpsOf(sheet, 'jcard').filter((op) => !op.style.rotationDeg);
-    expect(upright.length, 'the Front Panel is captioned').toBeGreaterThan(0);
-    expect(upright.map((op) => op.style.face), 'the Front Panel').toEqual(
-      upright.map(() => display),
-    );
+    // The Front Panel's caption is display type; the tracklist is not.
+    const front = textsIn(insert, pageOf(insert, 'cover'));
+    expect(front.length, 'the Front Panel is captioned').toBeGreaterThan(0);
+    expect(front.map((op) => op.style.face), 'the Front Panel').toEqual(front.map(() => display));
 
-    const tracks = textOpsOf(sheet, 'back-card').filter((op) => /^\d+\. /.test(op.text));
+    const tracks = textsIn(insert, pageOf(insert, 'tracklist')).filter((op) =>
+      /^\d+\. /.test(op.text),
+    );
     expect(tracks.length, 'tracks were drawn').toBe(3);
     expect(tracks.map((op) => op.style.face), 'the tracklist').toEqual(tracks.map(() => text));
 
@@ -1052,7 +1564,7 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
     const sheetFor = (templateId: TemplateId): SheetLayout | undefined => {
       const [sheet] = renderSheets(
         [aDesign(aRelease({ album }), { templateId })],
-        { ...A4_SHEET, parts: ['jcard'] },
+        { ...A4_SHEET, parts: ['insert'] },
         DEFAULT_PART_DIMENSIONS,
         recordingMeasurer().measure,
       );
@@ -1061,10 +1573,12 @@ describe('SheetRenderer — the Template’s faces reach the paper', () => {
 
     const classic = sheetFor('classic');
     const fullbleed = sheetFor('fullbleed');
-    const spineTextOf = (sheet: SheetLayout | undefined): string | undefined =>
-      textOpsOf(sheet, 'jcard').find(
-        (op) => op.style.rotationDeg === -90 && op.text.startsWith('Glen Campbell'),
+    const spineTextOf = (sheet: SheetLayout | undefined): string | undefined => {
+      const insert = insertOf(sheet);
+      return textsIn(insert, sectionOf(insert, 'spine')).find(
+        (op) => op.style.rotationDeg === -90,
       )?.text;
+    };
 
     expect(spineTextOf(classic), 'the narrow face keeps the line').toBe(`Glen Campbell — ${album}`);
     expect(spineTextOf(fullbleed), 'the wide one cuts it').toMatch(/…$/);
@@ -1102,20 +1616,22 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
   const artwork = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 };
 
   const frontPanel = (params: Partial<TemplateParams> = {}) => {
-    const [sheet] = renderSheetsAt(
-      [aDesign(aRelease({ artwork }), { params })],
-      { ...A4_SHEET, parts: ['jcard'] },
+    const insert = insertOf(
+      renderSheetsAt([aDesign(aRelease({ artwork }), { params })], {
+        ...A4_SHEET,
+        parts: ['insert'],
+      })[0],
     );
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
-    if (!jcard || !panel) throw new Error('no Front Panel');
+    // The cover Page is the Front Panel (ADR-0012), and the only artwork on a
+    // two-Page strip is the one on it: no credits and no fourth Page, so no back
+    // cover to confuse with it.
+    const panel = pageOf(insert, 'cover');
+    const ops = opsIn(insert, panel);
 
-    const art = jcard.ops.find((op) => op.op === 'image' && op.role === 'artwork');
-    if (art?.op !== 'image') throw new Error('no artwork on the J-Card');
-    const captions = jcard.ops.flatMap((op) =>
-      op.op === 'text' && !op.style.rotationDeg && op.at.x >= panel.x ? [op] : [],
-    );
-    return { panel, art: art.rect, captions, ops: jcard.ops };
+    const art = ops.find((op) => op.op === 'image' && op.role === 'artwork');
+    if (art?.op !== 'image') throw new Error('no artwork on the Front Panel');
+    const captions = ops.flatMap((op) => (op.op === 'text' && !op.style.rotationDeg ? [op] : []));
+    return { panel, art: art.rect, captions, ops };
   };
 
   it('runs the artwork to the top, the left and the right of the panel', () => {
@@ -1199,16 +1715,17 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
     expect(captions.map((op) => op.text)).toEqual(['Glen Campbell', 'Wichita Lineman']);
   });
 
-  it('draws no negative rectangle on the smallest J-Card a project file may carry', () => {
-    // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. Unclamped, the
-    // bled artwork would be 13 mm shorter than nothing.
+  it('draws no negative rectangle on the smallest Insert a project file may carry', () => {
+    // A 1 mm Insert is `MIN_PART_MM`, so a file can hold one — the Page width has
+    // a floor of its own (`PAGE_WIDTH_RANGE`) and 30 is as small as it goes.
+    // Unclamped, the bled artwork would be 13 mm shorter than nothing.
     for (const insetArtwork of [false, true]) {
       const [sheet] = renderSheetsAt(
         [aDesign(aRelease({ artwork }), { params: { insetArtwork } })],
-        { ...A4_SHEET, parts: ['jcard'] },
+        { ...A4_SHEET, parts: ['insert'] },
         {
           ...DEFAULT_PART_DIMENSIONS,
-          jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+          insert: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, pageWidth: 30, height: 1 },
         },
       );
       const art = sheet?.placements[0]?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
@@ -1220,14 +1737,15 @@ describe('SheetRenderer — Classic’s artwork, which bleeds three edges', () =
   });
 
   it('leaves Full-bleed alone, whose artwork bleeds on all four edges anyway', () => {
-    const [sheet] = renderSheetsAt(
-      [aDesign(aRelease({ artwork }), { templateId: 'fullbleed', params: { insetArtwork: true } })],
-      { ...A4_SHEET, parts: ['jcard'] },
+    const insert = insertOf(
+      renderSheetsAt(
+        [aDesign(aRelease({ artwork }), { templateId: 'fullbleed', params: { insetArtwork: true } })],
+        { ...A4_SHEET, parts: ['insert'] },
+      )[0],
     );
-    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
-    const panel = jcard?.panels?.find((each) => each.panel === 'front-panel')?.rect;
-    const art = jcard?.ops.find((op) => op.op === 'image' && op.role === 'artwork');
-    if (!panel || art?.op !== 'image') throw new Error('no artwork on the Front Panel');
+    const panel = pageOf(insert, 'cover');
+    const art = opsIn(insert, panel).find((op) => op.op === 'image' && op.role === 'artwork');
+    if (art?.op !== 'image') throw new Error('no artwork on the Front Panel');
 
     expect(art.rect).toEqual(panel);
   });
@@ -1306,45 +1824,55 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   /** A tracklist row: the numbered title, or the time set beside it. */
   const isListLine = (op: TextOp): boolean => /^\d+\. /.test(op.text) || /^\d+:\d\d/.test(op.text);
 
-  const backCard = (templateId: TemplateId, params = DARK, release = aRelease()) => {
-    const [sheet] = renderSheetsAt(
-      [aDesign(release, { templateId, params })],
-      { ...A4_SHEET, parts: ['back-card'] },
-    );
-    const placement = sheet?.placements.find((each) => each.part === 'back-card');
-    if (!placement) throw new Error('no Back Card');
-    const texts = placement.ops.flatMap((op) => (op.op === 'text' ? [op] : []));
-    return { sheet, placement, ops: placement.ops, texts };
+  /**
+   * The tracklist Page of a Release's Insert, and the drawing on it.
+   *
+   * This is what v1's Back Card became: one Page of the strip rather than a Part
+   * of its own. The Release is deliberately one that stays at two Pages — no
+   * credits, no artwork — so there is exactly one tracklist Page and it is the
+   * Page every assertion below is about.
+   *
+   * `page` is the Page's own rectangle in Part-local millimetres, which starts at
+   * x = 87.5 rather than at the origin. Every box assertion here is against that
+   * rectangle rather than against zero, which is the one thing a Page has that a
+   * Part did not.
+   */
+  const listPage = (templateId: TemplateId, params = DARK, release = aRelease()) => {
+    const [sheet] = renderSheetsAt([aDesign(release, { templateId, params })], {
+      ...A4_SHEET,
+      parts: ['insert'],
+    });
+    const insert = insertOf(sheet);
+    const page = pageOf(insert, 'tracklist');
+    const ops = opsIn(insert, page);
+    return { sheet, insert, page, ops, texts: textsIn(insert, page) };
   };
 
-  it('grounds the Back Card in a colour the Release chose, edge to edge', () => {
+  it('grounds the tracklist Page in a colour the Release chose, edge to edge', () => {
     for (const [templateId, colour] of [
       ['classic', DARK.accentColor],
       ['fullbleed', DARK.inkColor],
       // Minimal grounds in the ink, as Full-bleed does, but for the opposite
       // reason: there is no artwork here for the ink to have been a scrim over,
-      // so the card is simply the Front Panel with paper and ink exchanged.
+      // so the Page is simply the Front Panel with paper and ink exchanged.
       ['minimal', DARK.inkColor],
     ] as const) {
-      const { ops, placement } = backCard(templateId);
+      const { ops, page } = listPage(templateId);
       const ground = ops[0];
 
       expect(ground?.op, templateId).toBe('fill-rect');
       if (ground?.op !== 'fill-rect') throw new Error('no ground');
       expect(ground.color, templateId).toBe(colour);
-      expect(ground.rect, templateId).toEqual({
-        x: 0,
-        y: 0,
-        width: placement.bounds.width,
-        height: placement.bounds.height,
-      });
+      // The whole Page and no more: a ground that spilled would run over the
+      // Front Panel beside it rather than off the paper.
+      expect(ground.rect, templateId).toEqual(page);
     }
   });
 
   it('reverses every line out of the ground it sits on', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const dark = backCard(templateId, DARK).texts.map((op) => op.style.color);
-      const light = backCard(templateId, LIGHT).texts.map((op) => op.style.color);
+      const dark = listPage(templateId, DARK).texts.map((op) => op.style.color);
+      const light = listPage(templateId, LIGHT).texts.map((op) => op.style.color);
 
       expect(dark.length, templateId).toBeGreaterThan(0);
       expect([...new Set(dark)], `${templateId} on a dark ground`).toEqual(['#ffffff']);
@@ -1357,9 +1885,9 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     // catch: Classic is one flat ground, Full-bleed is a ground plus a bar, and
     // Minimal — which grounds in the same colour Full-bleed does — is the flat
     // one, so this is also what tells those two cards apart.
-    const classicFills = backCard('classic').ops.filter((op) => op.op === 'fill-rect');
-    const minimalFills = backCard('minimal').ops.filter((op) => op.op === 'fill-rect');
-    const { ops, placement } = backCard('fullbleed');
+    const classicFills = listPage('classic').ops.filter((op) => op.op === 'fill-rect');
+    const minimalFills = listPage('minimal').ops.filter((op) => op.op === 'fill-rect');
+    const { ops, page } = listPage('fullbleed');
     const fullbleedFills = ops.filter((op) => op.op === 'fill-rect');
 
     expect(classicFills, 'Classic grounds the card and stops').toHaveLength(1);
@@ -1369,10 +1897,11 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     const band = fullbleedFills[1];
     if (band?.op !== 'fill-rect') throw new Error('no band');
     expect(band.color).toBe(DARK.accentColor);
-    expect(band.rect.x).toBe(0);
-    expect(band.rect.y).toBe(0);
-    expect(band.rect.width).toBe(placement.bounds.width);
-    expect(band.rect.height).toBeLessThan(placement.bounds.height / 3);
+    // Across the top of its own Page, which starts at x = 87.5 on the strip.
+    expect(band.rect.x).toBe(page.x);
+    expect(band.rect.y).toBe(page.y);
+    expect(band.rect.width).toBe(page.width);
+    expect(band.rect.height).toBeLessThan(page.height / 3);
   });
 
   it('chooses the ink per ground, not once for the whole card', () => {
@@ -1386,7 +1915,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     };
     const isTrack = (op: TextOp): boolean => /^\d+\. /.test(op.text);
 
-    const fullbleed = backCard('fullbleed', MIXED).texts;
+    const fullbleed = listPage('fullbleed', MIXED).texts;
     expect(fullbleed.filter((op) => !isTrack(op)).map((op) => op.style.color)).toEqual([
       '#111111',
       '#111111',
@@ -1395,7 +1924,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
     // Classic has one ground, so it has one ink — which is the contrast that
     // makes the assertion above about the band rather than about luck.
-    expect([...new Set(backCard('classic', MIXED).texts.map((op) => op.style.color))]).toEqual([
+    expect([...new Set(listPage('classic', MIXED).texts.map((op) => op.style.color))]).toEqual([
       '#111111',
     ]);
   });
@@ -1403,16 +1932,16 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   it('leaves the lonely hairline rule behind', () => {
     for (const templateId of TEMPLATE_IDS) {
       expect(
-        backCard(templateId).ops.filter((op) => op.op === 'line'),
+        listPage(templateId).ops.filter((op) => op.op === 'line'),
         `${templateId} draws no rule`,
       ).toEqual([]);
     }
   });
 
   it('draws three visibly different cards for one Release', () => {
-    const classic = backCard('classic');
-    const fullbleed = backCard('fullbleed');
-    const minimal = backCard('minimal');
+    const classic = listPage('classic');
+    const fullbleed = listPage('fullbleed');
+    const minimal = listPage('minimal');
 
     // No two of the three draw the same card, which is the whole claim; the
     // assertions after it are what each pair actually differs *in*, so a
@@ -1449,7 +1978,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   it('sets each card only in the faces its own Template names', () => {
     for (const templateId of TEMPLATE_IDS) {
       const declared = Object.values(TEMPLATES[templateId].faces);
-      const used = backCard(templateId).texts.map((op) => op.style.face);
+      const used = listPage(templateId).texts.map((op) => op.style.face);
 
       expect(used.length, templateId).toBeGreaterThan(0);
       expect(used.filter((face) => !declared.includes(face)), templateId).toEqual([]);
@@ -1458,7 +1987,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
   it('prints a playing time beside every track that has one', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const { texts } = backCard(templateId, DARK, timed(10));
+      const { texts } = listPage(templateId, DARK, timed(10));
       const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
 
       expect(times, `${templateId} sets ten times`).toHaveLength(10);
@@ -1469,14 +1998,14 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
   it('prints no time at all for a Release that has none', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const { texts } = backCard(templateId, DARK, aRelease());
+      const { texts } = listPage(templateId, DARK, aRelease());
       expect(texts.filter((op) => /^\d+:\d\d$/.test(op.text)), templateId).toEqual([]);
     }
   });
 
   it('keeps 25 timed tracks in two columns, times and all', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const { texts } = backCard(templateId, DARK, timed(25));
+      const { texts } = listPage(templateId, DARK, timed(25));
       const lines = texts.filter((op) => /^\d+\. /.test(op.text));
       const times = texts.filter((op) => /^\d+:\d\d$/.test(op.text));
 
@@ -1489,8 +2018,8 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
   it('shrinks and then warns from either Template, exactly as before', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const modest = backCard(templateId, DARK, timed(25));
-      const enormous = backCard(templateId, DARK, timed(200));
+      const modest = listPage(templateId, DARK, timed(25));
+      const enormous = listPage(templateId, DARK, timed(200));
 
       expect(modest.sheet?.warnings, `${templateId} at 25`).toBeUndefined();
       const warning = onlyWarning(enormous.sheet, 'type-below-print-floor');
@@ -1508,7 +2037,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     // cell over: a time drawn from a style the fit never saw is a time that
     // does not match the list it belongs to, and only paper shows it.
     for (const templateId of TEMPLATE_IDS) {
-      const { texts } = backCard(templateId, DARK, timed(200));
+      const { texts } = listPage(templateId, DARK, timed(200));
       const listSize = texts.find((op) => /^\d+\. /.test(op.text))?.style.sizeMm ?? 0;
       const timeSizes = [...new Set(texts.filter((op) => /^\d+:\d\d$/.test(op.text)).map((op) => op.style.sizeMm))];
 
@@ -1517,12 +2046,31 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
+  it('starts every Template’s list no higher up the Page than the Page count assumes', () => {
+    // `LIST_TOP_MM` is the box the *count* is decided against, and its comment
+    // claims 16 mm is the most generous of the Templates. If one of them ever
+    // started its list above that, the count would be derived against less room
+    // than that Template actually has — and it would be handed a Page it had
+    // nothing to fill. Asserted rather than reviewed, because the claim is in a
+    // comment and comments do not fail.
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts, page } = listPage(templateId, DARK, timed(10));
+      const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+
+      expect(firstTrack, `${templateId} drew a list`).toBeDefined();
+      expect(
+        (firstTrack?.at.y ?? 0) - page.y,
+        `${templateId} starts its list at or below LIST_TOP_MM`,
+      ).toBeGreaterThanOrEqual(LIST_TOP_MM);
+    }
+  });
+
   it('keeps the heading clear of the first track', () => {
     // Every millimetre in the Back Card layout comments is load-bearing and
     // none of them was pinned: a heading one line too low, or a list top one
     // line too high, prints the album through track 1.
     for (const templateId of TEMPLATE_IDS) {
-      const { texts } = backCard(templateId, DARK, timed(10));
+      const { texts } = listPage(templateId, DARK, timed(10));
       const heading = texts.filter((op) => !isListLine(op));
       const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
 
@@ -1543,7 +2091,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     // Template's own faces, reversed out of the ground — holds while it does.
     // The three Templates leave 1.0, 1.0 and 1.2 mm between their two lines.
     for (const templateId of TEMPLATE_IDS) {
-      const heading = backCard(templateId, DARK, timed(10))
+      const heading = listPage(templateId, DARK, timed(10))
         .texts.filter((op) => !isListLine(op))
         .sort((first, second) => first.at.y - second.at.y);
 
@@ -1559,7 +2107,7 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
   it('keeps Full-bleed’s masthead inside the band drawn for it', () => {
     // The band test above only bounds the bar at a third of the card, which is
     // 26 mm of slack; this is the assertion that ties the two lines to it.
-    const { ops, texts } = backCard('fullbleed');
+    const { ops, texts } = listPage('fullbleed');
     const band = ops.filter((op) => op.op === 'fill-rect')[1];
     if (band?.op !== 'fill-rect') throw new Error('no band');
 
@@ -1577,10 +2125,10 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     expect(band.rect.height).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
   });
 
-  it('sets no line wider than the card it is on', () => {
+  it('sets no line wider than the Page it is on', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const { texts, placement } = backCard(templateId, DARK, timed(10));
-      const room = placement.bounds.width - 2 * PAD_MM;
+      const { texts, page } = listPage(templateId, DARK, timed(10));
+      const room = page.width - 2 * PAD_MM;
 
       for (const op of texts) {
         const width = testMeasurer.widthMm(op.text, op.style);
@@ -1589,16 +2137,18 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
-  it('keeps every mark on the card, times included', () => {
+  it('keeps every mark on the Page, times included', () => {
     for (const templateId of TEMPLATE_IDS) {
-      const { texts, placement } = backCard(templateId, DARK, timed(70));
+      const { texts, page } = listPage(templateId, DARK, timed(70));
 
       for (const op of texts) {
         expect(op.at.y + op.style.sizeMm, `${templateId}: ${op.text}`).toBeLessThanOrEqual(
-          placement.bounds.height,
+          page.y + page.height,
         );
-        expect(op.at.x, `${templateId}: ${op.text}`).toBeGreaterThanOrEqual(0);
-        expect(op.at.x, `${templateId}: ${op.text}`).toBeLessThanOrEqual(placement.bounds.width);
+        // The Page's own edges, not the strip's: a mark that ran left would land
+        // on the Front Panel rather than off the paper.
+        expect(op.at.x, `${templateId}: ${op.text}`).toBeGreaterThanOrEqual(page.x);
+        expect(op.at.x, `${templateId}: ${op.text}`).toBeLessThanOrEqual(page.x + page.width);
       }
     }
   });
@@ -1636,16 +2186,22 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     partOf(sheet, part).ops.flatMap((op) => (op.op === 'text' ? [op] : []));
 
   /**
-   * The Front Panel's type, which is the J-Card's upright type: the Spine's one
-   * line and the Inner Flap's caption both read sideways.
+   * The Front Panel's type: the type anchored on the cover Page.
+   *
+   * By Page rather than by "not rotated", which is what this said when the
+   * Front Panel was one of three panels — the tracklist Page is upright too now,
+   * so rotation no longer tells the Front Panel from anything else.
    */
-  const frontTexts = (sheet: SheetLayout): TextOp[] =>
-    textsOf(sheet, 'jcard').filter((op) => !op.style.rotationDeg);
+  const frontTexts = (sheet: SheetLayout): TextOp[] => {
+    const insert = insertOf(sheet);
+    return textsIn(insert, pageOf(insert, 'cover'));
+  };
 
-  const panelOf = (sheet: SheetLayout, panel: JCardPanel): Rect => {
-    const rect = partOf(sheet, 'jcard').panels?.find((each) => each.panel === panel)?.rect;
-    if (!rect) throw new Error(`no ${panel}`);
-    return rect;
+  const panelOf = (sheet: SheetLayout, panel: 'inner-flap' | 'spine' | 'front-panel'): Rect => {
+    const insert = insertOf(sheet);
+    // The Front Panel *is* Page 1 (ADR-0012), which is why it is asked for by
+    // role rather than by name.
+    return panel === 'front-panel' ? pageOf(insert, 'cover') : sectionOf(insert, panel);
   };
 
   /**
@@ -1665,9 +2221,26 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
   const headlineFor = (album: string): TextOp[] =>
     frontTexts(sheetOf(aRelease({ album }))).filter((op) => op.style.weight === 700);
 
+  /**
+   * The three surfaces this Template sets type on, each with its own type.
+   *
+   * The Front Panel, the tracklist Page and the Label — which is what "every
+   * Part" came to when there were three Parts. Two of the three are now Pages of
+   * one Part, and the rules below hold across all three all the same: that is the
+   * point of them.
+   */
+  const surfacesOf = (sheet: SheetLayout): ReadonlyArray<readonly [string, TextOp[]]> => {
+    const insert = insertOf(sheet);
+    return [
+      ['the Front Panel', frontTexts(sheet)],
+      ['the tracklist Page', textsIn(insert, pageOf(insert, 'tracklist'))],
+      ['the Label', textsOf(sheet, 'label')],
+    ];
+  };
+
   /** The one line at the foot of the Front Panel and of the Label. */
   const footerOf = (sheet: SheetLayout, part: PartKind): string | undefined =>
-    (part === 'jcard' ? frontTexts(sheet) : textsOf(sheet, part)).find((op) =>
+    (part === 'insert' ? frontTexts(sheet) : textsOf(sheet, part)).find((op) =>
       /^\d+ tracks?\b/.test(op.text),
     )?.text;
 
@@ -1700,16 +2273,18 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     // the assertion above is looking for something that exists.
     const [classic] = renderSheetsAt(
       [aDesign(aRelease(), { templateId: 'classic', params })],
-      { ...A4_SHEET, parts: ['jcard'] },
+      { ...A4_SHEET, parts: ['insert'] },
     );
     expect(
       (classic?.placements[0]?.ops ?? []).filter((op) => op.op === 'fill-rect' && translucent(op)),
       'Classic tints the panel a Release has no artwork for',
     ).toHaveLength(1);
 
-    // And no image at all on the two Parts that have no Spine to carry a logo.
-    expect(partOf(sheet, 'back-card').ops.filter((op) => op.op === 'image')).toEqual([]);
+    // And no image at all on the Label, which has no Spine to carry a logo — nor
+    // anywhere on the strip but the Spine, which the test below is about.
     expect(partOf(sheet, 'label').ops.filter((op) => op.op === 'image')).toEqual([]);
+    const insert = insertOf(sheet);
+    expect(opsIn(insert, pageOf(insert, 'tracklist')).filter((op) => op.op === 'image')).toEqual([]);
   });
 
   it('paints only in the three colours the design chose', () => {
@@ -1747,8 +2322,8 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     // case has to be identifiable and ADR-0004 puts the mark there. It can and
     // does mean dropping the second placement, which is the only mark on this
     // Template that is not type.
-    const jcard = partOf(sheetOf(), 'jcard');
-    const images = jcard.ops.flatMap((op) => (op.op === 'image' ? [op] : []));
+    const insert = partOf(sheetOf(), 'insert');
+    const images = insert.ops.flatMap((op) => (op.op === 'image' ? [op] : []));
     const spine = panelOf(sheetOf(), 'spine');
 
     expect(images, 'one logo, on the Spine').toHaveLength(1);
@@ -1760,7 +2335,7 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
 
     // And the toggle still switches off the one that is left.
     expect(
-      partOf(sheetOf(aRelease(), { showLogo: false }), 'jcard').ops.filter(
+      partOf(sheetOf(aRelease(), { showLogo: false }), 'insert').ops.filter(
         (op) => op.op === 'image',
       ),
     ).toEqual([]);
@@ -1772,11 +2347,7 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     // same reasoning ticket 03 applied to Classic's Front Panel caption.
     const sheet = sheetOf(aRelease(), { showOverlayText: false });
 
-    for (const [part, texts] of [
-      ['jcard', frontTexts(sheet)],
-      ['back-card', textsOf(sheet, 'back-card')],
-      ['label', textsOf(sheet, 'label')],
-    ] as const) {
+    for (const [part, texts] of surfacesOf(sheet)) {
       const printed = texts.map((op) => op.text).join(' ');
       expect(printed, `${part} names the record`).toContain('Wichita Lineman');
       expect(printed, `${part} names the artist`).toContain('Glen Campbell');
@@ -1796,15 +2367,11 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
   });
 
   it('names the record first on every Part', () => {
-    // The Template's one ordering, and the thing that separates its Back Card
-    // from Full-bleed's, which grounds in the same colour and ranges left too.
+    // The Template's one ordering, and the thing that separates its tracklist
+    // Page from Full-bleed's, which grounds in the same colour and ranges left too.
     const sheet = sheetOf();
 
-    for (const [part, texts] of [
-      ['jcard', frontTexts(sheet)],
-      ['back-card', textsOf(sheet, 'back-card')],
-      ['label', textsOf(sheet, 'label')],
-    ] as const) {
+    for (const [part, texts] of surfacesOf(sheet)) {
       const artistAt = texts.findIndex((op) => op.text === 'Glen Campbell');
       expect(texts[0]?.text.startsWith('Wichita'), `${part} opens with the album`).toBe(true);
       expect(artistAt, `${part} names the artist after it`).toBeGreaterThan(0);
@@ -1987,7 +2554,6 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     const sheet = sheetOf(aRelease({ album: '' }));
 
     for (const [part, texts] of [
-      ['back-card', textsOf(sheet, 'back-card')],
       ['label', textsOf(sheet, 'label')],
     ] as const) {
       const named = texts.filter((op) => op.text === 'Glen Campbell');
@@ -2019,9 +2585,9 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     });
     const sheet = sheetOf(timed);
 
-    // On the Front Panel and on the Label: the two Parts that would otherwise
+    // On the Front Panel and on the Label: the two surfaces that would otherwise
     // be a name on an empty field.
-    expect(footerOf(sheet, 'jcard')).toBe('2 tracks · 8:48');
+    expect(footerOf(sheet, 'insert')).toBe('2 tracks · 8:48');
     expect(footerOf(sheet, 'label')).toBe('2 tracks · 8:48');
   });
 
@@ -2033,14 +2599,14 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
       ],
     });
 
-    expect(footerOf(sheetOf(partly), 'jcard')).toBe('2 tracks');
+    expect(footerOf(sheetOf(partly), 'insert')).toBe('2 tracks');
   });
 
   it('still looks finished for a Release with no times at all, which is the mixtape', () => {
     // The Template exists for Releases nobody looked up, and those have no
     // durations. The footer has to be worth drawing without them.
-    expect(footerOf(sheetOf(), 'jcard')).toBe('3 tracks');
-    expect(footerOf(sheetOf(aRelease({ tracks: [{ position: 1, title: 'Only' }] })), 'jcard')).toBe(
+    expect(footerOf(sheetOf(), 'insert')).toBe('3 tracks');
+    expect(footerOf(sheetOf(aRelease({ tracks: [{ position: 1, title: 'Only' }] })), 'insert')).toBe(
       '1 track',
     );
   });
@@ -2050,33 +2616,34 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     // the same reason `formatTrackLength` refuses to print 0:00.
     const empty = sheetOf(aRelease({ tracks: [] }));
 
-    expect(footerOf(empty, 'jcard')).toBeUndefined();
+    expect(footerOf(empty, 'insert')).toBeUndefined();
     expect(footerOf(empty, 'label')).toBeUndefined();
     // And the Part is still a Part: the name is on it.
     expect(frontTexts(empty).map((op) => op.text).join(' ')).toContain('Wichita');
   });
 
-  it('grounds the Back Card in the ink the Front Panel sets its type in', () => {
+  it('grounds the tracklist Page in the ink the Front Panel sets its type in', () => {
     // Minimal's one gesture: the two faces of the case are the same card, the
     // second one printed the other way round.
     const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
     const sheet = sheetOf(aRelease(), params);
 
-    const front = partOf(sheet, 'jcard').ops.find((op) => op.op === 'fill-rect');
-    expect(front?.op === 'fill-rect' ? front.color : undefined, 'the J-Card is paper').toBe(
+    const insert = insertOf(sheet);
+    const front = opsIn(insert, pageOf(insert, 'cover')).find((op) => op.op === 'fill-rect');
+    expect(front?.op === 'fill-rect' ? front.color : undefined, 'the Front Panel is paper').toBe(
       params.paperColor,
     );
     expect([...new Set(frontTexts(sheet).map((op) => op.style.color))], 'set in the ink').toEqual([
       params.inkColor,
     ]);
 
-    const back = partOf(sheet, 'back-card').ops[0];
-    expect(back?.op === 'fill-rect' ? back.color : undefined, 'the Back Card is that ink').toBe(
-      params.inkColor,
-    );
-    expect([...new Set(textsOf(sheet, 'back-card').map((op) => op.style.color))]).toEqual([
-      '#ffffff',
-    ]);
+    const listBox = pageOf(insert, 'tracklist');
+    const back = opsIn(insert, listBox)[0];
+    expect(
+      back?.op === 'fill-rect' ? back.color : undefined,
+      'the tracklist Page is that ink',
+    ).toBe(params.inkColor);
+    expect([...new Set(textsIn(insert, listBox).map((op) => op.style.color))]).toEqual(['#ffffff']);
   });
 
   it('makes the Label a chip of the accent, cut to the corner the cartridge needs', () => {
@@ -2087,7 +2654,7 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect(chip?.op, 'the chip is the Part’s own outline').toBe('fill-polygon');
     if (chip?.op !== 'fill-polygon') throw new Error('no chip');
     expect(chip.color).toBe(params.accentColor);
-    expect(chip.points).toEqual(partShape('label', DEFAULT_PART_DIMENSIONS).outline);
+    expect(chip.points).toEqual(labelShape(DEFAULT_PART_DIMENSIONS.label).outline);
 
     // Reversed out of it, chosen rather than configured: a light accent would
     // otherwise take the same white type a dark one does.
@@ -2189,21 +2756,30 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect(new Set(Object.values(TEMPLATES.fullbleed.faces)).size, 'Full-bleed').toBe(2);
   });
 
-  it('draws no negative rectangle on the smallest J-Card a project file may carry', () => {
-    // A 1 mm J-Card is `MIN_PART_MM`, so a file can hold one. The title fit
+  it('draws no negative rectangle on the smallest Insert a project file may carry', () => {
+    // A 1 mm Insert is `MIN_PART_MM`, so a file can hold one. The title fit
     // shrinks against the room it has, and this is also what says that loop
     // terminates when there is none: an unbounded one would hang the suite here
     // rather than fail it.
     const sheet = sheetOf(aRelease(), {}, {
       ...DEFAULT_PART_DIMENSIONS,
-      jcard: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, height: 1 },
+      insert: { innerFlapWidth: 1, spineWidth: 1, frontPanelWidth: 1, pageWidth: 30, height: 1 },
     });
 
-    for (const op of partOf(sheet, 'jcard').ops) {
+    const insert = partOf(sheet, 'insert');
+    for (const op of insert.ops) {
       if (op.op !== 'fill-rect') continue;
       expect(op.rect.width).toBeGreaterThanOrEqual(0);
       expect(op.rect.height).toBeGreaterThanOrEqual(0);
     }
-    expect(frontTexts(sheet).length, 'and still sets something').toBeGreaterThan(0);
+    // Every op on the strip rather than the ones anchored on the cover Page: at
+    // 1 mm a section is narrower than its own `PAD`, so the Front Panel's type is
+    // anchored past the Page's right edge. That is the degenerate case working as
+    // intended — the drawing is clipped to the Part by `drawPlacement` — and it is
+    // why this one test asks the Part rather than the Page.
+    expect(
+      insert.ops.filter((op) => op.op === 'text').length,
+      'and still sets something',
+    ).toBeGreaterThan(0);
   });
 });
