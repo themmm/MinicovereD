@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
+import type { Credits } from '../domain/release.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign } from '../render/sheet-renderer.ts';
-import { addToQueue, moveInQueue, queueDesigns, removeFromQueue, unresolvedEntry } from './release-queue.ts';
+import {
+  addToQueue,
+  moveInQueue,
+  queueDesigns,
+  removeFromQueue,
+  unresolvedEntry,
+  withCreditsInQueue,
+} from './release-queue.ts';
 import type { QueueEntry } from './release-queue.ts';
 
 const design = (id: string, album = `Album ${id}`): ReleaseDesign => ({
@@ -103,6 +111,64 @@ describe('an entry whose lookup failed', () => {
 
     expect(completed[0]?.status).toBe('ready');
     expect(completed[0]?.design.release.tracks).toHaveLength(1);
+  });
+});
+
+describe('credits arriving for one Release in the queue', () => {
+  const credits: Credits = {
+    people: [{ role: 'Producer', name: 'Al De Lory' }],
+    label: 'Capitol Records',
+    genres: [],
+    styles: [],
+  };
+
+  it('fills the hole they were fetched for, and nothing else', () => {
+    const queue = [resolved('a'), resolved('b'), resolved('c')];
+
+    const filled = withCreditsInQueue(queue, 'b', credits);
+
+    expect(filled?.[1]?.design.release.credits).toEqual(credits);
+    // The other entries are the same objects, not copies of them: a lookup
+    // answering late must not look like an edit to anything it did not touch.
+    expect(filled?.[0]).toBe(queue[0]);
+    expect(filled?.[2]).toBe(queue[2]);
+  });
+
+  it('answers with nothing when the Release already has credits', () => {
+    const mine: Credits = { people: [{ role: '', name: 'Me' }], genres: [], styles: [] };
+    const entry = resolved('a');
+    const queue = [
+      { ...entry, design: { ...entry.design, release: { ...entry.design.release, credits: mine } } },
+    ];
+
+    // Nothing back, so the caller redraws nothing and saves nothing — and the
+    // collector's own credits stay theirs.
+    expect(withCreditsInQueue(queue, 'a', credits)).toBeUndefined();
+  });
+
+  it('answers with nothing for a Release that has left the queue', () => {
+    // Removed while Discogs was still thinking about it.
+    expect(withCreditsInQueue([resolved('a')], 'b', credits)).toBeUndefined();
+    expect(withCreditsInQueue([], 'a', credits)).toBeUndefined();
+  });
+
+  it('leaves the Release it fills otherwise untouched', () => {
+    const entry = resolved('a');
+    const queue = [
+      {
+        ...entry,
+        design: {
+          ...entry.design,
+          release: { ...entry.design.release, year: '1968', notes: 'Capitol · ST-103' },
+        },
+      },
+    ];
+
+    const release = withCreditsInQueue(queue, 'a', credits)?.[0]?.design.release;
+
+    // The fields the collector can edit are not a second source's to write.
+    expect(release?.year).toBe('1968');
+    expect(release?.notes).toBe('Capitol · ST-103');
   });
 });
 

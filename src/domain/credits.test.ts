@@ -50,6 +50,17 @@ describe('editing credits by hand', () => {
     ]);
   });
 
+  it('trims what it read, wherever the spaces were', () => {
+    // The line arrives untrimmed on purpose — a trailing space is part of the
+    // separator — so the trimming has to happen to each half instead.
+    const text = '   Producer   —   Mike Stock   \nDesign\t  Me Company';
+
+    expect(parseCredits(text).people).toEqual([
+      { role: 'Producer', name: 'Mike Stock' },
+      { role: 'Design', name: 'Me Company' },
+    ]);
+  });
+
   it('keeps a hyphenated role and a hyphenated name whole', () => {
     // Only a *spaced* dash separates, which is the whole reason the search
     // field can read `Jean-Michel Jarre` as one artist.

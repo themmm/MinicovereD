@@ -1,5 +1,6 @@
+import { withArrivedCredits } from '../domain/credits.ts';
 import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
-import type { Release } from '../domain/release.ts';
+import type { Credits, Release } from '../domain/release.ts';
 import { DEFAULT_TEMPLATE_PARAMS } from '../render/sheet-renderer.ts';
 import type { ReleaseDesign } from '../render/sheet-renderer.ts';
 
@@ -100,6 +101,38 @@ export function replaceInQueue(
   replace: (entry: QueueEntry) => QueueEntry,
 ): QueueEntry[] {
   return queue.map((entry) => (entry.design.release.id === releaseId ? replace(entry) : entry));
+}
+
+/**
+ * Credits arriving for one Release in the Queue — or nothing at all, if the
+ * Queue is unchanged.
+ *
+ * Unchanged happens two ways, and neither is a failure: there is no such
+ * Release any more, or that Release already carries credits and keeps them
+ * (`withArrivedCredits`). Answering with nothing rather than with an equal Queue
+ * is what lets the caller tell "filled a hole" from "arrived too late" — one
+ * needs the Parts redrawn and the project saved, and the other must touch
+ * neither, because a lookup answering late is not the collector editing
+ * anything.
+ */
+export function withCreditsInQueue(
+  queue: readonly QueueEntry[],
+  releaseId: string,
+  credits: Credits,
+): QueueEntry[] | undefined {
+  const index = indexOfRelease(queue, releaseId);
+  if (index < 0) return undefined;
+
+  const entry = queue[index];
+  if (!entry) return undefined;
+  const release = withArrivedCredits(entry.design.release, credits);
+  if (release === entry.design.release) return undefined;
+
+  // Only the one entry is rebuilt, and the rest are the same objects: a lookup
+  // answering late must not look like a change to anything it did not touch.
+  const filled = [...queue];
+  filled[index] = { ...entry, design: { ...entry.design, release } };
+  return filled;
 }
 
 /**

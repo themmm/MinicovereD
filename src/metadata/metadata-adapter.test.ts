@@ -779,6 +779,17 @@ describe('MetadataAdapter — a Discogs failure costs nothing', () => {
     });
   }
 
+  it('reads no credits off a refusal that happens to carry a body', async () => {
+    const { adapter } = adapterOver([
+      failing({ status: 429, body: fixtureText('discogs-release-249504.json') }),
+    ]);
+
+    // A rate-limit refusal is not an answer, whatever came with it — and every
+    // other failure here is caught by the body not parsing, so without this the
+    // status would never have to be looked at.
+    await expect(adapter.fetchCredits(linkedRelease())).resolves.toBeUndefined();
+  });
+
   it('reports no credits when Discogs cannot be reached at all', async () => {
     // A timeout aborts the request, which arrives as a rejection rather than
     // as a status. Nothing is waiting on this, so there is nothing to report.

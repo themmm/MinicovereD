@@ -1,4 +1,3 @@
-import { withArrivedCredits } from '../domain/credits.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
 import type { LabelDimensions } from '../domain/parts.ts';
@@ -16,6 +15,7 @@ import {
   readyEntry,
   removeFromQueue,
   replaceInQueue,
+  withCreditsInQueue,
 } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { renderCalibrationSheet } from '../render/calibration.ts';
@@ -372,16 +372,12 @@ export function createWorkspace(): Workspace {
 
   /** Credits arriving for a Release that may no longer be selected, or queued at all. */
   function applyCredits(releaseId: string, credits: Credits): void {
-    let applied = false;
-    queue = replaceInQueue(queue, releaseId, (entry) => {
-      const release = withArrivedCredits(entry.design.release, credits);
-      // Unchanged means the Release already had credits — the collector's own,
-      // or an earlier answer. Either outranks this one.
-      if (release === entry.design.release) return entry;
-      applied = true;
-      return { ...entry, design: { ...entry.design, release } };
-    });
-    if (!applied) return;
+    // Nothing back means nothing changed: the Release has gone, or it already
+    // carries credits — the collector's own, or an earlier answer. Either
+    // outranks this one.
+    const filled = withCreditsInQueue(queue, releaseId, credits);
+    if (!filled) return;
+    queue = filled;
 
     // The one field, not the whole form: rebuilding it would take the caret out
     // of whatever the collector is typing into right now.
