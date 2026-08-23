@@ -359,12 +359,19 @@ export function createWorkspace(): Workspace {
    *
    * "Only a lookup" is the whole rule, and it is why a restored project asks for
    * nothing. Reopening yesterday's work is not a lookup, and a queue of thirty
-   * Releases would put thirty requests on the network the moment the page loaded
+   * Releases would put thirty requests on the network the moment the app opened
    * — which nobody asked for, and which would be a poor way to spend somebody
    * else's rate limit.
    */
   function requestCredits(release: Release): void {
-    if (release.credits || release.discogsId === undefined) return;
+    if (release.discogsId === undefined) return;
+    // The copy in the Queue, not the one that just arrived — that one never has
+    // credits. A re-pasted Batch of twenty-five albums the collector already has
+    // credits for would otherwise spend a minute of somebody else's rate limit
+    // being told so twenty-five times, and `applyCredits` would discard every
+    // answer.
+    const queued = queue.find((entry) => entry.design.release.id === release.id);
+    if ((queued?.design.release ?? release).credits) return;
     void metadata.fetchCredits(release).then((credits) => {
       if (credits) applyCredits(release.id, credits);
     });

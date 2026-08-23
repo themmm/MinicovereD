@@ -152,6 +152,19 @@ describe('credits arriving for one Release in the queue', () => {
     expect(withCreditsInQueue([], 'a', credits)).toBeUndefined();
   });
 
+  it('leaves the Entry’s own state alone, flag and all', () => {
+    // An unfinished Entry is the collector's to-do list, and a second source
+    // answering is not them ticking it off. Reachable through a project file,
+    // which can carry a Discogs link on an Entry that still needs a hand.
+    const queue = [unresolvedEntry('a', 'X', 'Y', 'nothing matched')];
+
+    const filled = withCreditsInQueue(queue, 'a', credits);
+
+    expect(filled?.[0]?.status).toBe('failed');
+    expect(filled?.[0]?.error).toBe('nothing matched');
+    expect(filled?.[0]?.design.release.credits).toEqual(credits);
+  });
+
   it('leaves the Release it fills otherwise untouched', () => {
     const entry = resolved('a');
     const queue = [

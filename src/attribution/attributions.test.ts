@@ -165,6 +165,8 @@ const LICENSE_MARKERS: Readonly<Record<string, string>> = {
  * Comments are stripped before the hosts are read, because a URL in a sentence
  * is not a request — `discogsIdOf` explains itself with an address that must
  * never be fetched, which is exactly the case that would otherwise fail here.
+ * A trailing `//` is only a comment when something separates it from what came
+ * before, or `https://` would be stripped as one.
  */
 function hostsTheAdapterSendsTo(): string[] {
   const directory = join(repoRoot, 'src', 'metadata');
@@ -172,15 +174,17 @@ function hostsTheAdapterSendsTo(): string[] {
 
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
-    const code = readFileSync(join(directory, entry.name), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/^[ \t]*\/\/.*$/gm, '');
+    const code = withoutComments(readFileSync(join(directory, entry.name), 'utf8'));
     for (const [, host] of code.matchAll(/https:\/\/([a-z0-9.-]+)/g)) {
       if (host) found.add(registrableDomain(host));
     }
   }
   return [...found].filter((host) => !NOT_A_DATA_SOURCE.has(host)).sort();
 }
+
+/** Source with its comments gone. See `hostsTheAdapterSendsTo` for the `//` rule. */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[ \t])\/\/.*$/gm, '');
 
 /**
  * A host that appears in a request but is not a service: the repository address
@@ -195,8 +199,8 @@ const NOT_A_DATA_SOURCE = new Set(['github.com']);
  */
 const registrableDomain = (host: string): string => host.split('.').slice(-2).join('.');
 
-/** Every module that can get hold of the one HTTP client, tests aside. */
-function reachesTheHttpClient(): string[] {
+/** Every non-test module under `src` that matches `pattern`, repo-relative. */
+function modulesMatching(pattern: RegExp): string[] {
   const found: string[] = [];
 
   const walk = (directory: string): void => {
@@ -207,9 +211,9 @@ function reachesTheHttpClient(): string[] {
         continue;
       }
       if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
-      const relative_ = relative(repoRoot, path).split(sep).join('/');
-      if (relative_.startsWith('src/metadata/')) continue;
-      if (/from '[^']*\/http\.ts'/.test(readFileSync(path, 'utf8'))) found.push(relative_);
+      if (pattern.test(withoutComments(readFileSync(path, 'utf8')))) {
+        found.push(relative(repoRoot, path).split(sep).join('/'));
+      }
     }
   };
 
@@ -368,11 +372,19 @@ describe('attribution manifest (ADR-0003)', () => {
 
   it('keeps the network where this file can see it', () => {
     // The host check above reads `src/metadata`, and that is only the whole
-    // network surface while `http.ts` is the only thing that calls `fetch` and
-    // nothing outside that directory reaches for it. The workspace is the
-    // exception on purpose: it builds the one client and hands it to the
-    // adapter.
-    expect(reachesTheHttpClient().filter((file) => file !== 'src/app/workspace.ts')).toEqual([]);
+    // network surface while two things hold. Both are checked, because the
+    // second one on its own is not enough: `fetch` is a global, so a module
+    // that never imports anything can still open a connection to a host nobody
+    // has credited — and that is exactly what this assertion was missing.
+    expect(modulesMatching(/\bfetch\(/)).toEqual(['src/metadata/http.ts']);
+
+    // And the client itself: the workspace is the one exception on purpose,
+    // because it builds the single instance and hands it to the adapter. Named
+    // rather than filtered out, so this cannot pass by that client vanishing.
+    expect(modulesMatching(/from '[^']*\/http\.ts'/)).toEqual([
+      'src/app/workspace.ts',
+      'src/metadata/metadata-adapter.ts',
+    ]);
   });
 
   it('accounts for every shipped asset, as our own work or as someone else’s', () => {

@@ -9,8 +9,8 @@
  *
  * Only a *spaced* dash or a tab separates, and only the first one on the line.
  * That is what keeps `Jean-Michel Jarre` whole, `F♯A♯∞ — Deluxe Edition` one
- * title and `Written-By` one role. Em, en and figure dashes and the minus sign
- * all count, because people paste all of them.
+ * title and `Written-By` one role. Em, en and figure dashes, the minus sign and
+ * a plain ASCII hyphen all count, because people paste all five.
  */
 const SEPARATOR = /^(.*?)(?:\s+[—–‒−-]\s+|\t+)(.*)$/;
 

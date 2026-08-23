@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Release } from '../domain/release.ts';
 import { createMetadataAdapter } from './metadata-adapter.ts';
 import type { SearchQuery } from './metadata-adapter.ts';
-import type { HttpClient, HttpResponse } from './http.ts';
+import type { HttpClient, HttpRequest, HttpResponse } from './http.ts';
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__');
 const fixtureBytes = (name: string): Uint8Array => new Uint8Array(readFileSync(join(fixtures, name)));
@@ -25,12 +25,19 @@ interface Recording {
   readonly body: string | Uint8Array;
 }
 
-function recordedHttp(recordings: readonly Recording[]): HttpClient & { readonly urls: string[] } {
+function recordedHttp(
+  recordings: readonly Recording[],
+): HttpClient & { readonly urls: string[]; readonly sent: HttpRequest[] } {
   const urls: string[] = [];
+  // Kept because one thing about a request is invisible in its URL and matters
+  // more than most: whether anything at all bounds it. See the deadline test.
+  const sent: HttpRequest[] = [];
   return {
     urls,
-    async get(url: string): Promise<HttpResponse> {
+    sent,
+    async get(url: string, request?: HttpRequest): Promise<HttpResponse> {
       urls.push(url);
+      sent.push(request ?? {});
       const recording = recordings.find((candidate) => candidate.match(url));
       if (!recording) throw new Error(`test would have hit the network: ${url}`);
 
@@ -546,6 +553,37 @@ describe('MetadataAdapter — the Discogs link', () => {
     expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
   });
 
+  it('refuses a host that merely contains discogs.com', async () => {
+    // MusicBrainz url relationships are community-edited, so the host has to be
+    // the host: matched exactly, or as a subdomain, and not by substring.
+    const { adapter } = adapterOver([
+      linkedTo('https://discogs.com.example.net/release/999'),
+    ]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('reads a Discogs subdomain, which is where the site actually lives', async () => {
+    const { adapter } = adapterOver([linkedTo(`https://www.discogs.com/release/${DISCOGS_ID}`)]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBe(DISCOGS_ID);
+  });
+
+  it('refuses a path that only ends in something spelled like release', async () => {
+    // `prerelease/123` ends in `release/123`. The boundary is what stops it.
+    const { adapter } = adapterOver([linkedTo('https://www.discogs.com/prerelease/123')]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('refuses release zero, which is nobody’s release', async () => {
+    const { adapter } = adapterOver([linkedTo('https://www.discogs.com/release/0')]);
+
+    // Not pedantry: a zero would be fetched, refused and counted against the
+    // minute's twenty-five, for a release that cannot exist.
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
   it('refuses a relation whose resource is not a URL at all', async () => {
     const { adapter } = adapterOver([linkedTo('discogs.com/release/249504')]);
 
@@ -690,6 +728,51 @@ describe('MetadataAdapter — Discogs credits', () => {
     });
   });
 
+  it('skips a label entry that says nothing at all', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ labels: [{ id: 7 }, { name: 'RCA', catno: 'PB 41447' }] }),
+      },
+    ]);
+
+    // Reading the first entry blindly would lose a label and a catalogue number
+    // that are both right there in the second.
+    const credits = await adapter.fetchCredits(linkedRelease(1));
+
+    expect(credits?.label).toBe('RCA');
+    expect(credits?.catalogNumber).toBe('PB 41447');
+  });
+
+  it('reports no credits for a genre that is only whitespace', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ genres: ['  '], styles: [''] }),
+      },
+    ]);
+
+    // The expensive kind of wrong: an empty string counts as a genre, so the
+    // block is recorded, the Release looks as though its credits have arrived,
+    // and `withArrivedCredits` then refuses the real ones for good.
+    expect(await adapter.fetchCredits(linkedRelease(1))).toBeUndefined();
+  });
+
+  it('trims a genre rather than carrying the source’s spaces', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ genres: [' Electronic '], styles: [' Deep House '] }),
+      },
+    ]);
+
+    // A file and a keystroke produce the same block, and `readCredits` trims.
+    const credits = await adapter.fetchCredits(linkedRelease(1));
+
+    expect(credits?.genres).toEqual(['Electronic']);
+    expect(credits?.styles).toEqual(['Deep House']);
+  });
+
   it('reads no year out of a date that is not one', async () => {
     const { adapter } = adapterOver([
       {
@@ -745,6 +828,20 @@ describe('MetadataAdapter — Discogs credits', () => {
     // restraint rather than the harness's: credits are asked for once a Release
     // has resolved, and never as part of resolving it (ADR-0013).
     expect(http.urls.some((url) => url.includes('api.discogs.com'))).toBe(false);
+  });
+
+  it('gives the Discogs request a deadline, because nothing else bounds one', async () => {
+    const { adapter, http } = adapterOver();
+
+    await adapter.fetchCredits(linkedRelease());
+
+    // The one property of this request that its URL cannot show. Without a
+    // deadline the browser attaches no abort signal (`http.ts`), so a
+    // connection that is accepted and never answered never settles — and a
+    // promise that never settles wedges the Discogs queue for the rest of the
+    // session, because the throttle recovers from a rejection and not from
+    // silence. Every later credits request would then simply never be made.
+    expect(http.sent[0]?.timeoutMs).toBeGreaterThan(0);
   });
 
   it('sends no `client=` parameter to Discogs, which is MusicBrainz’s', async () => {

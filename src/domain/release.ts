@@ -102,8 +102,15 @@ export interface Release {
    * MusicBrainz is what supplies it, and it has to be: Discogs' own search
    * endpoint needs credentials and ADR-0013 refuses to ask for an API key, so
    * the only way to reach a Discogs release is to follow a link that already
-   * exists. Saved with the Release rather than kept for the session, so credits
-   * can still be asked for after a reload.
+   * exists.
+   *
+   * Saved with the Release, and **read back by nothing yet**. Only a lookup asks
+   * for credits (`requestCredits`), so a Release that comes out of a file keeps
+   * its link and is never asked about again. It is persisted because the
+   * credits block ADR-0012 puts on paper will want to be able to ask, and
+   * because throwing away the one hard-won identifier and re-deriving it later
+   * would cost a MusicBrainz request per Release to learn what this one already
+   * knew.
    */
   readonly discogsId?: number;
   /**

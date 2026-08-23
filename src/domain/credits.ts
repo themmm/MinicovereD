@@ -56,9 +56,9 @@ export function formatCredits(people: readonly Credit[]): string {
 /**
  * Whether there is anything in a Credits block at all.
  *
- * A pressing whose Discogs entry lists no credits, no label, no country, no
- * year and no genre has nothing to record, and recording an empty block anyway
- * would make every later "have the credits arrived?" answer yes.
+ * A pressing whose Discogs entry has nothing in any of these fields has nothing
+ * to record, and recording an empty block anyway would make every later "have
+ * the credits arrived?" answer yes.
  */
 export function hasCredits(credits: Credits): boolean {
   return (
@@ -91,11 +91,14 @@ export function describeCredits(credits: Credits): string {
  *
  * They fill a hole and never overwrite. A Release that already carries credits
  * carries either the collector's own typing or an earlier answer, and a second
- * source replying two seconds late is no reason to replace either — the same
- * rule `project-arrival.ts` states about a whole Project arriving late, at the
- * scale of one field. It is also what makes the precedence in `Credits` hold in
- * time as well as in shape: nothing this app fetches can overwrite something a
- * collector edited.
+ * source replying two seconds late is no reason to replace either.
+ *
+ * The principle is the one `project-arrival.ts` states about a whole Project
+ * arriving late — an edit beats it — at the scale of one field, and a shade
+ * broader: an earlier answer wins too, because there is nothing to choose
+ * between two answers to the same question. It is what makes the precedence
+ * `Credits` sets out hold in time as well as in shape: nothing the second
+ * source fetches can replace what the collector typed.
  */
 export function withArrivedCredits(release: Release, credits: Credits): Release {
   return release.credits ? release : { ...release, credits };

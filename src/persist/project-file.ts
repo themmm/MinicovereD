@@ -145,7 +145,11 @@ function readCredits(value: unknown): Credits | undefined {
     ...(text('label') ? { label: text('label') } : {}),
     ...(text('catalogNumber') ? { catalogNumber: text('catalogNumber') } : {}),
     ...(text('country') ? { country: text('country') } : {}),
-    ...(text('year') ? { year: text('year') } : {}),
+    // Four digits or nothing, which is what `Credits.year` says it is and what
+    // `yearOf` enforces on the way in from Discogs. `Release.year` beside it is
+    // free text on purpose — "n/a" and a reissue year are both real there — but
+    // this one is a fact about a pressing, and a file is not trusted to agree.
+    ...(/^\d{4}$/.test(text('year')) ? { year: text('year') } : {}),
     genres: strings(value['genres']),
     styles: strings(value['styles']),
   };
@@ -166,9 +170,11 @@ function readRelease(value: unknown, index: number): Release | string {
   const notes = asString(value['notes']).trim();
   const artwork = readArtwork(value['artwork']);
   const credits = readCredits(value['credits']);
-  // Ends up in a URL as `/releases/{id}`, so it has to be a whole number that
-  // is exactly itself — see `discogsIdOf`, which refuses the same values on the
-  // way in from MusicBrainz.
+  // Held to the same shape `discogsIdOf` requires on the way in from
+  // MusicBrainz — a whole positive number that is exactly itself — because the
+  // two are the same field and a file is the untrusted one of the two sources.
+  // Nothing puts this one in a URL today; the day something does, it will not
+  // have to ask whether a file could have made it a fraction.
   const discogsId = asNumber(value['discogsId'], 0);
   return {
     id,

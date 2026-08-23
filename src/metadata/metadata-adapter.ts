@@ -317,6 +317,9 @@ function discogsIdOf(relations: readonly MbRelation[] | undefined): number | und
  * once: this is a block about the release, so those are one credit.
  */
 function creditsOf(payload: DiscogsRelease): Credits {
+  const named = (values: readonly string[] | undefined): string[] =>
+    (values ?? []).map((value) => value.trim()).filter((value) => !!value);
+
   const people: Credit[] = [];
   const seen = new Set<string>();
   for (const artist of payload.extraartists ?? []) {
@@ -349,8 +352,11 @@ function creditsOf(payload: DiscogsRelease): Credits {
     ...(catalogNumber ? { catalogNumber } : {}),
     ...(country ? { country } : {}),
     ...(year ? { year } : {}),
-    genres: (payload.genres ?? []).filter((genre) => !!genre.trim()),
-    styles: (payload.styles ?? []).filter((style) => !!style.trim()),
+    // Trimmed as well as filtered, because `readCredits` trims and its docstring
+    // promises a file and a keystroke produce the same block — " Pop " surviving
+    // from one source and not the other would make that false.
+    genres: named(payload.genres),
+    styles: named(payload.styles),
   };
 }
 
@@ -439,12 +445,18 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
    * MusicBrainz's, and appending it here would be sending a stranger's query
    * string to a service that never asked for it.
    *
-   * The User-Agent is sent for the same reason and with the same expectations
-   * as ADR-0006's: Discogs asks an application to identify itself with one to
-   * get its full request rate, a browser will not let script set it, and so the
-   * anonymous 25 a minute is what `DISCOGS_MIN_REQUEST_INTERVAL_MS` plans for.
-   * Everything else about this integration is easier than the MusicBrainz one:
-   * ADR-0013 measured a read with no token and `access-control-allow-origin: *`.
+   * The User-Agent is sent as a courtesy identifier and nothing rests on it.
+   * Discogs asks an application to name itself in one; a browser strips it
+   * before it leaves (`http.ts`), which is ADR-0006's problem again and is why
+   * the header is set here anyway, for a host that would allow it.
+   *
+   * It is **not** where the rate limit comes from — that would be inventing an
+   * obstacle ADR-0013 went and measured the absence of. The 25 a minute
+   * `DISCOGS_MIN_REQUEST_INTERVAL_MS` plans for is the *unauthenticated* rate,
+   * and the reason this app runs at it is that ADR-0013 refuses to ask anyone
+   * for a token. A read with no token and `access-control-allow-origin: *` are
+   * what that ADR measured, and they are the whole of what this integration
+   * needs.
    */
   const sendToDiscogs = (url: string): Promise<HttpResponse> =>
     discogsThrottle(() =>
@@ -541,9 +553,9 @@ export function createMetadataAdapter(options: MetadataAdapterOptions): Metadata
   /**
    * Credits for a Release that has already resolved.
    *
-   * **Never rejects, and nothing waits for it.** A 429, a 503, a timeout, a
-   * Discogs id MusicBrainz recorded for a release that has since been merged
-   * away, a body that is not JSON, or no link at all: every one of them comes
+   * **Never rejects, and nothing waits for it.** A 429, a 503, a timeout, an id
+   * MusicBrainz kept after Discogs stopped serving the release, a body that is
+   * not JSON, or no link at all: every one of them comes
    * back the same way, as no credits. By the time this is asked the Release is
    * already in the collector's hands, so there is nothing left for a failure to
    * spoil — and reporting one would be reporting a failure about a lookup that

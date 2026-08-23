@@ -139,11 +139,11 @@ export const DATA_SOURCES: readonly DataSource[] = [
     url: 'https://www.discogs.com',
     terms:
       'Credits and release facts, fetched once for a Release you have already looked up. ' +
-      'Discogs’ API terms release the database content — credits, dates, track listings and ' +
-      'identifiers among them — as CC0, which asks for no attribution at all; this credit is a ' +
+      'Discogs’ API terms offer the database content — credits, dates, track listings and ' +
+      'identifiers among them — under CC0, which asks for no attribution at all; this credit is a ' +
       'courtesy, like the two above. Images are licensed separately and MinicovereD never asks ' +
-      'for them. No API key, and the anonymous limit of 25 requests a minute is kept to ' +
-      '(ADR-0013).',
+      'for them. No API key, and the anonymous limit of 25 requests a minute is kept to. ' +
+      'ADR-0013 records what was read, and how.',
   },
 ];
 

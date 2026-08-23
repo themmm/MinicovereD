@@ -136,6 +136,13 @@ interface CreditsField {
  * editable. They are carried through every edit by `parseCredits`, which is the
  * whole reason it takes the block it is replacing; six read-only inputs for
  * facts nobody can act on would be a worse form than one sentence.
+ *
+ * Carried, but not permanent, which is what Remove is for. MusicBrainz's link
+ * to Discogs is community-edited and a wrong one is a real failure — the same
+ * worry `discogsIdOf` refuses a master link over — and with no way out the
+ * facts of a mis-linked pressing would sit on the Release for good, because
+ * `withArrivedCredits` will not overwrite them either. Remove is the artwork
+ * field's own answer to the same problem, a few functions down.
  */
 function creditsField(present: Credits | undefined, onChange: (edit: ReleaseEdit) => void): CreditsField {
   const note = el('span', { class: 'field__note', text: noteFor(present) });
@@ -156,6 +163,7 @@ function creditsField(present: Credits | undefined, onChange: (edit: ReleaseEdit
           // Emptied of everything, including the facts a lookup never found:
           // the field goes away rather than staying behind as a block with
           // nothing in it, which is what every other absence looks like here.
+          remove.hidden = !hasCredits(credits);
           if (hasCredits(credits)) return { ...current, credits };
           const { credits: _emptied, ...rest } = current;
           return rest;
@@ -164,6 +172,23 @@ function creditsField(present: Credits | undefined, onChange: (edit: ReleaseEdit
     },
   });
   area.value = formatCredits(present?.people ?? []);
+
+  const remove = el('button', {
+    class: 'button',
+    text: 'Remove',
+    attrs: { type: 'button' },
+    on: {
+      click: () => {
+        area.value = '';
+        note.textContent = noteFor(undefined);
+        remove.hidden = true;
+        onChange(({ credits: _removed, ...rest }) => rest);
+      },
+    },
+  });
+  // Hidden when there is nothing to remove, exactly as the artwork field hides
+  // its own: a button that does nothing is worse than no button.
+  remove.hidden = !present;
 
   return {
     // A div holding its own label, not a label wrapping everything, which is
@@ -175,11 +200,13 @@ function creditsField(present: Credits | undefined, onChange: (edit: ReleaseEdit
       { class: 'field' },
       el('label', { class: 'field__label', text: 'Credits', attrs: { for: 'field-credits' } }),
       area,
+      el('div', { class: 'field-buttons' }, remove),
       note,
     ),
     show(credits) {
       area.value = formatCredits(credits.people);
       note.textContent = noteFor(credits);
+      remove.hidden = false;
     },
   };
 }

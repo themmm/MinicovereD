@@ -152,8 +152,10 @@ describe('credits arriving after the Release', () => {
 
   it('never overwrites what is already there, whoever put it there', () => {
     // The collector's own typing, or an earlier answer. Either way a second
-    // source replying two seconds late is not a reason to replace it — the rule
-    // `project-arrival.ts` states about a whole Project, at the scale of a field.
+    // source replying two seconds late is not a reason to replace it: the
+    // principle `project-arrival.ts` states about a whole Project — an edit
+    // beats a late arrival — one field wide, and a shade broader, because an
+    // earlier answer wins here too.
     const mine: Credits = { people: [{ role: 'Producer', name: 'Me' }], genres: [], styles: [] };
     const current = release({ credits: mine });
 
