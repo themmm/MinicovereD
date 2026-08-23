@@ -620,15 +620,19 @@ export function createWorkspace(): Workspace {
       { templateId: design.templateId, params: design.params, ...(design.pageCount === undefined ? {} : { pageCount: design.pageCount }) },
       (change) => {
         updateSelected((current) => {
-          // `null` is the collector asking to go back to deriving the count, and
-          // is what takes the key off the Design; `undefined` means this change
-          // was not about Pages at all.
-          const pageCount = change.pageCount === undefined ? current.pageCount : change.pageCount;
+          // `null` is the collector asking to go back to deriving the count;
+          // `undefined` means this change was not about Pages at all.
+          const asked = change.pageCount === undefined ? current.pageCount : change.pageCount;
+          // The old count is taken *out* before the rest is spread back in.
+          // Omitting the key from the new object is not enough — `...current`
+          // carries the old one, and the override would then be impossible to
+          // switch off once set. A browser check caught exactly that.
+          const { pageCount: _dropped, ...rest } = current;
           return {
-            ...current,
+            ...rest,
             templateId: change.templateId ?? current.templateId,
             params: change.params ?? current.params,
-            ...(pageCount === null || pageCount === undefined ? {} : { pageCount }),
+            ...(asked === null || asked === undefined ? {} : { pageCount: asked }),
           };
         });
       },

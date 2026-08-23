@@ -2,6 +2,7 @@ import { buildPdf } from '../render/pdf.ts';
 import { EXPORT_DPI, rasterizeSheet, sheetToPng } from '../render/raster.ts';
 import type { SheetLayout, SheetWarning } from '../render/sheet-renderer.ts';
 import { errorMessage } from '../errors.ts';
+import { describeDropped } from './part-band.ts';
 import { clear, el } from './dom.ts';
 
 /**
@@ -238,17 +239,16 @@ function describeWarning(warning: SheetWarning): string {
       // Named and quantified, unlike the band's version of the same warning: this
       // list has no Part beside it and covers every Release at once, so it says
       // which Release, what it lost and — when the paper is the limit — the two
-      // numbers the collector can act on.
-      const lost = warning.dropped
-        .map((role) => (role === 'credits' ? 'credits Page' : 'back cover'))
-        .join(' and the ');
+      // numbers the collector can act on. The names and the verb come from the
+      // band's own `describeDropped`, so the two sentences cannot disagree about
+      // what was lost or about how many things it was.
       const why =
         warning.maxPages < warning.wantedPages
           ? `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin folds ` +
             `${warning.maxPages} Pages, not ${warning.wantedPages}. A4 at 7.25 mm or less folds four; ` +
             `Letter never does.`
           : `it fills ${warning.pages} Pages, not ${warning.wantedPages}, and no Page may be blank.`;
-      return `${warning.releaseTitle}: the ${lost} is not on the Insert — ${why}`;
+      return `${warning.releaseTitle}: ${describeDropped(warning.dropped)} not on the Insert — ${why}`;
     }
   }
 }

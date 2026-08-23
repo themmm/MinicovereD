@@ -18,28 +18,60 @@ theirs. Structured, not prose: Discogs' own `notes` field is pressing annotation
 _Avoid_: Liner notes, Notes, Personnel, Mitwirkende
 
 **Part**:
-One of the three printable artifacts belonging to a Release: J-Card, Back Card, or Label.
+One of the two printable artifacts belonging to a Release: Insert or Label.
 _Avoid_: Seite, Element
 
-**J-Card**:
-The insert that slides into the front of the MiniDisc case. Consists of Front Panel, Spine, and Inner Flap.
-_Avoid_: Insert, Einlage, Front Insert
+**Insert**:
+The one folded piece that slides into the front of the MiniDisc case (ADR-0012). Flat, it is a
+single strip: Inner Flap, Spine, Front Panel, then as many Pages as the Release needs. Folded, it is
+a booklet that lives entirely inside the front cover — the back slot stays empty, and a shelved case
+therefore no longer shows its tracklist, which is the price of one piece instead of two.
+Accurate at two Pages or at eight, which is why it beat `Wrap` (nothing is wrapped), `Booklet`
+(untrue at two Pages, the common case) and `Leporello` (precise for a concertina, wrong for
+something that pages like a book).
+_Avoid_: Wrap, Booklet, Leporello, Einlage, J-Card
+
+**Page**:
+One face of the Insert, 65 mm wide but for the first. **Page 1 is the Front Panel** — the cover the
+case window shows — and the Pages after it carry the tracklist, the credits and, on the odd Page
+out, the artwork again as a back cover. The count is always **even**, because single-sided printing
+makes every leaf two Pages thick (ADR-0012), and it is derived from what the Release has to say
+with an override per Design. Four is the most one A4 Sheet holds; Letter holds two.
+_Avoid_: Panel, Leaf, Side, Seite
 
 **Front Panel**:
-The 68 mm face of the J-Card visible through the case front.
+The 68 mm face of the Insert visible through the case front, and **Page 1**.
 _Avoid_: Cover, Vorderseite
 
 **Spine**:
-The 5.5 mm edge of the J-Card visible when the case is shelved. Carries artist, album, and the logo. Everything on it reads **bottom-to-top**, so a case standing on a shelf is read by tilting the head to the right; the logo turns with the type rather than sitting upright against it.
+The 5.5 mm edge of the Insert visible when the case is shelved. Carries artist, album, and the logo. Everything on it reads **bottom-to-top**, so a case standing on a shelf is read by tilting the head to the right; the logo turns with the type rather than sitting upright against it.
+Not to be confused with the **spine fold** between two Pages, which is the booklet's hinge; see Fold.
 _Avoid_: Edge
 
-**Back Card**:
-The separate card that slides into the back of the MiniDisc case. Carries the tracklist.
-_Avoid_: Back Insert, Rückseite, backline card
-
 **Inner Flap**:
-The 14 mm end of the J-Card folded inside the case to hold it in place.
+The 14 mm end of the Insert folded inside the case to hold it in place.
 _Avoid_: Flap
+
+**Fold**:
+A crease across the Insert, and there are three kinds because the collector has to fold two of them
+in opposite directions (ADR-0012). A **case** fold wraps the case — the Spine round its edge and the
+Inner Flap in behind, which are the J-Card's own two folds unchanged. A **fore-edge** fold doubles a
+leaf back on itself, blank against blank, away from the printed side. The **spine** fold is the
+booklet's hinge, printed against printed, and is the one fold that goes the other way: open the
+cover and the two Pages either side of it face you as a spread. Marked with three different dash
+patterns on the printed Sheet, because that is the only instruction a collector gets.
+_Avoid_: Crease, Score, Falz
+
+**J-Card** _(retired, v1)_:
+What the Insert replaced: a three-panel card — Front Panel, Spine, Inner Flap — that slid into the
+front of the case (ADR-0005, superseded by ADR-0012). Kept here because six ADRs and the v1 spec
+name it and a reader who meets it needs the glossary to say what became of it. Its three panels
+survive as sections of the Insert; its measurements are the Insert's first four.
+
+**Back Card** _(retired, v1)_:
+What the Insert absorbed: a separate card that slid into the back of the case and carried the
+tracklist (ADR-0005, superseded by ADR-0012). The tracklist is now a Page inside the booklet, and
+the case's back slot stays empty.
 
 **Label**:
 The sticker applied to the top of the MiniDisc cartridge. Rectangular; one corner may be cut diagonally to clear the cartridge's own cut corner, or left square to cover it. The notch is a choice, not part of the definition.
@@ -68,9 +100,12 @@ A named visual scheme that determines the layout, typography, and color logic of
 _Avoid_: Theme, Stil, Design
 
 **Design**:
-A Release together with the choices that turn it into Parts: Template and its parameters. The unit
+A Release together with the choices that turn it into Parts: Template, its parameters, and how many
+Pages the Insert folds into when the collector overrode what the content asked for. The unit
 the Queue holds and a project file carries. A Release is what the album *is*; a Design is what this
-collector decided to print about this record. How big it is cut is not part of it; see Measurements.
+collector decided to print about this record. How big it is cut is not part of it; see Measurements —
+though the Page count is the one thing here that changes how much paper a Part takes, which is why it
+is a Design and not a Design choice: it cannot carry forward to a record whose content is different.
 _Avoid_: Project, Layout, Entwurf
 
 **Design choice**:
@@ -83,9 +118,11 @@ _Avoid_: Style, Preset, Theme
 **Measurements**:
 The collector's hardware in millimetres: how big each Part is cut, because that is how big their
 cartridges are. Set once, true of every Release, and so held by the app rather than by any Design —
-which is the split the whole word exists for. The ten fields inside are the **Part dimensions**, the
-J-Card's and the Back Card's and the Label's; Measurements is the thing that holds them, that a
-collector sets, and that travels. Paper size and printable margin are measurements by the same
+which is the split the whole word exists for. The nine fields inside are the **Part dimensions**, the
+Insert's five and the Label's four; Measurements is the thing that holds them, that a
+collector sets, and that travels. A Page *count* is not one of them: every field here is a length,
+which is what the name is for, and how many Pages a strip folds into is a fact about one record —
+so it lives on the Design instead. Paper size and printable margin are measurements by the same
 argument and have always been app-level; they stay in the Sheet configuration beside the choice of
 which Parts to print. Measurements **travel in a project file and are applied when one is opened**,
 the way paper and margin always have; an import says so when any of them changed.
@@ -131,9 +168,13 @@ cutting guides — beside Export. A print check, not a preview: the Parts are th
 _Avoid_: Preview, Vorschau, Sheet preview
 
 **Assembled / Flat**:
-The J-Card's two representations. _Assembled_ is how it sits in the case — Front Panel face-on, the
-5.5 mm Spine beside it, the Inner Flap folded behind — and is the default. _Flat_ is the 87.5 mm strip
-that actually prints. Orthographic in both cases; neither is a mockup of a case (ADR-0008 rule 3).
+The Insert's two representations. _Assembled_ is the closed booklet as it sits in the case — Front
+Panel face-on, the 5.5 mm Spine beside it, the Inner Flap folded in behind and every Page after the
+first folded behind that — and is the default. It is 73.5 mm wide whatever the Page count, which is
+what keeps ADR-0010's one shared scale working. _Flat_ is the whole strip that actually prints:
+152.5 mm at two Pages, 282.5 at four, which is wider than most viewports, so the band scrolls
+sideways and the page does not. Orthographic in both cases; neither is a mockup of a case
+(ADR-0008 rule 3).
 _Avoid_: Folded, 3D, Mockup, Unfolded
 
 **Register**:

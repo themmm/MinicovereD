@@ -1,7 +1,7 @@
 import { DEFAULT_PART_DIMENSIONS, insertSize, LABEL_PRESETS, PART_KINDS } from '../domain/parts.ts';
 import type { PartDimensions, PartKind } from '../domain/parts.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
-import type { PartPlacement, SheetLayout, SheetWarning } from '../render/layout.ts';
+import type { PageRole, PartPlacement, SheetLayout, SheetWarning } from '../render/layout.ts';
 import { partSheet } from '../render/part-sheet.ts';
 import type { InsertView } from '../render/part-sheet.ts';
 import { rasterizeSheet } from '../render/raster.ts';
@@ -146,18 +146,32 @@ function describeWarning(warning: SheetWarning): string {
  * wording stays here (layout.ts).
  */
 function describeShortfall(warning: Extract<SheetWarning, { kind: 'insert-pages-short' }>): string {
-  const lost = warning.dropped.map((role) => (role === 'credits' ? 'credits' : 'back cover')).join(' and the ');
+  const lost = describeDropped(warning.dropped);
   if (warning.maxPages < warning.wantedPages) {
     return (
       `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin has room for ` +
-      `${warning.maxPages} Pages, not ${warning.wantedPages}, so the ${lost} is not printed. ` +
+      `${warning.maxPages} Pages, not ${warning.wantedPages}, so ${lost} not printed. ` +
       `${LOWER_THE_MARGIN}`
     );
   }
   return (
-    `This Release fills ${warning.pages} Pages, not ${warning.wantedPages}, so the ${lost} is not ` +
+    `This Release fills ${warning.pages} Pages, not ${warning.wantedPages}, so ${lost} not ` +
     `printed. An Insert folds an even number of Pages and none of them may be blank.`
   );
+}
+
+/**
+ * What was dropped, with its own article and its own verb.
+ *
+ * The verb comes along because two things dropped needs "are" and one needs
+ * "is", and a sentence built from a list has to agree with the list it was
+ * built from — "the credits Page and the back cover is not printed" is the
+ * sentence this exists to stop. Shared with the Sheet check, which prints the
+ * same two names in a sentence of its own shape.
+ */
+export function describeDropped(dropped: readonly PageRole[]): string {
+  const named = dropped.map((role) => (role === 'credits' ? 'the credits Page' : 'the back cover'));
+  return `${named.join(' and ')} ${named.length > 1 ? 'are' : 'is'}`;
 }
 
 /**
