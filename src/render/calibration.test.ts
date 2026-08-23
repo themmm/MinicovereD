@@ -198,6 +198,26 @@ describe('the calibration sheet — the page', () => {
     }
   });
 
+  it('never turns a figure to make it fit, which is what keeps this page unchanged', () => {
+    // 210 − 2 × 62 leaves 86 mm of width and the J-Card is 87.5 across. Lying
+    // down it is 79 × 87.5 and would fit easily, and the packer can do that
+    // now (ADR-0014) — but this page draws its own outlines in paper
+    // coordinates from the packed box, so a turned box would print a J-Card
+    // lying down inside a rectangle standing up.
+    //
+    // The other half of ADR-0014, the column under a figure, is off here for
+    // the same reason `sortByHeight` is: this page is meant to be read down and
+    // across, and a column reads after the figure to its right. Nothing on it
+    // is short enough to open one at the sizes it ships with anyway.
+    const narrow = renderCalibrationSheet({ paper: A4, marginMm: 62 }, DEFAULT_PART_DIMENSIONS, measurer);
+
+    expect(narrow.omitted).toContain('J-Card');
+    expect(narrow.figures.some((figure) => figure.label === 'J-Card')).toBe(false);
+    // The Labels are narrow enough to print standing up, so this is a page that
+    // still works — it is the J-Card alone that is refused.
+    expect(narrow.figures.map((figure) => figure.label)).toContain('Label — Classic');
+  });
+
   it('names what it could not print at 1:1 rather than shrinking it', () => {
     // A margin this wide leaves under 100 mm of width: the test square would
     // have to be scaled, and a scaled ruler is worse than no ruler.
