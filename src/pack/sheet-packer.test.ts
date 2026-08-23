@@ -275,6 +275,28 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     ]);
   });
 
+  it('sorts a turned rectangle by the height it will actually be placed at', () => {
+    // The Insert is 79 mm tall as it is handed over and 282.5 mm tall as it is
+    // placed. Sorted by the first it would go last, find no shelf tall enough
+    // to take it, and open a Sheet of its own with the two blocks left behind
+    // on the first.
+    const packed = packParts(
+      [
+        shape('the Insert of A', INSERT_4PAGE),
+        shape('block 0', { width: 60, height: 100 }),
+        shape('block 1', { width: 60, height: 100 }),
+      ],
+      { ...TURNING, columns: true },
+    );
+
+    expect(packed.sheets).toHaveLength(1);
+    expect(allPlacements(packed.sheets).map(({ item }) => item.label)).toEqual([
+      'the Insert of A',
+      'block 0',
+      'block 1',
+    ]);
+  });
+
   it('does not turn anything unless it is asked to', () => {
     // The default, and what the calibration sheet gets.
     expect(() => packParts([shape('the Insert of Discovery', INSERT_4PAGE)], A4_CONFIG)).toThrow(
@@ -349,6 +371,19 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     ).toThrow(/Lower the margin to 7\.25 mm/);
   });
 
+  it('names a margin that really does leave room, rounding down to get there', () => {
+    // 297 − 282.55 halves to 7.225, and a printable margin of 7.23 mm leaves
+    // 282.54. Rounded the other way the sentence would name a margin that
+    // refuses the Part all over again.
+    const strip = shape('a long strip', { width: 282.55, height: 79 });
+
+    expect(() => packParts([strip], { ...TURNING, marginMm: 10 })).toThrow(
+      /Lower the margin to 7\.22 mm/,
+    );
+    expect(packParts([strip], { ...TURNING, marginMm: 7.22 }).sheets).toHaveLength(1);
+    expect(() => packParts([strip], { ...TURNING, marginMm: 7.23 })).toThrow(/does not fit/);
+  });
+
   it('says plainly when no margin would help at all', () => {
     expect(() => packParts([shape('a poster', { width: 400, height: 400 })], TURNING)).toThrow(
       /No margin makes room for it: A4 is too small\./,
@@ -420,6 +455,20 @@ describe('SheetPacker — a column under a rectangle', () => {
 
     // 5 + 60 for the brick above, then 10 of caption and the 4 mm gap.
     expect(allPlacements(sheets).at(-1)?.rect.y).toBe(79);
+  });
+
+  it('keeps caption room under the last rectangle in a column as well as the first', () => {
+    // 200 mm of shelf: 90 for the brick on the row, then 10 of caption, a 4 mm
+    // gap, 90 more and its own 10 of caption — 204. So one brick to a column,
+    // and the second opens a Sheet of its own. Without that last 10 it would
+    // slide in and print its caption over whatever the shelf below holds.
+    const packed = packParts(
+      [tower, shape('brick 0', { width: 96, height: 90 }), shape('brick 1', { width: 96, height: 90 })],
+      { ...A4_CONFIG, columns: true, captionRoomMm: 10 },
+    );
+
+    expect(packed.sheets).toHaveLength(2);
+    expect(packed.sheets[1]?.placements.map(({ item }) => item.label)).toEqual(['brick 1']);
   });
 
   it('never lets a column reach past where the Sheet says its content ends', () => {

@@ -353,6 +353,35 @@ describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
     expect(folds.every((fold) => fold.points[1]?.y === 79)).toBe(true);
   });
 
+  it('fills the room under a Part once the Label is small enough to sit there', () => {
+    // The other half of ADR-0014, and the one a collector can reach today. A
+    // Label nudged to 30 × 35 leaves 40 mm under it on the J-Card's 79 mm row,
+    // and five Releases of J-Cards and Labels at a 10 mm printable margin come
+    // off one Sheet instead of two.
+    const nudged: PartDimensions = {
+      ...DEFAULT_PART_DIMENSIONS,
+      label: { ...DEFAULT_PART_DIMENSIONS.label, width: 30, height: 35 },
+    };
+    const five = Array.from({ length: 5 }, (_, index) =>
+      aDesign(aRelease({ id: `r${index}`, album: `Album ${index}` })),
+    );
+
+    const sheets = renderSheetsAt(
+      five,
+      { paper: A4, marginMm: 10, parts: ['jcard', 'label'] },
+      nudged,
+    );
+
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]?.placements).toHaveLength(10);
+
+    // Two Labels sharing a left edge, one under the other: a column, not a row.
+    const labels = (sheets[0]?.placements ?? []).filter((placement) => placement.part === 'label');
+    const columns = new Map<number, number>();
+    for (const label of labels) columns.set(label.bounds.x, (columns.get(label.bounds.x) ?? 0) + 1);
+    expect(Math.max(...columns.values())).toBeGreaterThan(1);
+  });
+
   it('still refuses a Part that no turn can save, and says what to do about it', () => {
     // 500 mm of Front Panel is longer than A4 either way round.
     const enormous: PartDimensions = {
