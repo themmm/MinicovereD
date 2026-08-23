@@ -5,7 +5,7 @@ import { DEFAULT_PART_DIMENSIONS, partSize } from '../domain/parts.ts';
 import type { PartKind } from '../domain/parts.ts';
 import { rectsOverlap } from '../domain/units.ts';
 import type { Size } from '../domain/units.ts';
-import { DEFAULT_PART_GAP_MM, packParts } from './sheet-packer.ts';
+import { DEFAULT_PART_GAP_MM, fitsPaper, packParts } from './sheet-packer.ts';
 import type { PackConfig, PackItem, PackedSheet } from './sheet-packer.ts';
 
 /** What the renderer hangs off a packed rectangle: which Release, which Part. */
@@ -255,6 +255,76 @@ const insertsAndLabels = (): Array<PackItem<string>> => [
   shape('the Insert of B', INSERT_4PAGE),
   ...Array.from({ length: 5 }, (_, index) => shape(`Label ${index}`, LABEL)),
 ];
+
+describe('SheetPacker — the one fit rule, asked directly', () => {
+  /*
+   * `fitsPaper` is exported because two things have to agree about it: this
+   * packer, and whatever sized the rectangle. An Insert's Page count is chosen
+   * against it (`maxInsertPages`), so a rule that disagreed with the placement
+   * would be a strip the packer refuses — and refusing a Part blanks the whole
+   * preview.
+   *
+   * Asked here directly rather than only through `packParts`, because no caller
+   * in the app combines a caption room with a turn: the calibration sheet
+   * reserves captions and never turns, and the renderer turns and reserves
+   * nothing. The rule is general even where the callers are not, and the untested
+   * half of it is exactly where a wrong answer would hide.
+   */
+  const A4_AT_5 = { paper: A4, marginMm: 5 } as const;
+
+  it('takes a rectangle that fits standing up', () => {
+    expect(fitsPaper({ width: 200, height: 287 }, A4_AT_5)).toBe(true);
+    expect(fitsPaper({ width: 200.1, height: 287 }, A4_AT_5)).toBe(false);
+    expect(fitsPaper({ width: 200, height: 287.1 }, A4_AT_5)).toBe(false);
+  });
+
+  it('turns only when asked, and only when turning helps', () => {
+    const overlong = { width: 282.5, height: 79 };
+
+    expect(fitsPaper(overlong, A4_AT_5)).toBe(false);
+    expect(fitsPaper(overlong, { ...A4_AT_5, turn: 'never' })).toBe(false);
+    expect(fitsPaper(overlong, { ...A4_AT_5, turn: 'to-fit' })).toBe(true);
+    // Longer than the paper either way round: no policy rescues it.
+    expect(fitsPaper({ width: 400, height: 79 }, { ...A4_AT_5, turn: 'to-fit' })).toBe(false);
+  });
+
+  it('counts the caption room whichever way the rectangle goes', () => {
+    // Standing up, the caption comes off the height; turned, off the *width* the
+    // rectangle used to have — because that is what the height becomes. Both
+    // halves matter even though no caller in this app reaches the second, and
+    // both are one `+ captionRoomMm` away from being silently wrong.
+    const captionRoomMm = 8.8;
+
+    expect(fitsPaper({ width: 50, height: 287 }, A4_AT_5)).toBe(true);
+    expect(fitsPaper({ width: 50, height: 287 }, { ...A4_AT_5, captionRoomMm })).toBe(false);
+    expect(fitsPaper({ width: 50, height: 287 - captionRoomMm }, { ...A4_AT_5, captionRoomMm })).toBe(true);
+
+    // Turned: 287 × 50 becomes a 50 × 287 box, so the same caption room bites.
+    const turning = { ...A4_AT_5, turn: 'to-fit' } as const;
+    expect(fitsPaper({ width: 287, height: 50 }, turning)).toBe(true);
+    expect(fitsPaper({ width: 287, height: 50 }, { ...turning, captionRoomMm })).toBe(false);
+    expect(fitsPaper({ width: 287 - captionRoomMm, height: 50 }, { ...turning, captionRoomMm })).toBe(true);
+  });
+
+  it('agrees with the packer it is part of, which is the whole point of sharing it', () => {
+    // The property `maxInsertPages` leans on: anything this rule accepts, the
+    // packer places, and anything it refuses, the packer refuses.
+    for (const size of [
+      { width: 282.5, height: 79 },
+      { width: 152.5, height: 79 },
+      { width: 201, height: 79 },
+      { width: 79, height: 288 },
+    ]) {
+      const config = { ...A4_AT_5, gapMm: 3.5, turn: 'to-fit' } as const;
+      const item: Item = { ref: { releaseId: 'r1', part: 'insert' }, label: 'a strip', size };
+      const placed = packParts([item], { ...config, oversize: 'omit' });
+
+      expect(placed.omitted.length === 0, `${size.width} × ${size.height}`).toBe(
+        fitsPaper(size, config),
+      );
+    }
+  });
+});
 
 describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
   it('is measured against the sizes the app and the ADRs actually use', () => {

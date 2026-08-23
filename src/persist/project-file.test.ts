@@ -229,6 +229,26 @@ describe('reading a project file back', () => {
     expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(false);
   });
 
+  it('carries a Page count the collector set through a whole round trip', () => {
+    // Written only when set, so a project whose Inserts follow their content
+    // reads the same as one written before the override existed — and read back
+    // when it is there, or reopening the file would quietly re-derive a count the
+    // collector had overruled.
+    const forced: ReleaseDesign = { ...design, pageCount: 2 };
+    const { designs } = roundTrip([forced, design2]);
+
+    expect(designs[0]?.pageCount).toBe(2);
+    expect(designs[1]?.pageCount).toBeUndefined();
+  });
+
+  it('writes no Page count for a Design that never overrode one', () => {
+    // The absence is the ordinary case and has to stay absent in the file: a
+    // written-out 2 would freeze today's derived answer into a document that
+    // should still follow its content when it is next opened.
+    expect(JSON.parse(write())).toMatchObject({ designs: [{}] });
+    expect(write()).not.toContain('pageCount');
+  });
+
   it('restores the Sheet configuration, paper and all', () => {
     const { sheet: restored } = roundTrip();
 
