@@ -669,18 +669,27 @@ describe('SheetRenderer — how many Pages, and what is on them (ADR-0012)', () 
     expect(short.dropped).toEqual(['artwork']);
   });
 
-  it('reports the shortfall once per Release rather than once per Sheet', () => {
+  it('reports the shortfall once per Release, and all on the first Sheet', () => {
+    // How many, and *where*. Counting across every Sheet cannot tell the
+    // difference between "all on the first" and "all on the last" or "one copy on
+    // each" — and where they land matters: a Release's Insert is on exactly one
+    // Sheet, the shortfall is about the strip rather than the paper it happened to
+    // land on, and the Sheet check renders each Sheet's warnings under that Sheet.
+    // Put them anywhere else and a collector reads a Release's lost-Page sentence
+    // under a Sheet its Insert is not on.
     const five = Array.from({ length: 5 }, (_, index) =>
       aDesign(withCredits(aRelease({ id: `r${index}`, album: `Album ${index}` }))),
     );
     const sheets = renderSheetsAt(five, { paper: LETTER, marginMm: 5, parts: PART_KINDS });
+    const shortfallsOn = (sheet: SheetLayout | undefined) =>
+      (sheet?.warnings ?? []).filter((warning) => warning.kind === 'insert-pages-short');
 
-    expect(sheets.length).toBeGreaterThan(1);
-    const shortfalls = sheets
-      .flatMap((sheet) => sheet.warnings ?? [])
-      .filter((warning) => warning.kind === 'insert-pages-short');
-    expect(shortfalls).toHaveLength(5);
-    expect(new Set(shortfalls.map((warning) => warning.releaseId)).size).toBe(5);
+    expect(sheets.length, 'more than one Sheet, or first and last coincide').toBeGreaterThan(1);
+    expect(shortfallsOn(sheets[0])).toHaveLength(5);
+    expect(new Set(shortfallsOn(sheets[0]).map((warning) => warning.releaseId)).size).toBe(5);
+    for (const [index, sheet] of sheets.slice(1).entries()) {
+      expect(shortfallsOn(sheet), `Sheet ${index + 2} carries none`).toEqual([]);
+    }
   });
 
   it('reports it even when the job does not print the Insert at all', () => {
