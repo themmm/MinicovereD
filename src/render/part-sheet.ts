@@ -1,5 +1,5 @@
 import type { PaperSize } from '../domain/paper.ts';
-import type { Rect } from '../domain/units.ts';
+import type { Rect, Size } from '../domain/units.ts';
 import type { PartPlacement, SheetLayout } from './layout.ts';
 
 /**
@@ -36,6 +36,18 @@ export type JCardView = 'assembled' | 'flat';
  */
 const negate = (value: number): number => (value === 0 ? 0 : -value);
 
+/**
+ * The Part's own size, standing up — its packed box with any turn undone.
+ *
+ * A Part packed on its side (ADR-0014) is still a Part of the size it was
+ * designed at, and everything on this side of the app is about the Part: the
+ * specimen, its caption, and the `--w` and `--h` the band hands to CSS.
+ */
+function uprightSize(placement: PartPlacement): Size {
+  const { width, height } = placement.bounds;
+  return placement.turned ? { width: height, height: width } : { width, height };
+}
+
 /** The union of `rects`, or undefined if there are none. */
 function union(rects: readonly Rect[]): Rect | undefined {
   const [first, ...rest] = rects;
@@ -62,7 +74,7 @@ function union(rects: readonly Rect[]): Rect | undefined {
  * reason about, which is every Part except the J-Card.
  */
 export function visibleBox(placement: PartPlacement, view: JCardView): Rect {
-  const whole: Rect = { x: 0, y: 0, width: placement.bounds.width, height: placement.bounds.height };
+  const whole: Rect = { x: 0, y: 0, ...uprightSize(placement) };
   if (view === 'flat' || !placement.panels) return whole;
 
   const shown = placement.panels.filter((panel) => panel.panel !== 'inner-flap');
@@ -95,7 +107,12 @@ export function partSheet(
     placements: [
       {
         ...placement,
-        bounds: { ...placement.bounds, x: negate(box.x), y: negate(box.y) },
+        // A Part that was *packed* turned is still designed standing up. The
+        // specimen and the 1:1 view are the design surface (ADR-0010), and the
+        // collector never chose the turn — it is an answer to the size of the
+        // paper, and it belongs to the Sheet check where the paper is.
+        turned: false,
+        bounds: { x: negate(box.x), y: negate(box.y), width: box.width, height: box.height },
       },
     ],
   };

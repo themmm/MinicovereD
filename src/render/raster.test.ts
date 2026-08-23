@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { A4 } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS } from '../domain/parts.ts';
 import { renderCalibrationSheet } from './calibration.ts';
-import type { SheetLayout } from './layout.ts';
+import type { PartPlacement, SheetLayout } from './layout.ts';
 import { drawSheet, EXPORT_DPI } from './raster.ts';
 import type { Canvas2D } from './raster.ts';
 
@@ -61,6 +61,7 @@ const HUNDRED_MM_PART: SheetLayout = {
       releaseId: 'r1',
       part: 'back-card',
       bounds: { x: 0, y: 0, width: 100, height: 100 },
+      turned: false,
       ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 100, height: 100 }, color: '#fff' }],
       guides: [],
     },
@@ -145,6 +146,141 @@ describe('rasterising a Sheet', () => {
     const fillAt = context.calls.map((call) => call.method).lastIndexOf('fillRect');
     expect(clipAt, 'the Part is clipped').toBeGreaterThan(-1);
     expect(fillAt, 'content is drawn inside the clip').toBeGreaterThan(clipAt);
+  });
+});
+
+/**
+ * Where the ink actually landed, in device pixels.
+ *
+ * The recording context above keeps the transform calls but not the transform,
+ * so this replays them: `save`/`restore` push and pop, `translate` and `rotate`
+ * compose, and the last `fillRect` is mapped through whatever was in force when
+ * it was issued. Asserting the box on the page rather than the calls that
+ * produced it is what makes a turn in the wrong direction fail — it draws the
+ * same two calls with the same two numbers, off the paper.
+ */
+function lastFillOnPage(calls: readonly Call[]): { x: number; y: number; width: number; height: number } {
+  type Matrix = readonly [number, number, number, number, number, number];
+  const identity: Matrix = [1, 0, 0, 1, 0, 0];
+  let m: Matrix = identity;
+  const stack: Matrix[] = [];
+  let box = { x: 0, y: 0, width: 0, height: 0 };
+
+  for (const call of calls) {
+    const [a, b, c, d, e, f] = m;
+    if (call.method === 'save') stack.push(m);
+    else if (call.method === 'restore') m = stack.pop() ?? identity;
+    else if (call.method === 'translate') {
+      const [tx = 0, ty = 0] = call.args;
+      m = [a, b, c, d, a * tx + c * ty + e, b * tx + d * ty + f];
+    } else if (call.method === 'rotate') {
+      const [angle = 0] = call.args;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      m = [a * cos + c * sin, b * cos + d * sin, c * cos - a * sin, d * cos - b * sin, e, f];
+    } else if (call.method === 'fillRect') {
+      const [x = 0, y = 0, width = 0, height = 0] = call.args;
+      const corners = [
+        [x, y],
+        [x + width, y],
+        [x + width, y + height],
+        [x, y + height],
+      ].map(([px = 0, py = 0]) => [a * px + c * py + e, b * px + d * py + f] as const);
+      const xs = corners.map(([px]) => px);
+      const ys = corners.map(([, py]) => py);
+      box = {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        width: Math.max(...xs) - Math.min(...xs),
+        height: Math.max(...ys) - Math.min(...ys),
+      };
+    }
+  }
+  return box;
+}
+
+describe('rasterising a Part packed on its side (ADR-0014)', () => {
+  /** An Insert-shaped Part: 282.5 × 79 mm of drawing inside a 79 × 282.5 box. */
+  const turnedPart: SheetLayout = {
+    paper: A4,
+    marginMm: 5,
+    placements: [
+      {
+        releaseId: 'r1',
+        part: 'jcard',
+        bounds: { x: 5, y: 5, width: 79, height: 282.5 },
+        turned: true,
+        ops: [{ op: 'fill-rect', rect: { x: 0, y: 0, width: 282.5, height: 79 }, color: '#123456' }],
+        guides: [],
+      },
+    ],
+  };
+
+  const px = (mm: number): number => (mm * EXPORT_DPI) / 25.4;
+
+  /** The one placement above, with something about it changed. */
+  const variant = (changes: Partial<PartPlacement>): SheetLayout => {
+    const [placement] = turnedPart.placements;
+    if (!placement) throw new Error('fixture has no placement');
+    return { ...turnedPart, placements: [{ ...placement, ...changes }] };
+  };
+
+  it('lands the Part inside the box it was packed into', () => {
+    const context = recordingContext();
+
+    drawSheet(context, turnedPart, EXPORT_DPI);
+
+    const drawn = lastFillOnPage(context.calls);
+    expect(drawn.x).toBeCloseTo(px(5), 6);
+    expect(drawn.y).toBeCloseTo(px(5), 6);
+    // 282.5 mm of drawing, 79 mm across the page: the Part is on its side.
+    expect(drawn.width).toBeCloseTo(px(79), 6);
+    expect(drawn.height).toBeCloseTo(px(282.5), 6);
+  });
+
+  it('turns it clockwise, so its left edge is the one at the top of the Sheet', () => {
+    const context = recordingContext();
+
+    drawSheet(context, turnedPart, EXPORT_DPI);
+
+    const rotations = context.calls.filter((call) => call.method === 'rotate');
+    expect(rotations).toHaveLength(1);
+    expect(rotations[0]?.args[0]).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it('leaves a Part that was not turned alone', () => {
+    const context = recordingContext();
+
+    drawSheet(
+      context,
+      variant({ turned: false, bounds: { x: 5, y: 5, width: 282.5, height: 79 } }),
+      EXPORT_DPI,
+    );
+
+    expect(context.calls.filter((call) => call.method === 'rotate')).toHaveLength(0);
+    const drawn = lastFillOnPage(context.calls);
+    expect(drawn.width).toBeCloseTo(px(282.5), 6);
+    expect(drawn.height).toBeCloseTo(px(79), 6);
+  });
+
+  it('turns the cut outline with the drawing, so the clip still fits the Part', () => {
+    const context = recordingContext();
+    const outline = [
+      { x: 0, y: 0 },
+      { x: 282.5, y: 0 },
+      { x: 282.5, y: 79 },
+      { x: 0, y: 79 },
+    ];
+
+    drawSheet(context, variant({ guides: [{ kind: 'cut', points: outline, closed: true }] }), EXPORT_DPI);
+
+    // The clip is traced before the rotation is undone, so the outline's own
+    // 282.5 mm run comes out as the tall side of the box on the page.
+    const clipAt = context.calls.findIndex((call) => call.method === 'clip');
+    expect(clipAt).toBeGreaterThan(-1);
+    const rotateAt = context.calls.findIndex((call) => call.method === 'rotate');
+    expect(rotateAt).toBeGreaterThan(-1);
+    expect(rotateAt).toBeLessThan(clipAt);
   });
 });
 

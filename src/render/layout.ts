@@ -97,8 +97,26 @@ export interface PanelBounds {
 export interface PartPlacement {
   readonly releaseId: string;
   readonly part: PartKind;
-  /** Where the Part sits on the Sheet, from the paper's top-left corner. */
+  /**
+   * Where the Part sits on the Sheet, from the paper's top-left corner. A
+   * turned Part's box is already swapped — 79 × 282.5 rather than 282.5 × 79 —
+   * because this is what says how much paper the Part covers.
+   */
   readonly bounds: Rect;
+  /**
+   * Packed on its side, 90° clockwise, because the Part is longer than the
+   * paper is wide (ADR-0014: the Part turns, not the Sheet).
+   *
+   * Only `bounds` knows about it. `ops`, `guides` and `panels` stay in the
+   * Part's own upright coordinates and are turned with it by whatever draws
+   * them, which is what keeps a Template from ever having to ask which way up
+   * its Part was packed — and what lets the design surface show the same Part
+   * standing up (ADR-0010).
+   *
+   * Stated rather than optional: a Part drawn upright inside a turned box is
+   * off the paper, and that is not a mistake worth making silently.
+   */
+  readonly turned: boolean;
   /** Drawing instructions in Part-local coordinates (origin = `bounds` top-left). */
   readonly ops: readonly DrawOp[];
   /** Cut and fold guides in Part-local coordinates. */

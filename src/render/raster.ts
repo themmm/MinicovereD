@@ -212,6 +212,20 @@ function drawPlacement(surface: Surface, placement: PartPlacement): void {
   context.save();
   context.translate(placement.bounds.x * scale, placement.bounds.y * scale);
 
+  // The whole Part turns at once (ADR-0014), and this is the only place that
+  // has to know: the drawing, the cut-outline clip and the guides below are all
+  // in Part-local coordinates under this one transform, so one rotation here
+  // turns the three of them together and none of them can be turned by half.
+  //
+  // Clockwise, so the Part's left edge is the one at the top of the Sheet — a
+  // strip that reads left to right standing up reads top to bottom lying down.
+  // The translate is by the box's width, which for a turned Part is its own
+  // height: that is what brings the rotated Part back onto its box.
+  if (placement.turned) {
+    context.translate(placement.bounds.width * scale, 0);
+    context.rotate(Math.PI / 2);
+  }
+
   // Nothing a Template draws may leave the Part: an overlong tracklist has to
   // spill inside the Back Card, not onto the Sheet around it.
   const outline = placement.guides.find((guide) => guide.kind === 'cut');

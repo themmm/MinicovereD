@@ -298,6 +298,108 @@ describe('SheetRenderer — Release content', () => {
   });
 });
 
+describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
+  /**
+   * A J-Card the width of a Sheet. Nothing in the app draws one — the Insert
+   * that will is ticket 08 — but a project file can: `readDimensions` clamps
+   * each measurement to 1–300 mm and nothing narrows a J-Card to the paper, so
+   * this is a Queue a collector can already open.
+   */
+  const WIDE_JCARD: PartDimensions = {
+    ...DEFAULT_PART_DIMENSIONS,
+    jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, frontPanelWidth: 250 },
+  };
+
+  it('leaves every Part standing up at the measurements the app ships with', () => {
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET);
+
+    expect(sheet?.placements.map((placement) => placement.turned)).toEqual([false, false, false]);
+  });
+
+  it('turns a J-Card too wide for the paper rather than refusing it', () => {
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET, WIDE_JCARD);
+    if (!sheet) throw new Error('no sheet rendered');
+
+    const jcard = sheet.placements.find((placement) => placement.part === 'jcard');
+    // 14 + 5.5 + 250 is 269.5 across, against 200 mm of printable width; on its
+    // side it is 79 × 269.5 and clears the 287 mm bed.
+    expect(jcard?.turned).toBe(true);
+    expect(jcard?.bounds.width).toBe(79);
+    expect(jcard?.bounds.height).toBe(269.5);
+
+    // And the Parts that fit stay as they are, on the same Sheet.
+    for (const part of ['back-card', 'label'] as const) {
+      expect(sheet.placements.find((placement) => placement.part === part)?.turned).toBe(false);
+    }
+  });
+
+  it('keeps the drawing, the cut outline and the folds in the Part’s own upright millimetres', () => {
+    const [sheet] = renderSheetsAt([aDesign()], A4_SHEET, WIDE_JCARD);
+    const jcard = sheet?.placements.find((placement) => placement.part === 'jcard');
+    if (!jcard) throw new Error('no J-Card');
+
+    // The turn belongs to the Sheet. A Template is never asked which way up its
+    // Part was packed, so everything here reads 269.5 across and 79 down — the
+    // opposite way round from the bounds above.
+    const cut = jcard.guides.find((guide) => guide.kind === 'cut');
+    expect(Math.max(...(cut?.points ?? []).map((point) => point.x))).toBe(269.5);
+    expect(Math.max(...(cut?.points ?? []).map((point) => point.y))).toBe(79);
+
+    const frontPanel = jcard.panels?.find((panel) => panel.panel === 'front-panel');
+    expect(frontPanel?.rect).toEqual({ x: 19.5, y: 0, width: 250, height: 79 });
+
+    const folds = jcard.guides.filter((guide) => guide.kind === 'fold');
+    expect(folds.map((fold) => fold.points[0]?.x)).toEqual([14, 19.5]);
+    expect(folds.every((fold) => fold.points[1]?.y === 79)).toBe(true);
+  });
+
+  it('fills the room under a Part once the Label is small enough to sit there', () => {
+    // The other half of ADR-0014, and the one a collector can reach today. On
+    // the J-Card's 79 mm row a 35 mm Label leaves room for another up to 40 mm
+    // tall once the 4 mm gap is taken off, so five Releases of J-Cards and
+    // Labels at a 10 mm printable margin come off one Sheet instead of two.
+    // 37.5 mm is where that starts: any taller and two of them do not fit.
+    const nudged: PartDimensions = {
+      ...DEFAULT_PART_DIMENSIONS,
+      label: { ...DEFAULT_PART_DIMENSIONS.label, width: 30, height: 35 },
+    };
+    const five = Array.from({ length: 5 }, (_, index) =>
+      aDesign(aRelease({ id: `r${index}`, album: `Album ${index}` })),
+    );
+
+    const sheets = renderSheetsAt(
+      five,
+      { paper: A4, marginMm: 10, parts: ['jcard', 'label'] },
+      nudged,
+    );
+
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0]?.placements).toHaveLength(10);
+
+    // Two Labels sharing a left edge, one under the other: a column, not a row.
+    const labels = (sheets[0]?.placements ?? []).filter((placement) => placement.part === 'label');
+    const columns = new Map<number, number>();
+    for (const label of labels) columns.set(label.bounds.x, (columns.get(label.bounds.x) ?? 0) + 1);
+    expect(Math.max(...columns.values())).toBeGreaterThan(1);
+  });
+
+  it('still refuses a Part that no turn can save, and says what to do about it', () => {
+    // 500 mm of Front Panel is longer than A4 either way round.
+    const enormous: PartDimensions = {
+      ...DEFAULT_PART_DIMENSIONS,
+      jcard: { ...DEFAULT_PART_DIMENSIONS.jcard, frontPanelWidth: 500 },
+    };
+
+    expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
+      /the J-Card of Wichita Lineman .* does not fit A4 with a printable margin of 5 mm, turned or not/,
+    );
+    // And the advice is the honest one: no margin rescues a 519.5 mm strip.
+    expect(() => renderSheetsAt([aDesign()], A4_SHEET, enormous)).toThrow(
+      /No margin makes room for it: A4 is too small\./,
+    );
+  });
+});
+
 describe('SheetRenderer — Sheet configuration', () => {
   it('prints only the Parts the job asked for', () => {
     const sheets = renderSheetsAt([aDesign()], { ...A4_SHEET, parts: ['label'] });

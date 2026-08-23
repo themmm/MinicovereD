@@ -27,6 +27,23 @@ Turning the *sheet* instead buys nothing: A4 landscape is 287 × 200, the same 2
 direction, so the Insert fits exactly as well and every other Part now sits on a page with a different
 shape. Orientation would be a setting that changes everything and solves nothing.
 
+Two corrections to that table, both found by running the packer in ticket 07 rather than by deriving
+them again.
+
+**It assumes no gap between the pieces, and the app packs with one.** `DEFAULT_PART_GAP_MM` is 4 mm.
+Two turned Inserts and one column of Labels need 79 + 79 + 35 = 193 mm of width plus two gaps, against
+200 mm of printable width, so the picture holds up to a 3.5 mm gap and no further — at 4 mm the Labels
+are pushed onto a second Sheet by one millimetre. Nothing was changed for it: there is no Insert yet,
+so moving the gap would have changed how v1's three Parts pack for the sake of a Part that does not
+exist. Ticket 08 has the choice, and a printed strip to settle it against — a 3.5 mm gap, a 4.5 mm
+printable margin, or a millimetre off the strip.
+
+**Turning alone does not draw the picture either.** Shelf packing puts every rectangle on a shelf at
+that shelf's own top edge, so the 42 mm strip beside two turned Inserts can only ever hold the one
+Label at the top of it, whatever the gap. `SheetPacker` gained a second thing in ticket 07 for this:
+the room under a placed rectangle may hold a column of shorter ones. It is off by default, on for
+Parts, and off for the calibration sheet, which wants its figures in reading order.
+
 ## What it costs, and what it saves
 
 Saved: no new Sheet setting, no second calibration sheet, no Letter-specific special case, no
@@ -43,6 +60,14 @@ already generic over `PackItem<T>`, so it is tested as rectangles rather than as
 overlaps, nothing crosses the margin, a turned item's placement reports its turned dimensions. The
 renderer needs nothing new — draw ops already carry `rotationDeg`, which is how the Spine reads
 bottom-to-top today.
+
+That last sentence was half right, and ticket 07 found the other half. `rotationDeg` turns one op on
+the spot — text about its anchor, an image about the centre of its rect; there was no whole-Part turn
+anywhere, and `PartPlacement` had no field to say
+that one had happened. It gained `turned`, and `raster.ts` gained one rotation immediately after the
+translate to the Part's box — which turns the drawing, the cut-outline clip and the guides together,
+because all three are already drawn under that one transform. The PDF path really did need nothing: it
+takes rasterised PNGs. Neither did any Template, which is the point.
 
 ## Rejected
 

@@ -186,16 +186,25 @@ export function renderSheets(
     paper: config.paper,
     marginMm: config.marginMm,
     gapMm: DEFAULT_PART_GAP_MM,
+    // A Part longer than the paper is wide is turned rather than refused
+    // (ADR-0014), and the strip that leaves beside it is filled downwards
+    // rather than left empty. Neither is the packer's default, because the
+    // calibration sheet shares it and wants the other answer to both.
+    turn: 'to-fit',
+    columns: true,
   });
 
   return packed.sheets.map((sheet) => {
     const warnings: SheetWarning[] = [];
 
-    const placements = sheet.placements.map(({ item, rect }): PartPlacement => {
+    const placements = sheet.placements.map(({ item, rect, turned }): PartPlacement => {
       const { releaseId, part } = item.ref;
       const design = byRelease.get(releaseId);
       if (!design) throw new Error(`minicovered: no design for Release "${releaseId}"`);
 
+      // `item.size` throughout, never `rect`: a turned Part is drawn and cut in
+      // its own upright millimetres, and the turn is applied to the whole of it
+      // at once by whoever draws it.
       const { ops, panels, warnings: partWarnings } = drawPart(
         part,
         design,
@@ -208,6 +217,7 @@ export function renderSheets(
         releaseId,
         part,
         bounds: rect,
+        turned,
         ops,
         guides: guidesFor(part, dimensions, item.size),
         ...(panels ? { panels } : {}),

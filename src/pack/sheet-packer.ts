@@ -19,6 +19,11 @@ export interface PackItem<T> {
   readonly ref: T;
   /** What this rectangle is, used only when it does not fit and has to be named. */
   readonly label: string;
+  /**
+   * The rectangle as the caller means it, standing up. A turned placement
+   * reports the swapped box in its `rect`; this stays the size that was asked
+   * for, so a caller can still draw the thing in its own coordinates.
+   */
   readonly size: Size;
 }
 
@@ -35,6 +40,27 @@ export interface PackConfig {
   /** Extra height each rectangle needs beneath it, for a caption. */
   readonly captionRoomMm?: Mm;
   readonly oversize?: OversizePolicy;
+  readonly turn?: TurnPolicy;
+  /**
+   * Whether the space left under a placed rectangle may hold a column of
+   * shorter ones. Off unless asked for.
+   *
+   * ADR-0014's arithmetic needs it: two turned Inserts leave a strip beside
+   * them that is one Label wide and most of the Sheet tall, and shelf packing
+   * on its own can only ever put one Label at the top of it — every rectangle
+   * on a shelf shares that shelf's top edge, so five of them cannot make a
+   * column.
+   *
+   * A shelf's own row is filled first and a column is opened only when the row
+   * has no space left, so switching this on never moves a rectangle that would
+   * have fitted beside its neighbours. It fills room a shelf was already
+   * wasting.
+   *
+   * The calibration sheet leaves it off for the reason it leaves `sortByHeight`
+   * off: a column reads after the figure to its right rather than under it, and
+   * that page is meant to be read.
+   */
+  readonly columns?: boolean;
 }
 
 export interface PackResult<T> {
@@ -50,8 +76,23 @@ export const DEFAULT_PART_GAP_MM: Mm = 4;
 
 export interface PackPlacement<T> {
   readonly item: PackItem<T>;
-  /** Position on the Sheet, from the paper's top-left corner. */
+  /**
+   * Position on the Sheet, from the paper's top-left corner. A turned
+   * rectangle's box is already swapped here, so anything measuring how much
+   * paper is used reads this and never has to ask which way round it went.
+   */
   readonly rect: Rect;
+  /**
+   * Placed on its side.
+   *
+   * The packer places a box and takes no view of what goes in it. Whoever draws
+   * the rectangle turns it **90° clockwise** — `raster.ts` is the one that does,
+   * and the direction is agreed here because a placement is where the two sides
+   * meet. Clockwise is what puts the rectangle's left edge at the top of the
+   * Sheet, so a strip that reads left to right standing up reads top to bottom
+   * lying down.
+   */
+  readonly turned: boolean;
 }
 
 export interface PackedSheet<T> {
@@ -65,10 +106,54 @@ export interface PackedSheet<T> {
  */
 export type OversizePolicy = 'throw' | 'omit';
 
+/**
+ * Whether a rectangle that will not fit the printable area as it stands may be
+ * placed on its side (ADR-0014: the Part turns, not the Sheet).
+ *
+ * `to-fit` is a rescue and not an optimisation: a rectangle that already fits
+ * is never turned. Turning for density would be a different heuristic and a
+ * worse one — a two-Page Insert is 152.5 × 79 mm and goes three to an A4 Sheet
+ * standing up, but only two lying down.
+ *
+ * The calibration sheet stays on `never`, and not only by inertia: its figures
+ * are outlines it draws itself in paper coordinates from the packed box, and it
+ * has no idea a box can be turned. A turned J-Card would put an upright 87.5 mm
+ * outline inside a 79 mm box, overflowing it to the right and stopping short at
+ * the bottom, under a caption reading 79 × 87.5.
+ */
+export type TurnPolicy = 'never' | 'to-fit';
+
 /** The geometry every placement decision is made against. */
 interface Bed {
   readonly area: Rect;
   readonly gapMm: Mm;
+  /** Reserved under every rectangle, including the ones stacked in a column. */
+  readonly captionRoomMm: Mm;
+}
+
+/** A rectangle with the orientation it will be placed in already decided. */
+interface Piece<T> {
+  readonly item: PackItem<T>;
+  /** The box actually placed: `item.size`, swapped when `turned`. */
+  readonly size: Size;
+  readonly turned: boolean;
+}
+
+/**
+ * A column growing downwards under one rectangle already on a shelf, used only
+ * when `columns` is on.
+ *
+ * Its width is the width of the rectangle that opened it rather than everything
+ * free to the right of it. That is deliberately conservative: what is free to
+ * the right depends on how tall the next rectangle along the shelf is, and a
+ * column that never reaches past the rectangle above it cannot overlap anything
+ * or eat into anyone's gap.
+ */
+interface Column {
+  readonly x: Mm;
+  readonly width: Mm;
+  /** Bottom edge of the last rectangle in the column. */
+  cursorY: Mm;
 }
 
 /**
@@ -83,6 +168,8 @@ interface Shelf {
   readonly height: Mm;
   /** Right edge of the last Part placed, or the area's left edge when empty. */
   cursorX: Mm;
+  /** One per rectangle placed on the row, in the order they were placed. */
+  readonly columns: Column[];
 }
 
 interface Sheet<T> {
@@ -101,26 +188,82 @@ function fitsOnShelf(shelf: Shelf, size: Size, bed: Bed): boolean {
   return nextX(shelf, bed) + size.width <= bed.area.x + bed.area.width && size.height <= shelf.height;
 }
 
-function placeOnShelf<T>(sheet: Sheet<T>, shelf: Shelf, item: PackItem<T>, bed: Bed): void {
+function placeOnShelf<T>(sheet: Sheet<T>, shelf: Shelf, piece: Piece<T>, bed: Bed): void {
   const x = nextX(shelf, bed);
-  sheet.placements.push({ item, rect: { x, y: shelf.y, ...item.size } });
-  shelf.cursorX = x + item.size.width;
+  sheet.placements.push({ item: piece.item, rect: { x, y: shelf.y, ...piece.size }, turned: piece.turned });
+  shelf.cursorX = x + piece.size.width;
+  shelf.columns.push({ x, width: piece.size.width, cursorY: shelf.y + piece.size.height });
 }
 
-function openShelf<T>(
-  sheet: Sheet<T>,
-  item: PackItem<T>,
-  bed: Bed,
-  topMm: Mm,
-  captionRoomMm: Mm,
-): Shelf | undefined {
-  const y = sheet.shelves.length === 0 ? topMm : sheet.usedHeight + captionRoomMm + bed.gapMm;
-  if (y + item.size.height + captionRoomMm > bed.area.y + bed.area.height) return undefined;
+/**
+ * Where a rectangle stacked in `column` would start, and whether it still fits
+ * the shelf.
+ *
+ * Caption room is reserved on both sides of it: below the rectangle above, and
+ * below this one. The second is stricter than it has to be — the band under the
+ * shelf would hold that last caption, since `openShelf` already keeps caption
+ * room and a gap there — and it is kept because the alternative is an invariant
+ * with an exception in it. Every rectangle reserves its caption room inside the
+ * shelf that holds it; the band beneath the shelf belongs to the row.
+ */
+function fitsInColumn(shelf: Shelf, column: Column, size: Size, bed: Bed): boolean {
+  if (size.width > column.width) return false;
+  const y = column.cursorY + bed.captionRoomMm + bed.gapMm;
+  return y + size.height + bed.captionRoomMm <= shelf.y + shelf.height;
+}
 
-  const shelf: Shelf = { y, height: item.size.height, cursorX: bed.area.x };
+function placeInColumn<T>(sheet: Sheet<T>, column: Column, piece: Piece<T>, bed: Bed): void {
+  const y = column.cursorY + bed.captionRoomMm + bed.gapMm;
+  sheet.placements.push({
+    item: piece.item,
+    rect: { x: column.x, y, ...piece.size },
+    turned: piece.turned,
+  });
+  column.cursorY = y + piece.size.height;
+}
+
+function openShelf<T>(sheet: Sheet<T>, piece: Piece<T>, bed: Bed, topMm: Mm): Shelf | undefined {
+  const y = sheet.shelves.length === 0 ? topMm : sheet.usedHeight + bed.captionRoomMm + bed.gapMm;
+  if (y + piece.size.height + bed.captionRoomMm > bed.area.y + bed.area.height) return undefined;
+
+  const shelf: Shelf = { y, height: piece.size.height, cursorX: bed.area.x, columns: [] };
   sheet.shelves.push(shelf);
-  sheet.usedHeight = y + item.size.height;
+  sheet.usedHeight = y + piece.size.height;
   return shelf;
+}
+
+/** The same rectangle on its side. */
+function turnedSize(size: Size): Size {
+  return { width: size.height, height: size.width };
+}
+
+/**
+ * The largest printable margin at which `size` would fit `paper`, negative when
+ * no margin does.
+ *
+ * Worked out rather than searched for, and reported when a rectangle is
+ * refused: "does not fit" is a fact, "lower the margin to 7.25 mm or less" is
+ * something the collector can act on. This is the case ADR-0014 says will
+ * actually happen, because 5 mm is a default that home printers routinely need
+ * raised. The margin is reported as a ceiling rather than a value because the
+ * control steps in half-millimetres and will not land on 7.25 anyway.
+ */
+function largestMarginThatFits(paper: PaperSize, size: Size, captionRoomMm: Mm, turn: TurnPolicy): Mm {
+  const standing = Math.min(
+    (paper.width - size.width) / 2,
+    (paper.height - size.height - captionRoomMm) / 2,
+  );
+  if (turn === 'never') return standing;
+  const lying = Math.min(
+    (paper.width - size.height) / 2,
+    (paper.height - size.width - captionRoomMm) / 2,
+  );
+  return Math.max(standing, lying);
+}
+
+/** Rounded down, so the margin named is one that really does leave room. */
+function downTo2dp(mm: Mm): Mm {
+  return Math.floor(mm * 100) / 100;
 }
 
 /**
@@ -133,32 +276,54 @@ function openShelf<T>(
  * Order is preserved for the caller: `sortByHeight` can be turned off where a
  * fixed reading order matters more than density, as it does on a page meant to
  * be read rather than cut up.
+ *
+ * Two things happen before any of that, and both are off unless asked for.
+ * `turn` decides each rectangle's orientation once, up front, so the sort and
+ * every fit test afterwards see the box that will actually be placed. `columns`
+ * lets the room under a placed rectangle be filled.
  */
 export function packParts<T>(
   items: ReadonlyArray<PackItem<T>>,
   config: PackConfig & { readonly sortByHeight?: boolean },
 ): PackResult<T> {
-  const bed: Bed = { area: printableArea(config.paper, config.marginMm), gapMm: config.gapMm };
-  const { area } = bed;
   const captionRoomMm = config.captionRoomMm ?? 0;
+  const bed: Bed = {
+    area: printableArea(config.paper, config.marginMm),
+    gapMm: config.gapMm,
+    captionRoomMm,
+  };
+  const { area } = bed;
   const firstTop = area.y + (config.firstSheetTopMm ?? 0);
   const laterTop = area.y + (config.laterSheetTopMm ?? 0);
   const oversize = config.oversize ?? 'throw';
+  const turn = config.turn ?? 'never';
+  const columnsAllowed = config.columns ?? false;
 
-  const tooBig = (item: PackItem<T>): boolean =>
-    item.size.width > area.width || item.size.height + captionRoomMm > area.height;
+  const fitsArea = (size: Size): boolean =>
+    size.width <= area.width && size.height + captionRoomMm <= area.height;
 
   const omitted: string[] = [];
-  const usable: Array<PackItem<T>> = [];
+  const usable: Array<Piece<T>> = [];
   for (const item of items) {
-    if (!tooBig(item)) {
-      usable.push(item);
+    // Standing up wins ties: a rectangle that fits as it is stays as it is.
+    if (fitsArea(item.size)) {
+      usable.push({ item, size: item.size, turned: false });
+      continue;
+    }
+    if (turn === 'to-fit' && fitsArea(turnedSize(item.size))) {
+      usable.push({ item, size: turnedSize(item.size), turned: true });
       continue;
     }
     if (oversize === 'throw') {
+      const largest = largestMarginThatFits(config.paper, item.size, captionRoomMm, turn);
+      const eitherWay = turn === 'to-fit' ? ', turned or not' : '';
       throw new Error(
         `minicovered: ${item.label} (${item.size.width} × ${item.size.height} mm) does not fit ` +
-          `the ${area.width} × ${area.height} mm printable area`,
+          `${config.paper.name} with a printable margin of ${config.marginMm} mm${eitherWay} — that ` +
+          `leaves ${area.width} × ${area.height} mm to print on. ` +
+          (largest >= 0
+            ? `Lower the margin to ${downTo2dp(largest)} mm or less to make room for it.`
+            : `No margin makes room for it: ${config.paper.name} is too small.`),
       );
     }
     omitted.push(item.label);
@@ -170,26 +335,41 @@ export function packParts<T>(
     config.sortByHeight === false
       ? usable
       : usable
-          .map((item, index) => ({ item, index }))
-          .sort((a, b) => b.item.size.height - a.item.size.height || a.index - b.index)
-          .map(({ item }) => item);
+          .map((piece, index) => ({ piece, index }))
+          .sort((a, b) => b.piece.size.height - a.piece.size.height || a.index - b.index)
+          .map(({ piece }) => piece);
 
   const sheets: Array<Sheet<T>> = [];
   const topFor = (index: number): Mm => (index === 0 ? firstTop : laterTop);
 
-  for (const item of ordered) {
+  for (const piece of ordered) {
     let placed = false;
 
     for (const [index, sheet] of sheets.entries()) {
-      const shelf = sheet.shelves.find((candidate) => fitsOnShelf(candidate, item.size, bed));
+      const shelf = sheet.shelves.find((candidate) => fitsOnShelf(candidate, piece.size, bed));
       if (shelf) {
-        placeOnShelf(sheet, shelf, item, bed);
+        placeOnShelf(sheet, shelf, piece, bed);
         placed = true;
         break;
       }
-      const opened = openShelf(sheet, item, bed, topFor(index), captionRoomMm);
+      // Only once no row on this Sheet will take it — `fitsOnShelf` refuses on
+      // height as well as width. A column costs no new height, so it is worth
+      // more than a fresh shelf and less than a seat beside a neighbour.
+      const inColumn = columnsAllowed
+        ? sheet.shelves
+            .flatMap((candidate) =>
+              candidate.columns.filter((column) => fitsInColumn(candidate, column, piece.size, bed)),
+            )
+            .at(0)
+        : undefined;
+      if (inColumn) {
+        placeInColumn(sheet, inColumn, piece, bed);
+        placed = true;
+        break;
+      }
+      const opened = openShelf(sheet, piece, bed, topFor(index));
       if (opened) {
-        placeOnShelf(sheet, opened, item, bed);
+        placeOnShelf(sheet, opened, piece, bed);
         placed = true;
         break;
       }
@@ -199,13 +379,13 @@ export function packParts<T>(
 
     const sheet: Sheet<T> = { placements: [], shelves: [], usedHeight: 0 };
     sheets.push(sheet);
-    const shelf = openShelf(sheet, item, bed, topFor(sheets.length - 1), captionRoomMm);
-    // Every usable item was measured against the printable area above, so a
-    // fresh Sheet always has room for one.
+    const shelf = openShelf(sheet, piece, bed, topFor(sheets.length - 1));
+    // Every usable rectangle was measured against the printable area above, so
+    // a fresh Sheet always has room for one.
     if (!shelf) {
-      throw new Error(`minicovered: ${item.label} fits the paper but failed to open a Sheet`);
+      throw new Error(`minicovered: ${piece.item.label} fits the paper but failed to open a Sheet`);
     }
-    placeOnShelf(sheet, shelf, item, bed);
+    placeOnShelf(sheet, shelf, piece, bed);
   }
 
   return {
