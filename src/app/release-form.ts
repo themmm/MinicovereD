@@ -166,10 +166,14 @@ function creditsField(present: Credits | undefined, onChange: (edit: ReleaseEdit
   area.value = formatCredits(present?.people ?? []);
 
   return {
+    // A div holding its own label, not a label wrapping everything, which is
+    // the shape the artwork field below already uses and for the same reason: a
+    // note inside the label becomes part of the field's accessible name, and
+    // this note changes the moment credits arrive.
     element: el(
-      'label',
-      { class: 'field', attrs: { for: 'field-credits' } },
-      el('span', { class: 'field__label', text: 'Credits' }),
+      'div',
+      { class: 'field' },
+      el('label', { class: 'field__label', text: 'Credits', attrs: { for: 'field-credits' } }),
       area,
       note,
     ),
