@@ -108,8 +108,10 @@ export function licenseTextFor(license: LicenseId): string {
 
 /**
  * Services the app fetches from at runtime. Not bundled, so not covered by the
- * package attribution above — but both ask to be credited, and a collector
- * deserves to know where the metadata on their Sheet came from.
+ * package attribution above — and not every one of them makes attribution a
+ * condition: the release data two of them serve is CC0, which asks for nothing.
+ * Credited anyway, because a collector deserves to know where the metadata on
+ * their Sheet came from and where a request went.
  */
 export interface DataSource {
   readonly name: string;
@@ -131,6 +133,17 @@ export const DATA_SOURCES: readonly DataSource[] = [
     terms:
       'Cover art, fetched only for Releases you look up. The images belong to their respective ' +
       'copyright holders — MinicovereD neither redistributes nor bundles any of them.',
+  },
+  {
+    name: 'Discogs',
+    url: 'https://www.discogs.com',
+    terms:
+      'Credits and release facts, fetched once for a Release you have already looked up. ' +
+      'Discogs’ API terms offer the database content — credits, dates, track listings and ' +
+      'identifiers among them — under CC0, which asks for no attribution at all; this credit is a ' +
+      'courtesy, like the two above. Images are licensed separately and MinicovereD never asks ' +
+      'for them. No API key, and the anonymous limit of 25 requests a minute is kept to. ' +
+      'ADR-0013 records what was read, and how.',
   },
 ];
 

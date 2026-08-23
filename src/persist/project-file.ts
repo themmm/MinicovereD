@@ -1,3 +1,4 @@
+import { hasCredits } from '../domain/credits.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM, PAPER_SIZES } from '../domain/paper.ts';
 import type { PaperSize } from '../domain/paper.ts';
 import {
@@ -6,7 +7,7 @@ import {
   PART_KINDS,
 } from '../domain/parts.ts';
 import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
-import type { Artwork, Release, Track } from '../domain/release.ts';
+import type { Artwork, Credit, Credits, Release, Track } from '../domain/release.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { safeLogoColor } from '../render/minidisc-logo.ts';
@@ -113,6 +114,48 @@ function readArtwork(value: unknown): Artwork | undefined {
   return { dataUrl, widthPx, heightPx };
 }
 
+/**
+ * A Credits block out of a file, which is untrusted input like everything else
+ * in one.
+ *
+ * A credit needs a name and may have no role, which is exactly how the form
+ * reads one — a file and a keystroke produce the same block. A block with
+ * nothing left in it after that is no block at all, the same answer
+ * `fetchCredits` gives for a Discogs entry with nothing in it, so that a file
+ * cannot arrive carrying an empty block that makes every later "have the
+ * credits arrived?" answer yes.
+ */
+function readCredits(value: unknown): Credits | undefined {
+  if (!isRecord(value)) return undefined;
+
+  const text = (key: string): string => asString(value[key]).trim();
+  const strings = (raw: unknown): string[] =>
+    (Array.isArray(raw) ? raw : []).map((entry) => asString(entry).trim()).filter((entry) => !!entry);
+
+  const people: Credit[] = (Array.isArray(value['people']) ? value['people'] : [])
+    .filter(isRecord)
+    .map((credit) => ({
+      role: asString(credit['role']).trim(),
+      name: asString(credit['name']).trim(),
+    }))
+    .filter((credit) => !!credit.name);
+
+  const credits: Credits = {
+    people,
+    ...(text('label') ? { label: text('label') } : {}),
+    ...(text('catalogNumber') ? { catalogNumber: text('catalogNumber') } : {}),
+    ...(text('country') ? { country: text('country') } : {}),
+    // Four digits or nothing, which is what `Credits.year` says it is and what
+    // `yearOf` enforces on the way in from Discogs. `Release.year` beside it is
+    // free text on purpose — "n/a" and a reissue year are both real there — but
+    // this one is a fact about a pressing, and a file is not trusted to agree.
+    ...(/^\d{4}$/.test(text('year')) ? { year: text('year') } : {}),
+    genres: strings(value['genres']),
+    styles: strings(value['styles']),
+  };
+  return hasCredits(credits) ? credits : undefined;
+}
+
 /** A Release needs an id and a tracklist to be one; everything else may be blank. */
 function readRelease(value: unknown, index: number): Release | string {
   if (!isRecord(value)) return `Release ${index + 1} is not a Release.`;
@@ -126,6 +169,13 @@ function readRelease(value: unknown, index: number): Release | string {
   const year = asString(value['year']).trim();
   const notes = asString(value['notes']).trim();
   const artwork = readArtwork(value['artwork']);
+  const credits = readCredits(value['credits']);
+  // Held to the same shape `discogsIdOf` requires on the way in from
+  // MusicBrainz — a whole positive number that is exactly itself — because the
+  // two are the same field and a file is the untrusted one of the two sources.
+  // Nothing puts this one in a URL today; the day something does, it will not
+  // have to ask whether a file could have made it a fraction.
+  const discogsId = asNumber(value['discogsId'], 0);
   return {
     id,
     artist: asString(value['artist']),
@@ -134,6 +184,8 @@ function readRelease(value: unknown, index: number): Release | string {
     ...(notes ? { notes } : {}),
     tracks: readTracks(value['tracks']),
     ...(artwork ? { artwork } : {}),
+    ...(Number.isSafeInteger(discogsId) && discogsId > 0 ? { discogsId } : {}),
+    ...(credits ? { credits } : {}),
   };
 }
 

@@ -66,3 +66,36 @@ a credits Page and never a lookup.
 
 Discogs' terms and data licensing should be read before this ships, and any attribution obligation
 added to the about dialog that ADR-0003 already maintains.
+
+## The terms, as read on 2026-08-23 — and how well
+
+**There is no attribution obligation.** Discogs' API Terms of Use divide the API into *CC0 Data* and
+*Restricted Data*. The CC0 Data is the database content — release titles, notes, dates, format,
+track listings, barcodes and other identifiers, credits, versions — offered under CC0, which waives
+copyright and asks for nothing, attribution included. The Restricted Data is everything else, chiefly
+images, under a limited, personal, non-sublicensable, non-transferable, non-exclusive, revocable
+licence. **This app reads only CC0 Data**: `GET /releases/{id}` and no `images`, ever.
+
+Discogs is credited in the about dialog anyway, and the entry says in as many words that the credit is
+a courtesy. A collector deserves to know where a request went even when nobody requires telling them.
+
+Two things the same reading settles that this ADR's table did not:
+
+| | as documented |
+| --- | --- |
+| rate limit, counted how | a moving average over a sixty-second window; 429 when it is exceeded |
+| `/database/search` | **authentication required** |
+
+The second one is load-bearing and was not obvious. A Discogs release cannot be *searched* for
+without credentials, so the only way to reach one without the API key this ADR refuses is to follow a
+link that already exists — which is why the implementation asks MusicBrainz for `inc=url-rels` and
+reads the Discogs address out of the release's url relationships. The cost, accepted: a pressing
+MusicBrainz has not linked has no credits, and that is most pressings.
+
+**How well founded this is, stated plainly because the rest of this ADR was measured and this was
+not.** `www.discogs.com/developers` and the API Terms of Use article both answered **HTTP 403** to
+this project's tooling, so the terms were read *at second hand* — from search-engine extracts
+quoting those two pages, and from the `python3-discogs-client` documentation for the authentication
+boundary. Nothing above is a quotation from the page itself. That is enough to justify a courtesy
+credit and to justify not building an API-key field; it is **not** enough to rely on if anything ever
+turns on the CC0 clause. Re-read it from the page before it does.

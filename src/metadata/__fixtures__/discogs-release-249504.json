@@ -1,0 +1,48 @@
+{
+  "id": 249504,
+  "title": "Never Gonna Give You Up",
+  "country": "UK",
+  "released": "1987",
+  "notes": "UK Release has a black label with the text \"Manufactured In England\" printed on it. […] Durations do not appear on the release. Runouts are etched, except 'B' stamp in variant '3'. 'MS' is encircled.",
+  "genres": ["Electronic", "Pop"],
+  "styles": ["Synth-pop"],
+  "labels": [
+    {
+      "id": 895,
+      "resource_url": "https://api.discogs.com/labels/895",
+      "name": "RCA",
+      "catno": "PB 41447",
+      "entity_type": "1"
+    }
+  ],
+  "extraartists": [
+    {
+      "join": "",
+      "name": "Stock, Aitken & Waterman",
+      "anv": "",
+      "tracks": "",
+      "role": "Producer",
+      "resource_url": "https://api.discogs.com/artists/28356",
+      "id": 28356
+    },
+    {
+      "join": "",
+      "name": "Mike Duffy",
+      "anv": "",
+      "tracks": "",
+      "role": "Engineer",
+      "resource_url": "https://api.discogs.com/artists/64121",
+      "id": 64121
+    },
+    {
+      "join": "",
+      "name": "Me Company",
+      "anv": "",
+      "tracks": "",
+      "role": "Design",
+      "resource_url": "https://api.discogs.com/artists/97448",
+      "id": 97448
+    }
+  ],
+  "data_quality": "Needs Vote"
+}

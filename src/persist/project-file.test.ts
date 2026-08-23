@@ -20,6 +20,21 @@ const design: ReleaseDesign = {
       { position: 2, title: '東京は夜の七時' },
     ],
     artwork: { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 400 },
+    // A looked-up Release carries its Discogs link and whatever credits came
+    // back, and "every Release exactly as it went in" has to mean these too.
+    discogsId: 249504,
+    credits: {
+      people: [
+        { role: 'Producer', name: 'Al De Lory' },
+        { role: '', name: 'Carol Kaye' },
+      ],
+      label: 'Capitol Records',
+      catalogNumber: 'ST-103',
+      country: 'US',
+      year: '1968',
+      genres: ['Pop'],
+      styles: ['Country'],
+    },
   },
   templateId: 'fullbleed',
   params: { ...DEFAULT_TEMPLATE_PARAMS, accentColor: '#7c2d12', showLogo: false, insetArtwork: true },
@@ -430,6 +445,79 @@ describe('reading a project file built to break things', () => {
 
     if (!result.ok) throw new Error(result.error);
     expect(designsOf(result.project)[0]?.release.artwork).toBeUndefined();
+  });
+
+  it('drops a credit with nobody in it, and a block with nothing in it', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        {
+          release: {
+            id: 'r1',
+            tracks: [],
+            credits: {
+              people: [{ role: 'Producer' }, 'Carol Kaye', { role: 'Engineer', name: ' Mike Duffy ' }],
+              genres: ['Pop', '', 42],
+              label: '   ',
+            },
+          },
+        },
+        { release: { id: 'r2', tracks: [], credits: { people: [{ name: '' }], genres: [] } } },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    const [first, second] = designsOf(result.project);
+    // A credit needs a name; a role is optional. Everything is trimmed, and a
+    // block left holding nothing is no block — otherwise a file could arrive
+    // saying credits had already been fetched when none had.
+    expect(first?.release.credits).toEqual({
+      people: [{ role: 'Engineer', name: 'Mike Duffy' }],
+      genres: ['Pop'],
+      styles: [],
+    });
+    expect(second?.release.credits).toBeUndefined();
+  });
+
+  it('refuses a credits year that is not a year', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        { release: { id: 'r1', tracks: [], credits: { people: [], year: 'n/a', label: 'RCA' } } },
+        { release: { id: 'r2', tracks: [], credits: { people: [], year: '1987', label: 'RCA' } } },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    // `Credits.year` is a fact about a pressing and says it is four digits;
+    // `Release.year` beside it is free text on purpose, where "n/a" is real.
+    const [first, second] = designsOf(result.project);
+    expect(first?.release.credits?.year).toBeUndefined();
+    expect(first?.release.credits?.label).toBe('RCA');
+    expect(second?.release.credits?.year).toBe('1987');
+  });
+
+  it('refuses a Discogs id that could not be one', () => {
+    const ids = [0, -1, 2.5, '249504', 9_007_199_254_740_993, null];
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: ids.map((discogsId, index) => ({
+        release: { id: `r${index}`, tracks: [], discogsId },
+      })),
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    // It goes into a URL as `/releases/{id}`, so anything that is not a whole
+    // positive number that is exactly itself is not an id.
+    expect(designsOf(result.project).map((one) => one.release.discogsId)).toEqual(
+      ids.map(() => undefined),
+    );
   });
 
   it('drops artwork claiming no pixels, which would divide by zero on a Part', () => {
