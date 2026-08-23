@@ -1,12 +1,13 @@
-import { partShape } from '../../domain/parts.ts';
+import { labelNotchDepth, partShape } from '../../domain/parts.ts';
 import type { Release } from '../../domain/release.ts';
 import { formatTrackLength, totalTrackLength } from '../../domain/tracklist.ts';
-import type { Mm, Rect } from '../../domain/units.ts';
+import type { Mm, Rect, Size } from '../../domain/units.ts';
 import { readableInkFor } from '../colors.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
 import { drawJCard, drawTracklist, PAD, text } from './shared.ts';
 import { ellipsise, wrapText } from '../text.ts';
 import type { TextMeasurer } from '../text.ts';
+import type { PartDimensions } from '../../domain/parts.ts';
 import type { JCardContext, PartContext, PartDrawing, Template } from './template.ts';
 
 /**
@@ -293,6 +294,24 @@ const LABEL_ARTIST_SIZE: Mm = 2.2;
 const LABEL_HEADING_GAP: Mm = 1;
 
 /**
+ * How wide a line whose top sits at `top` may be set before it runs into the
+ * cartridge's cut corner.
+ *
+ * The cut runs x = (width − notch) + y from the top edge down to y = notch, so
+ * the limit is tightest at the line's own top and opens as the line descends;
+ * a line starting below the notch has no limit but the margin. Reserving the
+ * notch's full width from every line instead would cost 6 mm of a 35 mm sticker
+ * to a corner that is 6 mm deep at its worst and gone by the second line.
+ */
+function labelRoom(size: Size, dimensions: PartDimensions, top: Mm): Mm {
+  const notch = labelNotchDepth(dimensions.label);
+  const right = notch > 0
+    ? Math.min(size.width - LABEL_PAD, size.width - notch + top)
+    : size.width - LABEL_PAD;
+  return Math.max(0, right - LABEL_PAD);
+}
+
+/**
  * The Label: a chip of the accent with the name in the corner and the same
  * footer the Front Panel carries.
  *
@@ -302,17 +321,11 @@ const LABEL_HEADING_GAP: Mm = 1;
  * Template, the Spine being the only other place it appears.
  */
 function drawLabel({ release, params, size, dimensions, faces, measure }: PartContext): DrawOp[] {
-  const { notch, notchSize } = dimensions.label;
   const ground = params.accentColor;
   const ink = readableInkFor(ground);
 
-  // The diagonal runs x = (width - notchSize) + y down to y = notchSize, so the
-  // heading block, which starts inside that band, holds the notch's own width
-  // clear of the right edge — more than the diagonal takes at any y, which is
-  // what keeps both lines clear of it. The footer sits at the other end of the
-  // Label, well below the cut, and gets the full measure.
-  const headingRoom = Math.max(0, size.width - 2 * LABEL_PAD - (notch ? notchSize : 0));
-  const footerRoom = Math.max(0, size.width - 2 * LABEL_PAD);
+  const artistTop = LABEL_PAD + LABEL_ALBUM_SIZE + LABEL_HEADING_GAP;
+  const footerTop = size.height - LABEL_PAD - FOOTER_SIZE;
 
   const albumStyle: TextStyle = { sizeMm: LABEL_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'left', baseline: 'top' };
   const artistStyle: TextStyle = { sizeMm: LABEL_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'left', baseline: 'top' };
@@ -323,21 +336,27 @@ function drawLabel({ release, params, size, dimensions, faces, measure }: PartCo
     // Cut to the outline rather than filled as a rectangle: the notched corner
     // is not sticker, and a chip is exactly the shape of the paper it is on.
     { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: ground },
-    text(release.album, { x: LABEL_PAD, y: LABEL_PAD }, albumStyle, headingRoom, measure),
+    text(
+      release.album,
+      { x: LABEL_PAD, y: LABEL_PAD },
+      albumStyle,
+      labelRoom(size, dimensions, LABEL_PAD),
+      measure,
+    ),
     text(
       release.artist,
-      { x: LABEL_PAD, y: LABEL_PAD + LABEL_ALBUM_SIZE + LABEL_HEADING_GAP },
+      { x: LABEL_PAD, y: artistTop },
       artistStyle,
-      headingRoom,
+      labelRoom(size, dimensions, artistTop),
       measure,
     ),
     ...(footer
       ? [
           text(
             footer,
-            { x: LABEL_PAD, y: size.height - LABEL_PAD - FOOTER_SIZE },
+            { x: LABEL_PAD, y: footerTop },
             footerStyle,
-            footerRoom,
+            labelRoom(size, dimensions, footerTop),
             measure,
           ),
         ]
@@ -370,8 +389,8 @@ export const MINIMAL_TEMPLATE: Template = {
    * Noto Sans JP for exactly that.
    *
    * The cost is the Spine, which gives up the condensed face Classic uses there
-   * and so cuts a long line sooner — Archivo Narrow sets that line 20.4 %
-   * narrower, measured in a browser. Reported rather than hidden
+   * and so cuts a long line sooner — Archivo Narrow sets `Glen Campbell —
+   * Wichita Lineman` 20.3 % narrower, measured in this browser. Reported rather than hidden
    * (`SpineTruncated`), and the trade is deliberate: the Spine is one line of
    * the collector's own words, and setting it in the face that can render them
    * beats setting 20 % more of them in a face that cannot.

@@ -1771,26 +1771,59 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
 
   it('holds the Label’s heading clear of the diagonal the notch cuts', () => {
     // The cut runs x = (width − notch) + y from the top edge down to y = notch,
-    // and the heading starts inside that band. A line set to the full measure
-    // would have its last characters on the corner that is not there.
+    // so the room a line has is tightest at its own top and opens as it
+    // descends. Reserving the notch's whole width from every line would be
+    // simpler and would cost 6 mm of a 35 mm sticker to a corner 6 mm deep.
     const { width, notchSize } = DEFAULT_PART_DIMENSIONS.label;
-    const long = aRelease({ artist: 'A Band With A Very Long Name Indeed', album: 'And An Album Longer Still' });
-    const heading = textsOf(sheetOf(long), 'label').filter((op) => !/^\d+ tracks?\b/.test(op.text));
+    const long = aRelease({
+      artist: 'A Band With A Very Long Name Indeed',
+      album: 'And An Album Longer Still',
+    });
+    const texts = textsOf(sheetOf(long), 'label');
+    const heading = texts.filter((op) => !/^\d+ tracks?\b/.test(op.text));
+    const rightOf = (op: TextOp): number => op.at.x + testMeasurer.widthMm(op.text, op.style);
 
     expect(heading, 'the album and the artist').toHaveLength(2);
     for (const op of heading) {
-      expect(op.at.x + testMeasurer.widthMm(op.text, op.style), op.text).toBeLessThanOrEqual(
-        width - notchSize,
-      );
+      const cut = Math.min(width - LABEL_PAD_MM, width - notchSize + op.at.y);
+      expect(rightOf(op), op.text).toBeLessThanOrEqual(cut);
     }
+
+    // Both lines are long enough to be cut to their measure, so the album —
+    // which starts inside the band — has to end further left than the artist a
+    // line below it. That difference is the per-line room; one reserve for the
+    // whole block would put them at the same millimetre.
+    const [album, artist] = heading;
+    if (!album || !artist) throw new Error('no heading');
+    expect(album.text, 'the album was cut to its room').toMatch(/…$/);
+    expect(artist.text, 'so was the artist').toMatch(/…$/);
+    expect(rightOf(album)).toBeLessThan(rightOf(artist));
 
     // The footer is at the other end of the Label and gets the full measure,
     // which is what says the reserve above is about the notch and not a margin.
-    const [line] = textsOf(sheetOf(long), 'label').filter((op) => /^\d+ tracks?\b/.test(op.text));
-    expect(line?.at.x).toBe(LABEL_PAD_MM);
-    expect((line?.at.y ?? 0) + (line?.style.sizeMm ?? 0)).toBeLessThanOrEqual(
+    const [footer] = texts.filter((op) => /^\d+ tracks?\b/.test(op.text));
+    expect(footer?.at.x).toBe(LABEL_PAD_MM);
+    expect((footer?.at.y ?? 0) + (footer?.style.sizeMm ?? 0)).toBeLessThanOrEqual(
       DEFAULT_PART_DIMENSIONS.label.height,
     );
+  });
+
+  it('reserves the corner that is actually cut, not the one the file asked for', () => {
+    // `labelNotchDepth` clamps a notch to half the shorter edge, because a
+    // bigger one would fold the outline through itself. The type has to reserve
+    // from the clamped depth too: reserving 100 mm on a 35 mm sticker would
+    // leave nothing but an ellipsis beside a corner that was only ever 17.5 mm.
+    const label = { width: 35, height: 52.5, notch: true, notchSize: 100 };
+    const sheet = sheetOf(aRelease(), {}, { ...DEFAULT_PART_DIMENSIONS, label });
+    const [album] = textsOf(sheet, 'label');
+    if (!album) throw new Error('no album line');
+
+    const clamped = Math.min(label.notchSize, label.width / 2, label.height / 2);
+    expect(clamped).toBe(17.5);
+    expect(album.at.x + testMeasurer.widthMm(album.text, album.style)).toBeLessThanOrEqual(
+      label.width - clamped + album.at.y,
+    );
+    expect(album.text, 'and there is still a name on the chip').not.toBe('…');
   });
 
   it('spends one face on all three roles, which is a decision and not an omission', () => {
