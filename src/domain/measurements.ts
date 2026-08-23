@@ -43,8 +43,8 @@ export interface Measurements {
    * The five without controls are the ones a *case* decides rather than a
    * collector: how tall a front cover is, and how wide its window and its edge
    * are. The Page width is the one Insert measurement the case does not decide —
-   * ADR-0012 picked 65 mm because 65 is what fits four Pages on A4 — which is why
-   * it is the one that got a control in ticket 08.
+   * it is a booklet dimension, sized so four Pages clear A4 — which is why it is
+   * the one that got a control.
    */
   readonly dimensions: PartDimensions;
 }

@@ -559,11 +559,48 @@ describe('SheetRenderer — how many Pages, and what is on them (ADR-0012)', () 
     ]);
   });
 
-  it('refuses four Pages when nothing would go on them', () => {
+  it('refuses four Pages when nothing would go on them, and says it refused', () => {
     // Two tracks, no credits, no artwork: the interior cannot be filled three
     // ways without a blank Page, and no Page on the strip may be blank.
     const bare = aRelease({ tracks: [{ position: 1, title: 'One' }, { position: 2, title: 'Two' }] });
     expect(pageRoles(bare, A4_SHEET, 4)).toEqual(['cover', 'tracklist']);
+
+    // And the collector is told, which is the half that matters: nothing was
+    // *dropped* — there was nothing more to print — so a report keyed on `dropped`
+    // alone said nothing at all, while the Design fold read "4 Pages" over a
+    // specimen reading "2 Pages".
+    const short = onlyWarning(
+      renderSheetsAt([{ ...aDesign(bare), pageCount: 4 }], A4_SHEET)[0],
+      'insert-pages-short',
+    );
+    expect(short).toMatchObject({
+      requestedPages: 4,
+      requestedByCollector: true,
+      pages: 2,
+      dropped: [],
+    });
+  });
+
+  it('says the collector asked, not the content, when it was the collector', () => {
+    // Two different sentences hang off this: "You asked for 4 Pages" and "This
+    // Release needs 4 Pages" are answers to different questions, and a collector
+    // who typed 4 into a control is owed the first one.
+    const derived = onlyWarning(
+      renderSheetsAt([aDesign(withCredits())], { paper: LETTER, marginMm: 5, parts: PART_KINDS })[0],
+      'insert-pages-short',
+    );
+    const asked = onlyWarning(
+      renderSheetsAt([{ ...aDesign(withCredits()), pageCount: 4 }], {
+        paper: LETTER,
+        marginMm: 5,
+        parts: PART_KINDS,
+      })[0],
+      'insert-pages-short',
+    );
+
+    expect(derived.requestedByCollector).toBe(false);
+    expect(asked.requestedByCollector).toBe(true);
+    expect(asked.requestedPages).toBe(4);
   });
 
   it('never folds an odd number of Pages, whatever the content or the override', () => {
@@ -592,7 +629,8 @@ describe('SheetRenderer — how many Pages, and what is on them (ADR-0012)', () 
       'insert-pages-short',
     );
     expect(short).toMatchObject({
-      wantedPages: 4,
+      requestedPages: 4,
+      requestedByCollector: false,
       pages: 2,
       maxPages: 2,
       paperName: 'Letter',
@@ -731,7 +769,7 @@ describe('SheetRenderer — a Part packed on its side (ADR-0014)', () => {
     expect(folds.every((fold) => fold.points[1]?.y === 79)).toBe(true);
   });
 
-  it('lands two four-Page Inserts and five Labels on one A4 Sheet', () => {
+  it('lands two turned four-Page Inserts side by side on one A4 Sheet', () => {
     // ADR-0014's picture, drawn by the renderer rather than by the packer's own
     // rectangles: two turned Inserts side by side and the Labels in the column
     // that leaves. It needs both halves of ADR-0014 — the turn, and the column

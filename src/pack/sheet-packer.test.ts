@@ -445,8 +445,11 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
     // spent the half-millimetre, because the gap is scissor room and the other
     // three numbers in the sum are a case, a cartridge and a printer.
     //
-    // Both directions asserted. Only the second can fail if the constant moves
-    // up, and only the first if it moves down.
+    // The 4 is a literal on purpose: it pins what v1 shipped, so this half stays
+    // a statement about arithmetic rather than about the constant. The half that
+    // guards the constant is the second one — and the test above, whose
+    // [5, 61, 117, 173, 229] Label positions are gap-3.5 arithmetic and move if it
+    // goes either way.
     const withColumns = { ...TURNING, columns: true };
 
     expect(packParts(insertsAndLabels(), { ...withColumns, gapMm: 4 }).sheets).toHaveLength(2);

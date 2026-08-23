@@ -64,8 +64,9 @@ _Avoid_: Crease, Score, Falz
 
 **J-Card** _(retired, v1)_:
 What the Insert replaced: a three-panel card — Front Panel, Spine, Inner Flap — that slid into the
-front of the case (ADR-0005, superseded by ADR-0012). Kept here because six ADRs and the v1 spec
-name it and a reader who meets it needs the glossary to say what became of it. Its three panels
+front of the case (ADR-0005, superseded by ADR-0012). Kept here because five ADRs — 0005, 0007,
+0010, 0011 and 0012 — and the v1 spec name it, and a reader who meets it needs the glossary to say
+what became of it. Its three panels
 survive as sections of the Insert; its measurements are the Insert's first four.
 
 **Back Card** _(retired, v1)_:

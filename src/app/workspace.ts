@@ -1,7 +1,7 @@
 import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
 import type { Measurements } from '../domain/measurements.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
-import { PART_KINDS, sameInsertCut, sameLabelCut, samePartDimensions } from '../domain/parts.ts';
+import { PART_KINDS, sameLabelCut, samePartDimensions } from '../domain/parts.ts';
 import type { InsertDimensions, LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import { blankRelease } from '../domain/release.ts';
 import type { Credits, Release } from '../domain/release.ts';
@@ -108,31 +108,41 @@ export function createWorkspace(): Workspace {
     }`;
 
   /**
-   * What an opened project changed about the paper being cut, in the words of
-   * whichever Part it moved.
+   * What an opened project changed about the paper being cut, naming the numbers
+   * that actually moved.
    *
-   * Both Parts, and only the ones that moved. The v1 sentence quoted the Label
-   * whatever had changed, which read oddly the moment anything else could: a file
-   * that widened a Page announced itself by restating a Label nobody had touched.
-   * The comparison is still `samePartDimensions` over all nine numbers — a moved
-   * notch size or Front Panel width is a real change and still says so — and this
-   * only decides which of the two to spell out. When both moved, both are named.
+   * Field by field, and this is the third attempt at it. v1 quoted the Label
+   * whatever had changed, which read oddly the moment anything else could. Quoting
+   * *the Part* that changed was no better: a file that moved only the Insert's
+   * height then announced "the Insert's Pages are now 65 mm wide", naming the one
+   * Insert number that had not moved. Nine numbers, so nine comparisons, and only
+   * the ones that differ are spoken.
+   *
+   * There is no fallback branch, and there does not need to be: this is only
+   * called when `samePartDimensions` says something differs, and that is exactly
+   * `sameInsertCut || sameLabelCut` over these same nine fields — so at least one
+   * of them is always found.
    */
   const describeMeasurementChange = (
     previous: PartDimensions,
     next: PartDimensions,
   ): string => {
     const moved: string[] = [];
-    if (!sameInsertCut(previous.insert, next.insert)) {
-      moved.push(`the Insert’s Pages are now ${next.insert.pageWidth} mm wide`);
-    }
+    const mm = (label: string, was: number, now: number): void => {
+      if (was !== now) moved.push(`${label} is now ${now} mm`);
+    };
+    mm('the Insert’s Inner Flap', previous.insert.innerFlapWidth, next.insert.innerFlapWidth);
+    mm('its Spine', previous.insert.spineWidth, next.insert.spineWidth);
+    mm('its Front Panel', previous.insert.frontPanelWidth, next.insert.frontPanelWidth);
+    mm('its Pages are', previous.insert.pageWidth, next.insert.pageWidth);
+    mm('the Insert’s height', previous.insert.height, next.insert.height);
+    // The Label as one phrase rather than four: its size and its notch are read
+    // together off one sticker, and `sameLabelCut` is what decides whether the
+    // paper changed at all — a notch size that is clamped away is not a change.
     if (!sameLabelCut(previous.label, next.label)) {
       moved.push(`the Label is now ${describeLabel(next.label)}`);
     }
-    // Neither of the two headline numbers moved, but `samePartDimensions` said
-    // something did — the notch size, or one of the panel widths, none of which
-    // has a control. Named as a group rather than guessed at.
-    return moved.length > 0 ? moved.join(' and ') : 'the Part sizes are not the ones you had';
+    return moved.join(' and ');
   };
 
   const measure = createCanvasTextMeasurer();
@@ -189,11 +199,11 @@ export function createWorkspace(): Workspace {
     // size of every Part this collector cuts. Said out loud when it happens,
     // and silent when it does not, so the sentence is worth reading.
     //
-    // The comparison is over all nine measurements, not only the two with
+    // The comparison is over all nine measurements, not only the four with
     // controls: a file that moved the Insert's height changed what gets cut just
     // as much, and nothing else on screen would show it. What is *quoted* is
-    // whichever of the two the file actually moved, so the sentence never reports
-    // a change by naming a number that did not change — which is what it did when
+    // whichever numbers the file actually moved, so the sentence cannot report a
+    // change by naming something that did not change — which is what it did when
     // the Label was the only thing it knew how to say.
     const changed = !samePartDimensions(previous, measurements.dimensions);
     const measurementChange = changed

@@ -236,21 +236,30 @@ function drawPart(
   }
 }
 
-/** The Insert has fewer Pages than the content asked for, said as data. */
+/**
+ * The Insert has fewer Pages than were asked for, said as data.
+ *
+ * Measured against `requestedPages` rather than against `dropped`, because the
+ * two come apart in one direction: a collector who asks for four Pages on a
+ * two-Page Release drops nothing — there was nothing more to print — and would
+ * otherwise be told nothing at all, while the Design fold read "4 Pages" over a
+ * specimen reading "2 Pages".
+ */
 function shortfall(
   design: ReleaseDesign,
   plan: InsertPlan,
   maxPages: number,
   config: SheetConfig,
 ): SheetWarning[] {
-  if (plan.dropped.length === 0) return [];
+  if (plan.pages.length >= plan.requestedPages) return [];
   const { release } = design;
   return [
     {
       kind: 'insert-pages-short',
       releaseId: release.id,
       releaseTitle: release.album || release.artist || release.id,
-      wantedPages: plan.wantedPages,
+      requestedPages: plan.requestedPages,
+      requestedByCollector: design.pageCount !== undefined,
       pages: plan.pages.length,
       maxPages,
       paperName: config.paper.name,

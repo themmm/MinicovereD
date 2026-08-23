@@ -146,18 +146,30 @@ function describeWarning(warning: SheetWarning): string {
  * wording stays here (layout.ts).
  */
 function describeShortfall(warning: Extract<SheetWarning, { kind: 'insert-pages-short' }>): string {
-  const lost = describeDropped(warning.dropped);
-  if (warning.maxPages < warning.wantedPages) {
+  const asked = warning.requestedByCollector ? 'You asked for' : 'This Release needs';
+  if (warning.maxPages < warning.requestedPages) {
     return (
-      `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin has room for ` +
-      `${warning.maxPages} Pages, not ${warning.wantedPages}, so ${lost} not printed. ` +
-      `${LOWER_THE_MARGIN}`
+      `${asked} ${warning.requestedPages} Pages, and ${warning.paperName} at a ` +
+      `${warning.marginMm.toFixed(1)} mm margin has room for ${warning.maxPages}` +
+      `${loses(warning.dropped)}. ${LOWER_THE_MARGIN}`
     );
   }
   return (
-    `This Release fills ${warning.pages} Pages, not ${warning.wantedPages}, so ${lost} not ` +
-    `printed. An Insert folds an even number of Pages and none of them may be blank.`
+    `${asked} ${warning.requestedPages} Pages and this one fills ${warning.pages}` +
+    `${loses(warning.dropped)}. An Insert folds an even number of Pages and none of them ` +
+    `may be blank.`
   );
+}
+
+/**
+ * What the shortfall costs, or nothing at all.
+ *
+ * Nothing at all is a real answer: a collector who asks for four Pages on a
+ * Release with two Pages of content has lost no content, and a sentence that
+ * insisted something was dropped would be inventing a loss to fill a clause.
+ */
+function loses(dropped: readonly PageRole[]): string {
+  return dropped.length === 0 ? '' : `, so ${describeDropped(dropped)} not printed`;
 }
 
 /**

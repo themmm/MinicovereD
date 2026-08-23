@@ -238,9 +238,10 @@ describe('the calibration sheet — the page', () => {
     // 210 − 2 × 62 leaves 86 mm of width and the Insert's case end is 87.5
     // across. Lying down it is 79 × 87.5 and would fit easily, and the packer can
     // do that now (ADR-0014) — but this page draws its own outlines in paper
-    // coordinates from the packed box, and knows nothing about a turn. It would
-    // put an upright 87.5 mm outline inside a 79 mm box, spilling out to the right
-    // and stopping 8.5 mm short at the bottom, under a caption reading 79 × 87.5.
+    // coordinates from the packed box and knows nothing about a turn, so it passes
+    // no `turn` and takes the packer's `never`. Turned, it would put an upright
+    // 87.5 mm outline inside a 79 mm box, spilling out to the right and stopping
+    // 8.5 mm short at the bottom, under a caption reading 79 × 87.5.
     //
     // A 62 mm margin is far past the 25 mm the control reaches, which is the
     // point: this is the behaviour, not a case a collector meets.

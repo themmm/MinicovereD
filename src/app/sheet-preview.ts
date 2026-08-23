@@ -243,12 +243,16 @@ function describeWarning(warning: SheetWarning): string {
       // band's own `describeDropped`, so the two sentences cannot disagree about
       // what was lost or about how many things it was.
       const why =
-        warning.maxPages < warning.wantedPages
+        warning.maxPages < warning.requestedPages
           ? `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin folds ` +
-            `${warning.maxPages} Pages, not ${warning.wantedPages}. A4 at 7.25 mm or less folds four; ` +
-            `Letter never does.`
-          : `it fills ${warning.pages} Pages, not ${warning.wantedPages}, and no Page may be blank.`;
-      return `${warning.releaseTitle}: ${describeDropped(warning.dropped)} not on the Insert — ${why}`;
+            `${warning.maxPages} Pages, not ${warning.requestedPages}. A4 at 7.25 mm or less folds ` +
+            `four; Letter never does.`
+          : `it fills ${warning.pages} Pages, not ${warning.requestedPages}, and no Page may be blank.`;
+      const lost =
+        warning.dropped.length === 0
+          ? 'its Insert is shorter than asked for'
+          : `${describeDropped(warning.dropped)} not on the Insert`;
+      return `${warning.releaseTitle}: ${lost} — ${why}`;
     }
   }
 }

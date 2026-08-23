@@ -92,10 +92,17 @@ describe('a Part as its own Sheet', () => {
   it('assembles by the union of the visible sections, not by the flap’s width', () => {
     // Same sections, declared in the reverse order. A reader of `panels[0]` would
     // trim to the wrong edge; the union cannot.
+    //
+    // Compared against the box itself as well as against the upright case, because
+    // comparing the two runs alone is a tautology: any change to *which* sections
+    // count moves both sides together and the equality survives. The literal is
+    // what pins the selection — the Spine's left edge to Page 1's right.
     const placement = insertPlacement(4);
     const reversed: PartPlacement = { ...placement, panels: [...(placement.panels ?? [])].reverse() };
+    const box = { x: FLAP, y: 0, width: SPINE + FRONT, height: insert.height };
 
-    expect(visibleBox(reversed, 'assembled')).toEqual(visibleBox(placement, 'assembled'));
+    expect(visibleBox(placement, 'assembled')).toEqual(box);
+    expect(visibleBox(reversed, 'assembled')).toEqual(box);
   });
 
   it('shows a Part whole when it has no sections to fold', () => {

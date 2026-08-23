@@ -10,9 +10,11 @@ import { el } from './dom.ts';
  * the J-Card's numbers, unchanged since v1, and a collector who wants to argue
  * with them has the calibration sheet and a project file. The Page width is the
  * one of the five that the case does not decide: it is a *booklet* dimension,
- * ADR-0012 picked 65 mm because 65 is what fits four Pages on A4, and it is the
- * number that changes how long the strip is and therefore how many Inserts share
- * a Sheet. The spec lists it under app settings for exactly that reason.
+ * chosen so that four Pages clear A4 with room to spare — ADR-0012's 282.5
+ * against 287 — and it is the number that changes how long the strip is and
+ * therefore how many Inserts share a Sheet. (66 mm would still fit and 67 would
+ * not, so 65 is a comfortable choice rather than the ceiling.) The spec lists it
+ * under app settings for exactly that reason.
  *
  * Measurements, so app-level and not per Release (`Measurements`) — the same
  * shape `createLabelControls` has, and for the same reason: the panel is built
@@ -30,8 +32,14 @@ export interface InsertControls {
   show(insert: InsertDimensions): void;
 }
 
-/** What the strip measures at both Page counts, which is what the number costs. */
-function describeStrip(insert: InsertDimensions): string {
+/**
+ * What the strip measures at both Page counts, which is what the number costs.
+ *
+ * Exported for its own test: it is the one part of this panel that is not a DOM
+ * widget, and the one part that can be quietly wrong — a sentence naming the
+ * wrong length looks exactly like a sentence naming the right one.
+ */
+export function describeStrip(insert: InsertDimensions): string {
   return (
     `Flat strip: ${insertSize(insert, 2).width} mm at 2 Pages, ` +
     `${insertSize(insert, MAX_INSERT_PAGES).width} mm at ${MAX_INSERT_PAGES}.`

@@ -257,11 +257,13 @@ describe('rasterising the three kinds of fold (ADR-0012)', () => {
     const context = recordingContext();
     drawSheet(context, FOLDED, EXPORT_DPI);
 
-    // Four guides are drawn and only three ask for a pattern; the cut asks for
-    // an empty one. And every fold's pattern is non-empty, so none of them is
-    // drawn as a solid line either.
-    const asked = context.dashes;
-    expect(asked.filter((pattern) => pattern.length === 0).length, 'the cut is solid').toBeGreaterThan(0);
+    // Solid strokes outnumber dashed ones here, and not only because of the cut:
+    // each fold is drawn twice, once as a solid white halo under the mark and once
+    // as the mark itself. So the count to expect is one empty pattern for the cut
+    // plus one per fold — four — against three non-empty ones.
+    expect(context.dashes.filter((pattern) => pattern.length === 0)).toHaveLength(4);
+    expect(patternsOf(FOLDED)).toHaveLength(3);
+    // And no fold is drawn solid, which is what would let one be cut along.
     expect(patternsOf(FOLDED).every((pattern) => pattern.length >= 2)).toBe(true);
   });
 

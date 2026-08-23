@@ -1245,17 +1245,14 @@ a:focus-visible {
     justify-items: start;
   }
 
-  /* Stacked, each Part gets its own scroller: a flat Insert is wider than a
-     narrow viewport, and the Label beside it is not, so one scroller for the
+  /* Stacked, and each Part gets its own scroller: a flat Insert is wider than a
+     narrow viewport and the Label beside it is not, so one scroller for the whole
      column would make the short Part scroll for the long one's sake. */
-  .spec {
-    overflow-x: auto;
-    scrollbar-width: thin;
-  }
-
   .spec {
     display: grid;
     gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
   }
 }
 

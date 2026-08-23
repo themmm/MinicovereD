@@ -8,7 +8,8 @@ import type { Mm, Point, Size } from './units.ts';
  * This is where the v1 J-Card and Back Card went. They were three panels plus a
  * separate rectangle; the Insert is the same three panels with Pages hanging off
  * the end, folded concertina so the printed side always faces out. CONTEXT.md
- * keeps both old names, marked retired, because six ADRs still say them.
+ * keeps both old names, marked retired, because five ADRs still say them —
+ * 0005, 0007, 0010, 0011 and 0012.
  *
  * Every dimension here is an adjustable parameter — the sources disagree by a
  * millimetre or so, which is what the calibration sheet exists to settle — so

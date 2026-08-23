@@ -251,7 +251,7 @@ export interface SpineTruncated {
  *
  * Two things cause it and the fields say which without naming it, because
  * wording is the UI's (see the note on {@link SheetLayout.warnings}). When
- * `maxPages` is below `wantedPages` the paper is the limit — a 282.5 mm strip
+ * `maxPages` is below `requestedPages` the paper is the limit — a 282.5 mm strip
  * needs a printable margin of 7.25 mm or less on A4, and never fits Letter at
  * all. Otherwise the paper had room and the *content* could not fill the Pages:
  * ADR-0012's even-Page rule may not produce a blank sheet the collector did not
@@ -262,15 +262,31 @@ export interface InsertPagesShort {
   readonly releaseId: string;
   /** What to call the Release on screen. */
   readonly releaseTitle: string;
-  /** Pages the Release's content asked for. */
-  readonly wantedPages: number;
+  /**
+   * Pages that were asked for: the collector's own count when they set one,
+   * otherwise the Release's content.
+   *
+   * The number the shortfall is measured against, and the number a sentence about
+   * it has to quote — a collector who typed 4 into the Pages control is owed an
+   * answer about 4 and not about what the content would have chosen.
+   */
+  readonly requestedPages: number;
+  /** Whether it was the collector who asked, rather than the content. */
+  readonly requestedByCollector: boolean;
   /** Pages the Insert actually folds into. */
   readonly pages: number;
   /** The most Pages this paper at this printable margin would take (ADR-0014). */
   readonly maxPages: number;
   readonly paperName: string;
   readonly marginMm: Mm;
-  /** What is not on the Insert as a result, in reading order. Never the tracklist. */
+  /**
+   * What is not on the Insert as a result, in reading order. Never the tracklist.
+   *
+   * **Can be empty**, and that is a real case rather than a contradiction: a
+   * collector who asks for four Pages on a Release with two Pages of content has
+   * lost nothing, because there was nothing more to print. The strip is still
+   * shorter than they asked for and the report still fires.
+   */
   readonly dropped: readonly PageRole[];
 }
 

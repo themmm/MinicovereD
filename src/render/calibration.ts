@@ -21,7 +21,8 @@ import type { TextMeasurer } from './text.ts';
  * The Insert appears as its **case end** and **one Page** rather than as the
  * whole strip, and that is a decision rather than a shortcut — see where the
  * figures are built. A 282.5 mm strip does not fit any printable area this app
- * can produce, and it is not what a collector holds against a case either.
+ * can produce standing up, and this page never turns a figure; it is not what a
+ * collector holds against a case either.
  */
 
 /** Long enough that a percent of scaling error is a visible millimetre. */
@@ -189,9 +190,10 @@ export function renderCalibrationSheet(
   // The case end and one Page, rather than the whole strip.
   //
   // A four-Page Insert is 282.5 mm long and this page draws its outlines in
-  // paper coordinates from the packed box, with `turn: 'never'` — so the strip
-  // is omitted at every printable margin including zero, and the footer would
-  // then tell a collector to reduce a margin that cannot help. It is also not
+  // paper coordinates from the packed box. It never turns one — the `packParts`
+  // call below passes no `turn`, and the packer's default is `never` — so the
+  // strip is omitted at every printable margin including zero, and the footer
+  // would then tell a collector to reduce a margin that cannot help. It is also not
   // what anyone holds against a case: what a case decides is the 87.5 mm that
   // wraps it and how wide a Page is, and both of those are here at 1:1 with the
   // folds marked. The strip's own length is a number rather than an outline, and

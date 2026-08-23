@@ -39,6 +39,18 @@ export interface InsertPlan {
   /** What the content asked for, before the paper or the collector had a say. */
   readonly wantedPages: number;
   /**
+   * What was asked for in the end — the collector's own count when they set one,
+   * otherwise the content's — evened off but before the paper had its say.
+   *
+   * Kept apart from `wantedPages` because the two can disagree in *either*
+   * direction, and a strip shorter than this is a shortfall whichever of them it
+   * fell short of. An override asking for four Pages that the content cannot fill
+   * drops nothing — there was nothing more to print — but the collector still
+   * asked and still did not get it, and saying nothing there left the Design fold
+   * reading "4 Pages" over a specimen reading "2 Pages".
+   */
+  readonly requestedPages: number;
+  /**
    * What is not on the strip as a result, in reading order.
    *
    * Never the tracklist: a Page of list that has nowhere to go is set smaller
@@ -101,10 +113,9 @@ function fillInterior(interior: number, content: InsertContent, needsTwoLists: b
   ].slice(0, interior);
 }
 
-/** Rounded down to something foldable: even, at least two, and inside the cap. */
-function foldablePages(asked: number, maxPages: number): number {
-  const even = Math.floor(Math.max(2, asked) / 2) * 2;
-  return Math.min(even, Math.max(2, maxPages));
+/** Rounded down to something foldable: even, and at least two. */
+function evenPages(asked: number): number {
+  return Math.floor(Math.max(2, asked) / 2) * 2;
 }
 
 /**
@@ -121,7 +132,8 @@ function foldablePages(asked: number, maxPages: number): number {
  * to the same two rules as the derivation: even, and every Page filled. So it
  * can take a four-Page Insert down to two, and it can take a two-Page one up to
  * four wherever the Pages can be filled — but it cannot fold blank paper, and it
- * cannot beat the paper.
+ * cannot beat the paper. When it is refused, `requestedPages` is what says so:
+ * the strip came out shorter than what was asked for.
  */
 export function planInsert(
   content: InsertContent,
@@ -141,7 +153,11 @@ export function planInsert(
   const wanted = derived ?? (fillInterior(SMALL_INTERIOR, content, needsTwoLists) as PageRole[]);
   const wantedPages = wanted.length + 1;
 
-  const asked = foldablePages(override ?? wantedPages, maxPages);
+  // Evened off before the paper is consulted, so `requestedPages` is what was
+  // asked for rather than what the paper allowed — those are two different
+  // sentences to a collector, and only one of them has a remedy.
+  const requestedPages = evenPages(override ?? wantedPages);
+  const asked = Math.min(requestedPages, Math.max(2, maxPages));
   const chosen =
     fillInterior(asked - 1, content, needsTwoLists) ??
     (fillInterior(SMALL_INTERIOR, content, needsTwoLists) as PageRole[]);
@@ -149,6 +165,7 @@ export function planInsert(
   return {
     pages: ['cover', ...chosen],
     wantedPages,
+    requestedPages,
     // By role rather than by Page, and the tracklist is never in it: what a
     // collector loses is a credits block or a back cover, and a list that lost a
     // Page is a list set smaller, which `TypeBelowPrintFloor` already reports.
@@ -168,11 +185,13 @@ export function planInsert(
  * one rule and packed by another is a strip the packer refuses, and refusing a
  * Part blanks the whole preview.
  *
- * Never fewer than two, because two Pages is the Insert. A two-Page strip is
- * 152.5 × 79 and A4 stops taking it at a 28.75 mm margin where the control stops
- * at 25, so the floor is not a lie in practice. A hand-edited project file can
- * still carry an Insert that fits nothing, and that one throws, with the packer's
- * own sentence about which margin would take it.
+ * Never fewer than two, because two Pages is the Insert, and the floor is not a
+ * lie in practice: a two-Page strip is 152.5 × 79, and since this asks with
+ * `turn: 'to-fit'` it may lie down — 79 across and 152.5 down fits A4 up to a
+ * 65.5 mm margin, where the control stops at 25. (Standing up it would only reach
+ * 28.75, which is the figure to quote if this ever stops turning.) A hand-edited
+ * project file can still carry an Insert that fits nothing, and that one throws,
+ * with the packer's own sentence about which margin would take it.
  *
  * What this produces is ADR-0014's slack, reached from the other side: A4 gives
  * four Pages up to a 7.25 mm margin and two above it, and **Letter gives two at

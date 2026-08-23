@@ -540,10 +540,10 @@ describe('reading a project file with values that would break a render', () => {
       pageWidth: 65,
       height: 78,
     });
-    // And the Back Card's 69 mm width is deliberately not read: it has no
-    // counterpart on the strip, whose Pages are 65 by the case rather than 69 by
-    // the old rectangle.
-    expect(result.project.measurements.dimensions.insert.pageWidth).toBe(65);
+    // The Back Card's 68 mm width in that file is deliberately not read: it has no
+    // counterpart on the strip, whose Pages are 65 by the case rather than 68 by
+    // the old rectangle — which the `pageWidth: 65` above says, since 68 was there
+    // to be picked up and was not.
   });
 
   it('refuses a Page count a file states that could not be folded', () => {
@@ -647,6 +647,32 @@ describe('reading a project file with values that would break a render', () => {
     // one Back Card, which is exactly a two-Page Insert.
     const text = project((base) => {
       (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard', 'back-card', 'label'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('puts the Parts back in canonical order however the file listed them', () => {
+    // The checkboxes are the state and are read back through `PART_KINDS`, so the
+    // order in the file cannot reach the UI. Every other test here happens to list
+    // them already in order, which is exactly how "canonical however the file
+    // listed them" goes untested.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['label', 'insert'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert', 'label']);
+  });
+
+  it('does not name one Part twice when a v1 file names both halves of it', () => {
+    // `jcard` and `back-card` both map to the Insert, so a naive concat would list
+    // it twice and the Sheet would pack two Inserts per Release.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['back-card', 'jcard', 'label'];
     });
     const result = readProjectFile(text);
 

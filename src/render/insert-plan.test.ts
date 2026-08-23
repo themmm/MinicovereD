@@ -57,13 +57,29 @@ describe('how many Pages an Insert folds into', () => {
     ]);
   });
 
-  it('draws ADR-0012’s own picture: cover, tracklist, credits, artwork', () => {
-    // The four-Page strip in the ADR's diagram, in the ADR's order.
-    expect(plan({ hasCredits: true, hasBackCover: true, trackCount: 12 })).toEqual([
+  it('draws ADR-0012’s own picture at the track count its diagram implies', () => {
+    // The ADR's diagram is a four-Page strip whose tracklist is one Page, so it is
+    // the *short* list that has to produce it — a long one would take the credits'
+    // Page. Distinct from the test above, which does not say how long the list is
+    // and would pass at any length that still fits one Page.
+    expect(plan({ hasCredits: true, hasBackCover: true, trackCount: 1 })).toEqual([
       'cover',
       'tracklist',
       'credits',
       'artwork',
+    ]);
+    expect(plan({ hasCredits: true, hasBackCover: true, trackCount: FITS_ONE_PAGE })).toEqual([
+      'cover',
+      'tracklist',
+      'credits',
+      'artwork',
+    ]);
+    // One track past it and the list takes the back cover's Page instead.
+    expect(plan({ hasCredits: true, hasBackCover: true, trackCount: OVERFLOWS_ONE_PAGE })).toEqual([
+      'cover',
+      'tracklist',
+      'tracklist',
+      'credits',
     ]);
   });
 
