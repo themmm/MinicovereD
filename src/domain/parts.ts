@@ -121,6 +121,23 @@ function rectangle(size: Size): PartShape {
   };
 }
 
+/**
+ * How deep the Label's cut corner actually is, in millimetres, and zero when it
+ * is squared off.
+ *
+ * Clamped to half the shorter edge: a notch bigger than the Label would fold
+ * the outline through itself into negative coordinates, and a Label is not a
+ * triangle. Project files are not trusted to be sane.
+ *
+ * Exported because the outline is not the only thing that has to know. A
+ * Template setting type near that corner reserves room from it, and it has to
+ * reserve the corner that is actually cut rather than the one the file asked
+ * for — two answers to that question is one answer too many.
+ */
+export function labelNotchDepth(label: LabelDimensions): Mm {
+  return label.notch ? Math.min(label.notchSize, label.width / 2, label.height / 2) : 0;
+}
+
 export function partShape(part: PartKind, dimensions: PartDimensions): PartShape {
   switch (part) {
     case 'jcard':
@@ -128,12 +145,9 @@ export function partShape(part: PartKind, dimensions: PartDimensions): PartShape
     case 'back-card':
       return rectangle({ width: dimensions.backCard.width, height: dimensions.backCard.height });
     case 'label': {
-      const { width, height, notch } = dimensions.label;
-      // Clamped to half the shorter edge: a notch bigger than the Label would
-      // fold the outline through itself into negative coordinates, and a Label
-      // is not a triangle. Project files are not trusted to be sane.
-      const notchSize = Math.min(dimensions.label.notchSize, width / 2, height / 2);
-      if (!notch || notchSize <= 0) return rectangle({ width, height });
+      const { width, height } = dimensions.label;
+      const notchSize = labelNotchDepth(dimensions.label);
+      if (notchSize <= 0) return rectangle({ width, height });
 
       // The cartridge's diagonally cut corner (CONTEXT.md: Label).
       return {

@@ -155,6 +155,15 @@ describe('reading a project file back', () => {
     expect(designs[0]?.params.insetArtwork).toBe(true);
   });
 
+  it('carries a Template the file format never heard of when it was written', () => {
+    // Minimal was added after 1.0 shipped, and `PROJECT_VERSION` did not move
+    // for it: the reader takes any id the registry holds, so a third Template
+    // costs the format nothing. Free is not the same as covered.
+    const minimal = { ...design, templateId: 'minimal' as const };
+
+    expect(roundTrip([minimal]).designs[0]?.templateId).toBe('minimal');
+  });
+
   it('carries a whole queue, in order', () => {
     const queue = ['a', 'b', 'c'].map((id) => ({
       ...design,
@@ -300,6 +309,20 @@ describe('reading a project file with values that would break a render', () => {
 
     if (!result.ok) throw new Error(result.error);
     expect(designsOf(result.project)[0]?.params.inkColor).not.toContain('<script');
+  });
+
+  it('falls back to Classic for a Template this version does not have', () => {
+    // The guard is `Object.hasOwn(TEMPLATES, id)`, and it has to keep holding
+    // now that the registry has three entries rather than two — an id that only
+    // a later version knows must open as a design, not as `undefined`.
+    const text = project((base) => {
+      const designs = base['designs'] as Array<Record<string, unknown>>;
+      if (designs[0]) designs[0]['templateId'] = 'letterpress';
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.templateId).toBe('classic');
   });
 
   it('clamps a margin that would leave no printable area', () => {

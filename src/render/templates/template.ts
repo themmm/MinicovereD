@@ -10,7 +10,7 @@ import type { TextMeasurer } from '../text.ts';
  * never draws guides — it only fills a Part-sized area with drawing ops, in
  * Part-local millimetres.
  */
-export type TemplateId = 'classic' | 'fullbleed';
+export type TemplateId = 'classic' | 'fullbleed' | 'minimal';
 
 /**
  * What a Template sets each kind of type in. CONTEXT.md already puts typography
@@ -28,6 +28,11 @@ export type TemplateId = 'classic' | 'fullbleed';
  *    tracklist Page, so it needs stems that survive both.
  *  - `spine` is one line on 5.5 mm that gets cut when it will not fit
  *    (`SpineTruncated`), so width per character is worth real money there.
+ *
+ * Three roles, not three faces: a Template is free to name one face in all
+ * three, and Minimal does. The difference from the single-choice version this
+ * replaced is that spending the roles on one voice is then a decision that
+ * Template made, rather than the only shape available to any of them.
  */
 export interface TemplateFaces {
   /** Artist and album at display size: the Front Panel, the Label, headings. */
@@ -57,7 +62,11 @@ export interface TemplateParams {
    * over it and is unaffected.
    */
   readonly showOverlayText: boolean;
-  /** The MiniDisc logo on Front Panel and Spine (ADR-0004). */
+  /**
+   * The MiniDisc logo (ADR-0004). Always the Spine, which is where a shelved
+   * case is identified from; the Front Panel too on Classic and Full-bleed, but
+   * not on Minimal, whose Front Panel carries nothing that is not type.
+   */
   readonly showLogo: boolean;
   /**
    * Classic's Front Panel artwork as an inset square with paper all round it,
@@ -69,7 +78,8 @@ export interface TemplateParams {
    * collector who liked it should not have to keep v1 installed to have it.
    * Full-bleed's artwork covers the Part by definition and ignores this, and so
    * does the Classic Label, whose square is sized around the cartridge's cut
-   * corner rather than around taste.
+   * corner rather than around taste. Minimal ignores it because it draws no
+   * artwork at all.
    */
   readonly insetArtwork: boolean;
 }

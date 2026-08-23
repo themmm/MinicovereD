@@ -37,7 +37,13 @@ const TOGGLES: readonly ToggleField[] = [
     label: 'Text over the artwork',
     hint: 'Artist and album on top of full-bleed artwork',
   },
-  { key: 'showLogo', label: 'MiniDisc logo', hint: 'On Front Panel and Spine' },
+  {
+    key: 'showLogo',
+    label: 'MiniDisc logo',
+    // Minimal puts it on the Spine only, so the plain "Front Panel and Spine"
+    // this said became false the day it was added.
+    hint: 'On the Spine always; on the Front Panel of Classic and Full-bleed',
+  },
   {
     key: 'insetArtwork',
     label: 'Artwork as an inset square',
