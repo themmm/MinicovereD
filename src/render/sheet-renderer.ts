@@ -237,13 +237,21 @@ function drawPart(
 }
 
 /**
- * The Insert has fewer Pages than were asked for, said as data.
+ * Something the collector can see on screen is not on the paper, said as data.
  *
- * Measured against `requestedPages` rather than against `dropped`, because the
- * two come apart in one direction: a collector who asks for four Pages on a
- * two-Page Release drops nothing — there was nothing more to print — and would
- * otherwise be told nothing at all, while the Design fold read "4 Pages" over a
- * specimen reading "2 Pages".
+ * Either of two things brings it on, and they come apart in both directions.
+ * **Content was dropped** — a credits Page or a back cover the Release has and
+ * the strip does not. **The strip is shorter than what was asked for** — which
+ * happens with nothing dropped at all, when a collector asks for four Pages on a
+ * two-Page Release: there was nothing more to print, so nothing was lost, but
+ * they still asked and still did not get it, and saying nothing there left the
+ * Design fold reading "4 Pages" over a specimen reading "2 Pages".
+ *
+ * Reported even when the collector chose it, which is the third case: asking for
+ * two Pages on a Release with credits gets exactly two, so nothing fell short —
+ * and the credits are still not on the paper. The Insert is the only place that
+ * says so, and a deliberate choice is not a reason to stop saying it. The wording
+ * is the UI's and it does not scold; see `describeShortfall`.
  */
 function shortfall(
   design: ReleaseDesign,
@@ -251,7 +259,7 @@ function shortfall(
   maxPages: number,
   config: SheetConfig,
 ): SheetWarning[] {
-  if (plan.pages.length >= plan.requestedPages) return [];
+  if (plan.dropped.length === 0 && plan.pages.length >= plan.requestedPages) return [];
   const { release } = design;
   return [
     {

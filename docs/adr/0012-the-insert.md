@@ -69,7 +69,9 @@ The Page count is **derived from content and roundable up**, with a manual overr
 - **Two Pages** — Front Panel and tracklist. The common case, and the only case a hand-made mixtape
   can reach: it has no Discogs entry (ADR-0013) and there is no free-text field, so there is nothing
   to put on a third Page.
-- **Four Pages** when the tracklist overflows, or when credits exist to print.
+- **Four Pages** when credits exist to print — or when the tracklist overflows one Page *and*
+  there is a back cover to fill out the four. The qualification is the even-Page rule doing its work:
+  see "A Template decides whether it has a back cover" under Consequences.
 - **The odd Page out carries the artwork again, as a back cover.** This is what a real booklet does,
   it costs nothing because the image is already embedded at full resolution, and it means the
   even-Page rule can never produce a blank sheet of paper the collector did not ask for.
@@ -127,9 +129,15 @@ is what keeps a mixtape at two Pages: not a special case for mixtapes, but the g
 Page nothing would go on is not folded.
 
 `PROJECT_VERSION` becomes 2, and old files migrate rather than being refused: a v1 Design has exactly
-one J-Card and one Back Card, which is exactly a 2-Page Insert, and the `jcard` + `back-card` toggles
-collapse to one `insert` toggle. v1.0.0 is public; a second silent loss of saved work would be a
-pattern rather than an accident.
+one J-Card and one Back Card, so the `jcard` + `back-card` toggles collapse to one `insert` toggle.
+v1.0.0 is public; a second silent loss of saved work would be a pattern rather than an accident.
+
+That is the *toggle* collapse, and the sentence originally said the file became "exactly a 2-Page
+Insert" as well. It does not, and the difference is a feature: no `pageCount` is read from a version-1
+file, so the count is **derived from the content**. A 1.0 file opens at two Pages because a 1.0
+Release has no credits — but 1.1 files also carry version 1 and *can* carry Discogs credits (ADR-0013,
+ticket 05), and one of those opens at four, with its credits on a Page of their own. Nothing is lost
+either way; a collector simply gets the booklet their record now justifies.
 
 The 282.5 mm strip cannot be placed on any Sheet the packer can currently build. See ADR-0014.
 

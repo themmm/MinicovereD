@@ -154,11 +154,18 @@ function describeShortfall(warning: Extract<SheetWarning, { kind: 'insert-pages-
       `${loses(warning.dropped)}. ${LOWER_THE_MARGIN}`
     );
   }
-  return (
-    `${asked} ${warning.requestedPages} Pages and this one fills ${warning.pages}` +
-    `${loses(warning.dropped)}. An Insert folds an even number of Pages and none of them ` +
-    `may be blank.`
-  );
+  if (warning.pages < warning.requestedPages) {
+    return (
+      `${asked} ${warning.requestedPages} Pages and this one fills ${warning.pages}` +
+      `${loses(warning.dropped)}. An Insert folds an even number of Pages and none of them ` +
+      `may be blank.`
+    );
+  }
+  // The strip is exactly as long as it was asked to be, and content is still off
+  // it — which only a collector shortening the Insert by hand can produce. A plain
+  // statement of the consequence, and no advice: there is nothing to fix, they
+  // decided this, and the only thing worth saying is what it cost.
+  return `At ${warning.pages} Pages${loses(warning.dropped)}.`;
 }
 
 /**

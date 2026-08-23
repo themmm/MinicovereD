@@ -247,7 +247,11 @@ function describeWarning(warning: SheetWarning): string {
           ? `${warning.paperName} at a ${warning.marginMm.toFixed(1)} mm margin folds ` +
             `${warning.maxPages} Pages, not ${warning.requestedPages}. A4 at 7.25 mm or less folds ` +
             `four; Letter never does.`
-          : `it fills ${warning.pages} Pages, not ${warning.requestedPages}, and no Page may be blank.`;
+          : warning.pages < warning.requestedPages
+            ? `it fills ${warning.pages} Pages, not ${warning.requestedPages}, and no Page may be blank.`
+            : // Exactly as long as asked: the collector shortened it themselves, so
+              // there is nothing to explain beyond the count they chose.
+              `its Insert is set to ${warning.pages} Pages.`;
       const lost =
         warning.dropped.length === 0
           ? 'its Insert is shorter than asked for'

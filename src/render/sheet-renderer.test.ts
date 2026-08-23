@@ -581,6 +581,32 @@ describe('SheetRenderer — how many Pages, and what is on them (ADR-0012)', () 
     });
   });
 
+  it('still reports what a deliberately shortened Insert leaves off', () => {
+    // The collector asked for two Pages on a Release with credits, so nothing fell
+    // short of what they asked — and the credits are still not on the paper. The
+    // Insert is the only place that says so, and choosing it is not a reason to
+    // stop saying it.
+    const short = onlyWarning(
+      renderSheetsAt([{ ...aDesign(withCredits()), pageCount: 2 }], A4_SHEET)[0],
+      'insert-pages-short',
+    );
+
+    expect(short).toMatchObject({
+      requestedPages: 2,
+      pages: 2,
+      requestedByCollector: true,
+      dropped: ['credits', 'artwork'],
+    });
+  });
+
+  it('says nothing when the collector shortens an Insert that had nothing to lose', () => {
+    // Two Pages asked for on a two-Page Release: nothing dropped, nothing short.
+    // The report has to stay quiet here or it would fire on every ordinary Insert.
+    const [sheet] = renderSheetsAt([{ ...aDesign(), pageCount: 2 }], A4_SHEET);
+
+    expect((sheet?.warnings ?? []).filter((warning) => warning.kind === 'insert-pages-short')).toEqual([]);
+  });
+
   it('says the collector asked, not the content, when it was the collector', () => {
     // Two different sentences hang off this: "You asked for 4 Pages" and "This
     // Release needs 4 Pages" are answers to different questions, and a collector
