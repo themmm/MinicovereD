@@ -100,12 +100,15 @@ export const PAGE_WIDTH_RANGE = { min: 30, max: 80, stepMm: 0.5 } as const;
 /**
  * The most Pages this app will fold into one strip, whatever the paper.
  *
- * Four, because that is the A4 maximum (ADR-0012) and A4 is the largest paper
- * offered: at 65 mm Pages the strip is 282.5 mm against 287 mm of usable
- * length. Six Pages needs a second strip, which is out of scope, so the number
- * is written down rather than left to be discovered by the paper — a collector
- * on a paper size this app does not yet offer should get the booklet this
- * project has actually folded and tested, not one it has not.
+ * Four, because that is the A4 maximum (ADR-0012), and A4's 297 mm is the longest
+ * edge any paper here offers — Letter is wider at 215.9 but 17.6 mm shorter, so
+ * it takes fewer Pages rather than more. At 65 mm Pages the strip is 282.5 mm
+ * against A4's 287 mm of usable length.
+ *
+ * Six Pages needs a second strip, which is out of scope, so the number is written
+ * down rather than left to be discovered by the paper: a collector on a paper size
+ * this app does not yet offer should get the booklet this project has actually
+ * folded and tested, not one it has not.
  */
 export const MAX_INSERT_PAGES = 4;
 

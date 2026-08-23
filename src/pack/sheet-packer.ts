@@ -85,8 +85,9 @@ export interface PackResult<T> {
  * The gap is the one of the four that is not a measurement of anything physical.
  * The Insert's height is how tall a case's front cover is; the Label's width is
  * how wide a cartridge is; the printable margin is what a home printer will not
- * reach. This is scissor room, and 3.5 mm is still more than three times the
- * 1 mm a cut line and its neighbour need to stay apart.
+ * reach. This is scissor room, and what it has to clear is two cut lines at
+ * `GUIDE_WIDTH_MM` — 0.15 mm each in `raster.ts` — so 3.5 mm leaves better than
+ * twenty line widths between them.
  */
 export const DEFAULT_PART_GAP_MM: Mm = 3.5;
 

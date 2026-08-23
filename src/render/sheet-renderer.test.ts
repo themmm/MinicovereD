@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
+import { LIST_TOP_MM } from './tracklist-layout.ts';
 import { rectsOverlap } from '../domain/units.ts';
 import { DEFAULT_PART_DIMENSIONS, labelShape, PART_KINDS } from '../domain/parts.ts';
 import type { PartDimensions, PartKind } from '../domain/parts.ts';
@@ -1969,6 +1970,25 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
       expect(listSize, `${templateId} shrank`).toBeLessThan(2.4);
       expect(timeSizes, `${templateId} sets its times at the fitted size`).toEqual([listSize]);
+    }
+  });
+
+  it('starts every Template’s list no higher up the Page than the Page count assumes', () => {
+    // `LIST_TOP_MM` is the box the *count* is decided against, and its comment
+    // claims 16 mm is the most generous of the Templates. If one of them ever
+    // started its list above that, the count would be derived against less room
+    // than that Template actually has — and it would be handed a Page it had
+    // nothing to fill. Asserted rather than reviewed, because the claim is in a
+    // comment and comments do not fail.
+    for (const templateId of TEMPLATE_IDS) {
+      const { texts, page } = listPage(templateId, DARK, timed(10));
+      const firstTrack = texts.find((op) => /^\d+\. /.test(op.text));
+
+      expect(firstTrack, `${templateId} drew a list`).toBeDefined();
+      expect(
+        (firstTrack?.at.y ?? 0) - page.y,
+        `${templateId} starts its list at or below LIST_TOP_MM`,
+      ).toBeGreaterThanOrEqual(LIST_TOP_MM);
     }
   });
 

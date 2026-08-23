@@ -406,10 +406,11 @@ describe('SheetPacker — the Part turns, not the Sheet (ADR-0014)', () => {
   it('lands two Inserts and five Labels on one A4 portrait Sheet, at the gap the app ships', () => {
     // ADR-0014's picture, at `DEFAULT_PART_GAP_MM` rather than at a gap chosen to
     // make it come out: two turned Inserts side by side, and the column that
-    // leaves holds the Labels. They take 197 of the 200 mm — the ADR's 158 is the
-    // same pair with no gap between them. It needs the column as much as the
-    // turn: every rectangle on a shelf shares that shelf's top edge, so without
-    // one only the first Label reaches the strip.
+    // leaves holds the Labels. 79 + 3.5 + 79 + 3.5 + 35 is exactly the 200 mm of
+    // printable width, with nothing to spare — the ADR's 158 is the same pair of
+    // Inserts with no gap between them, before the Labels. It needs the column as
+    // much as the turn: every rectangle on a shelf shares that shelf's top edge,
+    // so without one only the first Label reaches the strip.
     const sheets = packParts(insertsAndLabels(), {
       ...TURNING,
       gapMm: DEFAULT_PART_GAP_MM,

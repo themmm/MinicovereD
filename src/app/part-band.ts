@@ -33,10 +33,10 @@ import { clear, el } from './dom.ts';
  * Rasterising resolution for a specimen, and for the one being looked at.
  *
  * A specimen tops out at 6.05 CSS px/mm at rest, which is 12.1 device px/mm on
- * a 2× display — 307 DPI. Focus goes to 13.5, which is 690. Rendering
- * everything for the second case would cost four times the pixels for three
- * Parts that are mostly not being looked at, so the focused one is redrawn
- * sharper on demand. Both go through the same call as the Sheet.
+ * a 2× display — 307 DPI. Focus goes to 13.5, which is 686. Rendering
+ * everything at the second would cost four times the pixels for Parts that are
+ * mostly not being looked at, so the focused one is redrawn sharper on demand.
+ * Both go through the same call as the Sheet.
  */
 const PART_DPI = 300;
 const FOCUS_DPI = 600;
@@ -182,7 +182,7 @@ export function describeDropped(dropped: readonly PageRole[]): string {
  * the two papers need different advice and only one of them has any.
  */
 const LOWER_THE_MARGIN =
-  'A four-Page Insert needs A4 and a printable margin of 7.25 mm or less; Letter is 3 mm too short for one at any margin.';
+  'A four-Page Insert needs A4 and a printable margin of 7.25 mm or less; Letter’s long edge is 3.1 mm too short for one at any margin.';
 
 /** 87.5 stays 87.5, 79 does not become 79.0. */
 const trim = (mm: number): string => String(Math.round(mm * 100) / 100);

@@ -58,6 +58,20 @@ const fits = (count: number, columns: number, boxHeight: Mm, sizeMm: Mm): boolea
   linesPerColumn(boxHeight, sizeMm) * columns >= count;
 
 /**
+ * Type size the tracklist starts at, before any of it has to give way.
+ *
+ * Here rather than beside the drawing, because two sides need it and one of them
+ * runs before the other: `shared.ts` sets a list at it, and `insert-plan.ts`
+ * decides how many Pages the strip needs by asking whether the list fits one Page
+ * at it. The plan runs before anything is drawn and knows nothing about
+ * Templates, so a constant it needed could not live in a Template's module.
+ *
+ * The number has to be the same on both sides or the Page count is decided
+ * against a size the list is never set at.
+ */
+export const TRACK_SIZE_MM: Mm = 2.4;
+
+/**
  * Where a tracklist Page starts its list, and how much air it leaves at the
  * foot — the box a Page is *assumed* to give its list when the Page count is
  * being decided.

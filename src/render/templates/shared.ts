@@ -6,9 +6,8 @@ import { readableInkFor, withAlpha } from '../colors.ts';
 import { MINIDISC_LOGO_ASPECT, miniDiscLogo } from '../minidisc-logo.ts';
 import { ellipsise, wrapText } from '../text.ts';
 import { layOutLines, layOutTracklist } from '../tracklist-layout.ts';
-import { PRINT_FLOOR_MM } from '../tracklist-layout.ts';
+import { PRINT_FLOOR_MM, TRACK_SIZE_MM } from '../tracklist-layout.ts';
 import type { TextMeasurer } from '../text.ts';
-import { TRACK_SIZE_MM } from './track-size.ts';
 import type { InsertContext, PartContext, PartDrawing, TemplateParams } from './template.ts';
 
 /**

@@ -4,8 +4,7 @@ import type { InsertDimensions } from '../domain/parts.ts';
 import type { Mm, Size } from '../domain/units.ts';
 import { fitsPaper } from '../pack/sheet-packer.ts';
 import type { FoldKind, PageRole, PanelBounds } from './layout.ts';
-import { nominalListHeight, tracklistFitsOnePage } from './tracklist-layout.ts';
-import { TRACK_SIZE_MM } from './templates/track-size.ts';
+import { nominalListHeight, TRACK_SIZE_MM, tracklistFitsOnePage } from './tracklist-layout.ts';
 
 /**
  * How many Pages a Release's Insert folds into, what goes on each, and where the
