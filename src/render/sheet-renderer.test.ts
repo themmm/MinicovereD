@@ -1386,6 +1386,25 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
     }
   });
 
+  it('keeps the heading’s own two lines apart, not merely clear of the list', () => {
+    // Ink that ends where the next line's ink begins prints as one block, and
+    // every other assertion here — inside the card, clear of the list, in the
+    // Template's own faces, reversed out of the ground — holds while it does.
+    // The three Templates leave 1.0, 1.0 and 1.2 mm between their two lines.
+    for (const templateId of TEMPLATE_IDS) {
+      const heading = backCard(templateId, DARK, timed(10))
+        .texts.filter((op) => !isListLine(op))
+        .sort((first, second) => first.at.y - second.at.y);
+
+      expect(heading.length, `${templateId} sets two heading lines`).toBe(2);
+      const [above, below] = heading;
+      expect(
+        (below?.at.y ?? 0) - ((above?.at.y ?? 0) + (above?.style.sizeMm ?? 0)),
+        `${templateId} air between the heading lines`,
+      ).toBeGreaterThanOrEqual(0.8);
+    }
+  });
+
   it('keeps Full-bleed’s masthead inside the band drawn for it', () => {
     // The band test above only bounds the bar at a third of the card, which is
     // 26 mm of slack; this is the assertion that ties the two lines to it.
@@ -1691,14 +1710,20 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     // Every line of one size, so what is on the Part is a title that gave up
     // size first and words last — and says so, because a line that simply stops
     // is a cut the collector has no way of seeing.
-    const lines = headlineFor(Array.from({ length: 60 }, (_, index) => `Word${index}`).join(' '));
+    const album = Array.from({ length: 60 }, (_, index) => `Word${index}`).join(' ');
+    const lines = headlineFor(album);
 
     expect(lines).toHaveLength(3);
     expect(lines[0]?.style.sizeMm, 'it went all the way to the floor').toBe(4.5);
     expect(lines[2]?.text, 'and said what it could not fit').toMatch(/…$/);
     // The words past the third line are gathered onto it, and gathering is a
-    // join with spaces: without them the last line is one run-on word.
-    expect(lines[2]?.text, 'still words rather than one word').toMatch(/^Word\d+ Word\d+/);
+    // join with spaces. Without them the line is still words at its start and
+    // runs two of them together at each place the wrap had broken, which the
+    // ellipsis then hides — so the check is that what is printed is a run of
+    // the title rather than a re-spelling of it.
+    const shown = (lines[2]?.text ?? '').replace('…', '');
+    expect(shown.length, 'there is something on the third line').toBeGreaterThan(10);
+    expect(album.includes(shown), `"${shown}" is a run of the title`).toBe(true);
   });
 
   it('cuts a word too wide for the panel rather than shrinking the title for it', () => {
