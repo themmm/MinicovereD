@@ -1,57 +1,63 @@
 import { labelNotchDepth, partShape } from '../../domain/parts.ts';
 import type { Release } from '../../domain/release.ts';
 import { formatTrackLength, totalTrackLength } from '../../domain/tracklist.ts';
-import type { Mm, Rect, Size } from '../../domain/units.ts';
+import type { Mm, Point, Rect, Size } from '../../domain/units.ts';
 import { readableInkFor } from '../colors.ts';
 import type { DrawOp, TextStyle } from '../layout.ts';
 import { drawJCard, drawTracklist, PAD, text } from './shared.ts';
 import { ellipsise, wrapText } from '../text.ts';
 import type { TextMeasurer } from '../text.ts';
 import type { PartDimensions } from '../../domain/parts.ts';
-import type { JCardContext, PartContext, PartDrawing, Template } from './template.ts';
+import type { JCardContext, PartContext, PartDrawing, Template, TemplateFaces } from './template.ts';
 
 /**
  * Minimal: type and nothing else. No artwork, and no tint standing in for
  * artwork that was never there.
  *
  * It exists for the Releases nobody looked up. A mixtape has no cover, so
- * `artworkOrPlaceholder` gives Classic a flat tint of the ink where the sleeve
- * would be and gives Full-bleed the same tint across the whole Part, and both
- * read as a download that failed rather than as a record somebody made. The way to make "no artwork" read as a decision is not
- * to leave the space empty but to spend it: the album title is set as large as
- * it will go, hung from the top-left corner, and what is left below it is air
- * on purpose.
+ * `artworkOrPlaceholder` gives Classic's Front Panel a flat tint of the ink
+ * where the sleeve would be and gives Full-bleed's the same tint across the
+ * whole panel, and both read as a download that failed rather than as a record
+ * somebody made. The way to make "no artwork" read as a decision is not to
+ * leave the space empty but to spend it: the title is set as large as it will
+ * go, hung from the top-left corner, and what is left below it is air on
+ * purpose.
  *
- * Three rules hold across every Part:
+ * Three rules hold across the three Parts this Template draws itself:
  *
- *  - **The record is named first.** Album above artist, everywhere — the Front
- *    Panel, the Back Card and the Label. Classic does it on the Back Card only
- *    and Full-bleed does the opposite; here it is the Template's one ordering.
- *  - **Everything hangs from one left edge**, at `PAD`. Nothing is centred,
- *    because centring needs a shape to be centred in and this Template has no
- *    shapes.
+ *  - **The record is named first.** Album above artist on the Front Panel, the
+ *    Back Card and the Label. Classic does it on the Back Card only and
+ *    Full-bleed does the opposite. The Spine is not this Template's to order —
+ *    `spineLine` is shared, and it reads `artist — album` under all three.
+ *  - **Everything hangs from a left edge**, at each Part's own margin: `PAD` on
+ *    the J-Card and the Back Card, the tighter `LABEL_PAD` on a 35 mm sticker.
+ *    Nothing is centred, because centring needs a shape to be centred in and
+ *    this Template has none.
  *  - **One face for all three roles.** See `MINIMAL_TEMPLATE.faces`.
  *
- * And a colour spends itself once: paper carries the J-Card, the ink carries
- * the Back Card with the list reversed out of it — the same page printed the
- * other way round — and the accent carries the two small things a collector
- * finds the disc by, the Spine on the shelf and the Label on the cartridge.
+ * And a colour spends itself once. Paper is the J-Card, ink is the type on it;
+ * the Back Card is that same card the other way round, the ink as a ground with
+ * the list reversed out; and the accent is the two small things a collector
+ * finds a disc by — the Spine bar on the shelf, and the Label on the cartridge.
  */
 
 /**
  * The title, set as large as it fits.
  *
- * 11 mm is about 31 pt, which on a 68 mm panel is around eleven characters to
- * the line — large enough that the panel reads as composed rather than as
- * unfinished, which is the whole job. Three lines is what 79 mm of height can
- * carry above the artist and still leave the air below deliberate: the third
- * line's ink ends at 3 + 2 × 12.1 + 11 = 38.2 mm, and the footer does not start
- * until 79 − 3 − 2.4 = 73.6.
+ * 11 mm is about 31 pt, which on the panel's 62 mm measure is ten or eleven
+ * characters to the line — Noto Sans at 700 averages 0.534 em per character of
+ * title case, measured in a browser. Large enough that the panel reads as
+ * composed rather than as unfinished, which is the whole job.
  *
- * 4.5 mm is where shrinking stops. Below it the title is no longer the design
- * and something has to give instead, so the last line takes an ellipsis and
- * says so — a title set at 3 mm on an otherwise empty panel would be the
- * failed-download look arrived at by a different road.
+ * Three lines is taste, not arithmetic. The height allows five: the fifth
+ * line's ink would end at 3 + 4 × 12.1 + 11 = 62.4 mm and the artist under it at
+ * 67.6, both still clear of the footer at 79 − 3 − 2.4 = 73.6. But four lines of
+ * display type is a paragraph, and a Template whose argument is that the title
+ * *is* the design has to stop before the title becomes a body of text.
+ *
+ * 4.5 mm is where shrinking stops, so that a title cannot go on giving up size
+ * until it is smaller than the tracklist on the other card and the panel is
+ * back to looking unfinished by a different road.
  */
 const HEADLINE_MAX: Mm = 11;
 const HEADLINE_MIN: Mm = 4.5;
@@ -62,7 +68,11 @@ const HEADLINE_LINES = 3;
  * at 2.4, and a title with a list's leading reads as three separate titles.
  */
 const HEADLINE_LEADING = 1.1;
-/** Each shrink step, as in `layOutTracklist` — small enough to stop near the largest size that fits. */
+/**
+ * Each shrink step. `chooseFit` uses 0.96 for the same job on the tracklist;
+ * this is coarser because a headline has one order of magnitude more room to
+ * give and no floor to creep toward one step at a time.
+ */
 const HEADLINE_STEP = 0.94;
 
 const FRONT_ARTIST_SIZE: Mm = 3;
@@ -91,6 +101,21 @@ function discLine(release: Release): string {
   return [count === 1 ? '1 track' : `${count} tracks`, running].filter(Boolean).join(' · ');
 }
 
+/**
+ * What the Release is called, and what goes under that.
+ *
+ * Ordinarily the album is the title and the artist is the line below it. A
+ * Release with no album has the artist promoted into the title instead, rather
+ * than a blank where the design's largest type goes — the same move `spineLine`
+ * makes when it filters the empties and joins what is left. A mixtape typed in
+ * with only a name on it is exactly the Release this Template exists for.
+ */
+function naming(release: Release): { readonly title: string; readonly under: string } {
+  return release.album
+    ? { title: release.album, under: release.artist }
+    : { title: release.artist, under: '' };
+}
+
 /** A title broken into lines, with the size those lines were broken at. */
 interface Headline {
   readonly lines: readonly string[];
@@ -100,25 +125,39 @@ interface Headline {
    * from a second literal would draw lines fitted to a width they never had.
    */
   readonly style: TextStyle;
+  /**
+   * Distance from one line's top to the next, derived once here rather than
+   * where each reader needs it. Two derivations of the same number is how the
+   * block and the thing hanging off its bottom come to disagree about where the
+   * bottom is, and only paper shows it.
+   */
+  readonly leading: Mm;
 }
 
 /**
  * `content` wrapped to at most `HEADLINE_LINES` lines, at the largest size
  * between `HEADLINE_MAX` and `HEADLINE_MIN` that manages it.
  *
- * The same order the tracklist gives way in (`chooseFit`): spend the room first
- * — a second and a third line, as the list spends a second column — then the
- * size, and only then lose something. At the floor the words that will not fit
- * are gathered onto the last line and ellipsised there, rather than dropped off
- * the end of it: a line that stops without an ellipsis is a title the collector
- * has no way of knowing was cut.
+ * Size is given up for **line count only**, and whatever still overhangs the
+ * measure is ellipsised at the size the line count settled on.
  *
- * Fitting is both halves of it: few enough lines, and no line overhanging the
- * measure. `wrapText` will not break inside a word, so a one-word title longer
- * than the panel comes back as a single line that is off the Part, and a check
- * on the line count alone would accept it. Measuring the lines here is also
- * what makes every string this returns one the measurer was asked about in the
- * face it is drawn in.
+ * The order looks like `chooseFit`'s and is not it: the tracklist spends a
+ * second column, then shrinks without a floor, and never loses a track. This
+ * has a floor, so something has to give at it, and the something is words. What
+ * matters is which lever is pulled for which problem. Too many lines is a
+ * problem shrinking solves. A single word wider than the panel is not —
+ * `wrapText` will not break inside a word, so no amount of shrinking above the
+ * floor makes that line fit, and shrinking for it drags every *other* line of
+ * the title down with it. One unbreakable word would set a whole title at
+ * 4.5 mm to no purpose. So the word is cut instead, at the size the rest of the
+ * title wanted, which is the same trade `SPINE_SIZE_MM` makes on the Spine: the
+ * type holds and the line is truncated.
+ *
+ * Every line comes back through `ellipsise`, which is what makes each of them a
+ * string the measurer was asked about in the face it is drawn in — and what
+ * gathers the words past the third line onto the third rather than dropping
+ * them off the end, because a line that stops without an ellipsis is a title
+ * the collector has no way of knowing was cut.
  */
 function fitHeadline(
   content: string,
@@ -130,19 +169,14 @@ function fitHeadline(
   for (;;) {
     const style: TextStyle = { ...base, sizeMm };
     const lines = wrapText(content, style, maxWidthMm, measure);
-    const fits =
-      lines.length <= HEADLINE_LINES &&
-      lines.every((line) => measure.widthMm(line, style) <= maxWidthMm);
-    if (fits) return { lines, style };
 
-    if (sizeMm <= HEADLINE_MIN) {
-      const rest = lines.slice(HEADLINE_LINES - 1).join(' ');
+    if (lines.length <= HEADLINE_LINES || sizeMm <= HEADLINE_MIN) {
+      const overflow = lines.slice(HEADLINE_LINES - 1).join(' ');
+      const kept = [...lines.slice(0, HEADLINE_LINES - 1), ...(overflow ? [overflow] : [])];
       return {
-        lines: [
-          ...lines.slice(0, HEADLINE_LINES - 1),
-          ...(rest ? [rest] : []),
-        ].map((line) => ellipsise(line, style, maxWidthMm, measure)),
+        lines: kept.map((line) => ellipsise(line, style, maxWidthMm, measure)),
         style,
+        leading: sizeMm * HEADLINE_LEADING,
       };
     }
     sizeMm = Math.max(HEADLINE_MIN, sizeMm * HEADLINE_STEP);
@@ -152,8 +186,29 @@ function fitHeadline(
 /** Where the ink of the last line ends, which is what the artist hangs off. */
 function headlineBottom(headline: Headline, top: Mm): Mm {
   if (headline.lines.length === 0) return top;
-  const leading = headline.style.sizeMm * HEADLINE_LEADING;
-  return top + (headline.lines.length - 1) * leading + headline.style.sizeMm;
+  return top + (headline.lines.length - 1) * headline.leading + headline.style.sizeMm;
+}
+
+/**
+ * The one line at the foot of a Part, or nothing when the Release has no facts
+ * to put there. Written once because the Front Panel and the Label carry the
+ * same line for the same reason, in the same role, and a second style literal
+ * is a second thing to keep in step.
+ */
+function footerOps(
+  release: Release,
+  faces: TemplateFaces,
+  at: Point,
+  ink: string,
+  maxWidthMm: Mm,
+  measure: TextMeasurer,
+): DrawOp[] {
+  const line = discLine(release);
+  if (!line) return [];
+
+  // A caption rather than a heading, so it takes the body role.
+  const style: TextStyle = { sizeMm: FOOTER_SIZE, weight: 400, face: faces.text, color: ink, align: 'left', baseline: 'top' };
+  return [text(line, at, style, maxWidthMm, measure)];
 }
 
 /**
@@ -173,9 +228,10 @@ function drawFrontPanel({ release, params, faces, measure }: PartContext, panel:
   // measure is not a narrower column.
   const room = Math.max(0, panel.width - 2 * PAD);
   const top = panel.y + PAD;
+  const { title, under } = naming(release);
 
   const headline = fitHeadline(
-    release.album,
+    title,
     {
       sizeMm: HEADLINE_MAX,
       weight: 700,
@@ -187,44 +243,42 @@ function drawFrontPanel({ release, params, faces, measure }: PartContext, panel:
     room,
     measure,
   );
-  const leading = headline.style.sizeMm * HEADLINE_LEADING;
 
   const artistStyle: TextStyle = { sizeMm: FRONT_ARTIST_SIZE, weight: 400, face: faces.display, color: params.inkColor, align: 'left', baseline: 'top' };
-  // The footer is a caption rather than a heading, so it takes the body role.
-  const footerStyle: TextStyle = { sizeMm: FOOTER_SIZE, weight: 400, face: faces.text, color: params.inkColor, align: 'left', baseline: 'top' };
-  const footer = discLine(release);
 
   return [
     { op: 'fill-rect', rect: panel, color: params.paperColor },
-    // Drawn with the style the fit settled on, never with a fresh literal.
+    // Drawn with the style and the leading the fit settled on, never with a
+    // fresh literal of either.
     ...headline.lines.map(
       (line, index): DrawOp => ({
         op: 'text',
         text: line,
-        at: { x: left, y: top + index * leading },
+        at: { x: left, y: top + index * headline.leading },
         style: headline.style,
       }),
     ),
     // Not gated on `showOverlayText`: that parameter governs type drawn over
     // artwork, and this Template has none for type to be over.
-    text(
-      release.artist,
-      { x: left, y: headlineBottom(headline, top) + FRONT_ARTIST_GAP },
-      artistStyle,
-      room,
-      measure,
-    ),
-    ...(footer
+    ...(under
       ? [
           text(
-            footer,
-            { x: left, y: panel.y + panel.height - PAD - FOOTER_SIZE },
-            footerStyle,
+            under,
+            { x: left, y: headlineBottom(headline, top) + FRONT_ARTIST_GAP },
+            artistStyle,
             room,
             measure,
           ),
         ]
       : []),
+    ...footerOps(
+      release,
+      faces,
+      { x: left, y: panel.y + panel.height - PAD - FOOTER_SIZE },
+      params.inkColor,
+      room,
+      measure,
+    ),
   ];
 }
 
@@ -250,7 +304,7 @@ const BACK_LIST_TOP: Mm = 16;
  * to find a disc; this is the card they read once it is in their hand.
  *
  * The list starts at 16 rather than at Classic's 19 or Full-bleed's 18: there
- * is no band here and no centred title page, so the heading takes as little of
+ * is no band here and no centred title block, so the heading takes as little of
  * the card as it can and the tracklist gets the rest.
  */
 function drawBackCard(context: PartContext): PartDrawing {
@@ -262,6 +316,7 @@ function drawBackCard(context: PartContext): PartDrawing {
   const ink = readableInkFor(ground);
   const room = size.width - 2 * PAD;
 
+  const { title, under } = naming(release);
   const albumStyle: TextStyle = { sizeMm: BACK_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'left', baseline: 'top' };
   const artistStyle: TextStyle = { sizeMm: BACK_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'left', baseline: 'top' };
 
@@ -279,8 +334,8 @@ function drawBackCard(context: PartContext): PartDrawing {
   return {
     ops: [
       { op: 'fill-rect', rect: { x: 0, y: 0, width: size.width, height: size.height }, color: ground },
-      text(release.album, { x: PAD, y: PAD }, albumStyle, room, measure),
-      text(release.artist, { x: PAD, y: BACK_ARTIST_TOP }, artistStyle, room, measure),
+      text(title, { x: PAD, y: PAD }, albumStyle, room, measure),
+      ...(under ? [text(under, { x: PAD, y: BACK_ARTIST_TOP }, artistStyle, room, measure)] : []),
       ...tracklist.ops,
     ],
     ...(tracklist.warnings ? { warnings: tracklist.warnings } : {}),
@@ -327,40 +382,40 @@ function drawLabel({ release, params, size, dimensions, faces, measure }: PartCo
   const artistTop = LABEL_PAD + LABEL_ALBUM_SIZE + LABEL_HEADING_GAP;
   const footerTop = size.height - LABEL_PAD - FOOTER_SIZE;
 
+  const { title, under } = naming(release);
   const albumStyle: TextStyle = { sizeMm: LABEL_ALBUM_SIZE, weight: 700, face: faces.display, color: ink, align: 'left', baseline: 'top' };
   const artistStyle: TextStyle = { sizeMm: LABEL_ARTIST_SIZE, weight: 400, face: faces.display, color: ink, align: 'left', baseline: 'top' };
-  const footerStyle: TextStyle = { sizeMm: FOOTER_SIZE, weight: 400, face: faces.text, color: ink, align: 'left', baseline: 'top' };
-  const footer = discLine(release);
 
   return [
     // Cut to the outline rather than filled as a rectangle: the notched corner
     // is not sticker, and a chip is exactly the shape of the paper it is on.
     { op: 'fill-polygon', points: partShape('label', dimensions).outline, color: ground },
     text(
-      release.album,
+      title,
       { x: LABEL_PAD, y: LABEL_PAD },
       albumStyle,
       labelRoom(size, dimensions, LABEL_PAD),
       measure,
     ),
-    text(
-      release.artist,
-      { x: LABEL_PAD, y: artistTop },
-      artistStyle,
-      labelRoom(size, dimensions, artistTop),
-      measure,
-    ),
-    ...(footer
+    ...(under
       ? [
           text(
-            footer,
-            { x: LABEL_PAD, y: footerTop },
-            footerStyle,
-            labelRoom(size, dimensions, footerTop),
+            under,
+            { x: LABEL_PAD, y: artistTop },
+            artistStyle,
+            labelRoom(size, dimensions, artistTop),
             measure,
           ),
         ]
       : []),
+    ...footerOps(
+      release,
+      faces,
+      { x: LABEL_PAD, y: footerTop },
+      ink,
+      labelRoom(size, dimensions, footerTop),
+      measure,
+    ),
   ];
 }
 
@@ -384,9 +439,9 @@ export const MINIMAL_TEMPLATE: Template = {
    * from a shelf, in whatever script the shelf is in — and under any other
    * Template such a title falls out of the named face into the Noto fallback
    * partway along the line, which is a face change inside one title and
-   * permanent once the Part is cut. Japanese still falls through here too; no
-   * bundled voice covers CJK, and `PRINT_FONT_STACKS` ends every stack with
-   * Noto Sans JP for exactly that.
+   * permanent once the Part is cut. Japanese still falls through here too: none
+   * of the six voices covers CJK, which is why every stack in
+   * `PRINT_FONT_STACKS` passes through Noto Sans JP before its generic keyword.
    *
    * The cost is the Spine, which gives up the condensed face Classic uses there
    * and so cuts a long line sooner — Archivo Narrow sets `Glen Campbell —

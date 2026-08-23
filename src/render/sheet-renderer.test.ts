@@ -1377,8 +1377,12 @@ describe('SheetRenderer — each Template draws its own tracklist', () => {
 
       expect(heading.length, `${templateId} has a heading`).toBeGreaterThan(0);
       expect(firstTrack, `${templateId} has a list`).toBeDefined();
+      // Air, not merely no overlap. Ink that ends 0.1 mm above the first track
+      // satisfies "clear of" and prints as one block; the three Templates leave
+      // 5.6, 6.8 and 4.6 mm, so 2 is a floor none of them is near.
       const lowest = Math.max(...heading.map((op) => op.at.y + op.style.sizeMm));
-      expect(lowest, `${templateId} heading bottom`).toBeLessThanOrEqual(firstTrack?.at.y ?? 0);
+      expect((firstTrack?.at.y ?? 0) - lowest, `${templateId} air under the heading`)
+        .toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -1474,6 +1478,19 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     return rect;
   };
 
+  /**
+   * The rectangle a text op's ink actually occupies, which is what has to be
+   * inside a Part — `at` is only the anchor, and where the ink falls relative
+   * to it is `align`'s business. Every op this Template draws is `baseline:
+   * 'top'`, so the vertical half is the size.
+   */
+  const inkBox = (op: TextOp): { left: number; right: number; top: number; bottom: number } => {
+    const width = testMeasurer.widthMm(op.text, op.style);
+    const left =
+      op.style.align === 'left' ? op.at.x : op.style.align === 'right' ? op.at.x - width : op.at.x - width / 2;
+    return { left, right: left + width, top: op.at.y, bottom: op.at.y + op.style.sizeMm };
+  };
+
   /** The title block, which is the only type on the Front Panel set at 700. */
   const headlineFor = (album: string): TextOp[] =>
     frontTexts(sheetOf(aRelease({ album }))).filter((op) => op.style.weight === 700);
@@ -1484,19 +1501,43 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
       /^\d+ tracks?\b/.test(op.text),
     )?.text;
 
-  it('draws no artwork on any Part, and nothing standing in for it', () => {
-    // The ticket's first line: no placeholder tint where a sleeve would go.
-    // `artworkOrPlaceholder` is the only thing that draws either, and Minimal
-    // simply must not call it — there is no flag that turns it off.
-    const sheet = sheetOf();
+  it('draws no artwork on any Part, and no tint standing in for it', () => {
+    // The ticket's first line. Asserting "no image with role artwork" alone
+    // would pass for Classic and Full-bleed too, because a Release with no
+    // artwork produces no image there either — what it produces is
+    // `artworkOrPlaceholder`'s flat tint of the ink, which `withAlpha` writes
+    // as an `rgba(…)`. Every colour Minimal paints in is one the collector
+    // picked, and those are opaque hexes, so a translucent fill anywhere on one
+    // of its Parts is a placeholder or a scrim and nothing else.
+    const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
+    const translucent = (op: { op: string; color?: string }): boolean =>
+      (op.color ?? '').startsWith('rgba(');
+    const sheet = sheetOf(aRelease(), params);
 
     for (const part of PART_KINDS) {
-      const images = partOf(sheet, part).ops.filter((op) => op.op === 'image');
+      const ops = partOf(sheet, part).ops;
       expect(
-        images.filter((op) => op.op === 'image' && op.role === 'artwork'),
+        ops.filter((op) => op.op === 'image' && op.role === 'artwork'),
         `${part} draws artwork`,
       ).toEqual([]);
+      expect(
+        ops.filter((op) => (op.op === 'fill-rect' || op.op === 'fill-polygon') && translucent(op)),
+        `${part} tints where a sleeve would go`,
+      ).toEqual([]);
     }
+
+    // The control: the same Release under Classic does produce that fill, so
+    // the assertion above is looking for something that exists.
+    const [classic] = renderSheets(
+      [aDesign(aRelease(), { templateId: 'classic', params })],
+      { ...A4_SHEET, parts: ['jcard'] },
+      testMeasurer,
+    );
+    expect(
+      (classic?.placements[0]?.ops ?? []).filter((op) => op.op === 'fill-rect' && translucent(op)),
+      'Classic tints the panel a Release has no artwork for',
+    ).toHaveLength(1);
+
     // And no image at all on the two Parts that have no Spine to carry a logo.
     expect(partOf(sheet, 'back-card').ops.filter((op) => op.op === 'image')).toEqual([]);
     expect(partOf(sheet, 'label').ops.filter((op) => op.op === 'image')).toEqual([]);
@@ -1614,6 +1655,30 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect(long.length, 'and takes no more than three lines').toBeLessThanOrEqual(3);
   });
 
+  it('stops close to the largest size that fits, not at a handful of sizes', () => {
+    // The shrink step is what makes the ladder fine enough that two titles of
+    // different lengths get the type each of them actually has room for. A
+    // coarse step still terminates and still fits inside the panel — it just
+    // sets a 46-character title as small as a 61-character one, and every other
+    // assertion here survives that.
+    const sizes = [
+      ...new Set(
+        [
+          'Home',
+          'Wichita Lineman',
+          'Selected Ambient Works 85–92',
+          'Lift Your Skinny Fists Like Antennas to Heaven',
+          'The Rise and Fall of Ziggy Stardust and the Spiders from Mars',
+          'A Very Long Album Title That Simply Refuses To Stop Going On And On And On',
+        ].map((album) => headlineFor(album)[0]?.style.sizeMm ?? 0),
+      ),
+    ];
+
+    expect(sizes.length, `six titles, sizes ${sizes.join(', ')}`).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...sizes), 'the shortest gets the ceiling').toBe(11);
+    expect(Math.min(...sizes), 'the longest gets the floor').toBe(4.5);
+  });
+
   it('wraps the title rather than cutting it', () => {
     const lines = headlineFor('Selected Ambient Works 85–92').map((op) => op.text);
 
@@ -1631,35 +1696,63 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect(lines).toHaveLength(3);
     expect(lines[0]?.style.sizeMm, 'it went all the way to the floor').toBe(4.5);
     expect(lines[2]?.text, 'and said what it could not fit').toMatch(/…$/);
+    // The words past the third line are gathered onto it, and gathering is a
+    // join with spaces: without them the last line is one run-on word.
+    expect(lines[2]?.text, 'still words rather than one word').toMatch(/^Word\d+ Word\d+/);
   });
 
-  it('brings a single word too wide for the panel back inside it', () => {
-    // `wrapText` will not break inside a word, so the fit cannot be a line
-    // count alone: one long word is one line and still off the Part.
-    const [line, ...rest] = headlineFor('Anticonstitutionnellementsupercalifragilistic');
+  it('cuts a word too wide for the panel rather than shrinking the title for it', () => {
+    // `wrapText` will not break inside a word, so no size above the floor makes
+    // an over-long word fit. Shrinking for it would set every *other* line of
+    // the title smaller to no purpose, which is the trade `SPINE_SIZE_MM`
+    // refuses on the Spine for the same reason.
     const room = panelOf(sheetOf(), 'front-panel').width - 2 * PAD_MM;
+    const lines = headlineFor('Anticonstitutionnellementsupercalifragilistic Blues');
 
-    if (!line) throw new Error('no title line');
-    expect(rest, 'one word is one line').toEqual([]);
-    expect(line.text).toMatch(/…$/);
-    expect(testMeasurer.widthMm(line.text, line.style)).toBeLessThanOrEqual(room + 0.001);
+    expect(lines.map((op) => op.text.endsWith('…')), 'the long word is cut, the short one is not')
+      .toEqual([true, false]);
+    expect(lines[1]?.text).toBe('Blues');
+    expect(lines[0]?.style.sizeMm, 'and the title keeps the size it asked for').toBe(11);
+    for (const op of lines) {
+      expect(testMeasurer.widthMm(op.text, op.style), op.text).toBeLessThanOrEqual(room + 0.001);
+    }
   });
 
-  it('keeps every mark of the Front Panel on the Front Panel', () => {
-    const album = 'The Rise and Fall of Ziggy Stardust and the Spiders from Mars';
-    const sheet = sheetOf(aRelease({ album }));
-    const panel = panelOf(sheet, 'front-panel');
-    const texts = frontTexts(sheet);
+  it('keeps every mark of the Front Panel inside the Front Panel’s margins', () => {
+    // The box the ink occupies, not the point it is anchored at. `at` plus a
+    // width says nothing on its own: `align: 'right'` at x = 3 puts the whole
+    // 62 mm title off the left edge of the Part, and every assertion phrased as
+    // "at.x is inside the panel" still holds while it does.
+    for (const album of ['Home', 'Selected Ambient Works 85–92', 'The Rise and Fall of Ziggy Stardust and the Spiders from Mars']) {
+      const sheet = sheetOf(aRelease({ album }));
+      const panel = panelOf(sheet, 'front-panel');
+      const texts = frontTexts(sheet);
 
-    expect(texts.length, 'the panel is set at all').toBeGreaterThan(0);
-    for (const op of texts) {
-      expect(op.at.x, op.text).toBeGreaterThanOrEqual(panel.x);
-      expect(op.at.y, op.text).toBeGreaterThanOrEqual(panel.y);
-      expect(op.at.y + op.style.sizeMm, op.text).toBeLessThanOrEqual(panel.y + panel.height);
-      expect(testMeasurer.widthMm(op.text, op.style), op.text).toBeLessThanOrEqual(
-        panel.width - 2 * PAD_MM + 0.001,
-      );
+      expect(texts.length, `${album}: the panel is set at all`).toBeGreaterThan(0);
+      for (const op of texts) {
+        const box = inkBox(op);
+        expect(box.left, `${album}: ${op.text} left`).toBeGreaterThanOrEqual(panel.x + PAD_MM - 0.001);
+        expect(box.right, `${album}: ${op.text} right`).toBeLessThanOrEqual(panel.x + panel.width - PAD_MM + 0.001);
+        expect(box.top, `${album}: ${op.text} top`).toBeGreaterThanOrEqual(panel.y + PAD_MM - 0.001);
+        expect(box.bottom, `${album}: ${op.text} bottom`).toBeLessThanOrEqual(panel.y + panel.height - PAD_MM + 0.001);
+      }
     }
+  });
+
+  it('keeps the title clear of the footer, however many lines it takes', () => {
+    // The leading is the one number the block's own arithmetic hides: the
+    // artist hangs off the block's bottom, so a leading loose enough to push
+    // the pair into the footer moves both and leaves every mark on the Part.
+    const sheet = sheetOf(aRelease({ album: 'The Rise and Fall of Ziggy Stardust and the Spiders from Mars' }));
+    const texts = frontTexts(sheet);
+    const footer = texts.find((op) => /^\d+ tracks?\b/.test(op.text));
+    const above = texts.filter((op) => op !== footer);
+
+    expect(footer, 'there is a footer to run into').toBeDefined();
+    expect(above.length).toBeGreaterThan(1);
+    expect(Math.max(...above.map((op) => op.at.y + op.style.sizeMm))).toBeLessThanOrEqual(
+      footer?.at.y ?? 0,
+    );
   });
 
   it('keeps the title clear of the artist under it, however many lines it takes', () => {
@@ -1712,6 +1805,36 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect((label?.at.y ?? 0) + (label?.style.sizeMm ?? 0)).toBeLessThanOrEqual(height);
   });
 
+  it('promotes the artist into the title when a Release has no album', () => {
+    // The Release this Template exists for is the one somebody typed, and a
+    // half-typed one is a real state: a name and a list, no title yet. Leaving
+    // the largest type on the Part blank is the failed-download look again.
+    const sheet = sheetOf(aRelease({ album: '' }));
+
+    for (const [part, texts] of [
+      ['back-card', textsOf(sheet, 'back-card')],
+      ['label', textsOf(sheet, 'label')],
+    ] as const) {
+      const named = texts.filter((op) => op.text === 'Glen Campbell');
+      expect(named, `${part} names the artist exactly once`).toHaveLength(1);
+      expect(texts[0]?.text, `${part} names it in the title`).toBe('Glen Campbell');
+      expect(texts.some((op) => op.text === ''), `${part} draws no empty line`).toBe(false);
+    }
+
+    // The Front Panel wraps its title, so the name arrives in pieces — and once
+    // rather than twice, which is the half that would break if the artist were
+    // promoted into the title and left in its own line as well.
+    const front = frontTexts(sheet);
+    const headline = front.filter((op) => op.style.weight === 700);
+    expect(headline.map((op) => op.text).join(' '), 'the Front Panel title').toBe('Glen Campbell');
+    expect(front.filter((op) => op.style.weight !== 700).map((op) => op.text)).toEqual(['3 tracks']);
+    expect(front.some((op) => op.text === ''), 'no empty line').toBe(false);
+
+    // And it really is set as a title, not as the small line the artist usually
+    // gets under one.
+    expect(headline[0]?.style.sizeMm).toBe(11);
+  });
+
   it('says how many tracks there are, and how long they run when every one says', () => {
     const timed = aRelease({
       tracks: [
@@ -1759,7 +1882,7 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
   });
 
   it('grounds the Back Card in the ink the Front Panel sets its type in', () => {
-    // Minimal's one gesture: the two faces of the case are the same page, the
+    // Minimal's one gesture: the two faces of the case are the same card, the
     // second one printed the other way round.
     const params = { paperColor: '#fffbea', inkColor: '#101820', accentColor: '#7a2f18' };
     const sheet = sheetOf(aRelease(), params);
@@ -1841,6 +1964,18 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
       width - notchSize + LABEL_PAD_MM,
     );
     expect(rightOf(artist)).toBeLessThanOrEqual(width - LABEL_PAD_MM);
+
+    // The two lines sit under one another, and the whole heading stays inside
+    // the Label's own margins — the same box check the Front Panel gets.
+    expect(artist.at.y).toBeGreaterThanOrEqual(album.at.y + album.style.sizeMm);
+    for (const op of texts) {
+      const box = inkBox(op);
+      expect(box.left, op.text).toBeGreaterThanOrEqual(LABEL_PAD_MM - 0.001);
+      expect(box.top, op.text).toBeGreaterThanOrEqual(LABEL_PAD_MM - 0.001);
+      expect(box.bottom, op.text).toBeLessThanOrEqual(
+        DEFAULT_PART_DIMENSIONS.label.height - LABEL_PAD_MM + 0.001,
+      );
+    }
 
     // The footer is at the other end of the Label and gets the full measure,
     // which is what says the reserve above is about the notch and not a margin.
