@@ -481,6 +481,26 @@ describe('reading a project file built to break things', () => {
     expect(second?.release.credits).toBeUndefined();
   });
 
+  it('refuses a credits year that is not a year', () => {
+    const result = read({
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      designs: [
+        { release: { id: 'r1', tracks: [], credits: { people: [], year: 'n/a', label: 'RCA' } } },
+        { release: { id: 'r2', tracks: [], credits: { people: [], year: '1987', label: 'RCA' } } },
+      ],
+      sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
+    });
+
+    if (!result.ok) throw new Error(result.error);
+    // `Credits.year` is a fact about a pressing and says it is four digits;
+    // `Release.year` beside it is free text on purpose, where "n/a" is real.
+    const [first, second] = designsOf(result.project);
+    expect(first?.release.credits?.year).toBeUndefined();
+    expect(first?.release.credits?.label).toBe('RCA');
+    expect(second?.release.credits?.year).toBe('1987');
+  });
+
   it('refuses a Discogs id that could not be one', () => {
     const ids = [0, -1, 2.5, '249504', 9_007_199_254_740_993, null];
     const result = read({
