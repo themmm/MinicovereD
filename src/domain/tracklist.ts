@@ -15,7 +15,7 @@ const LEADING_NUMBER = /^\s*\d{1,3}\s*[.):\-–—]\s+/;
  * The textarea shows titles and nothing else, so everything it cannot show is
  * lost the moment it is parsed — and a looked-up Release arrives with a playing
  * time per track. Without this, fixing one typo strips the whole duration
- * column off the Back Card, which is not what "editing a title" means.
+ * column off the tracklist Page, which is not what "editing a title" means.
  *
  * Matched by title rather than by position, because inserting a line moves
  * every position after it and the times belong to the tracks. Two tracks with

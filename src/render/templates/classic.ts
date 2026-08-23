@@ -58,7 +58,7 @@ const ALBUM_GAP: Mm = 7.2;
  * and there is no bleed allowance anywhere (spec: the artwork edge is the cut
  * line). Inset, it is v1's square: `PAD` on all four sides of the panel's width.
  *
- * Both are clamped at zero, because a project file may carry a 1 mm J-Card and
+ * Both are clamped at zero, because a project file may carry a 1 mm Insert and
  * a negative rectangle is not a smaller picture.
  */
 function artworkRect(panel: Rect, inset: boolean): Rect {

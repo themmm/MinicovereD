@@ -254,7 +254,7 @@ function drawPlacement(surface: Surface, placement: PartPlacement): void {
   }
 
   // Nothing a Template draws may leave the Part: an overlong tracklist has to
-  // spill inside the Back Card, not onto the Sheet around it.
+  // spill inside its own Page, not onto the Sheet around it.
   const outline = placement.guides.find((guide) => guide.kind === 'cut');
   context.save();
   if (outline) {

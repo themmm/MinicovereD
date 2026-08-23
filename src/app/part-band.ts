@@ -336,8 +336,8 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
       return;
     }
     // Clicking the background leaves focus; clicking a control never does —
-    // reaching for the J-Card toggle while a Part is isolated must not throw
-    // away the thing being looked at.
+    // reaching for the Assembled/Flat toggle while a Part is isolated must not
+    // throw away the thing being looked at.
     if (!target.closest('button, input, select, a, label, summary')) setFocus(undefined);
   });
 

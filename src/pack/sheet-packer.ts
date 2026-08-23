@@ -134,9 +134,9 @@ export type OversizePolicy = 'throw' | 'omit';
  *
  * The calibration sheet stays on `never`, and not only by inertia: its figures
  * are outlines it draws itself in paper coordinates from the packed box, and it
- * has no idea a box can be turned. A turned J-Card would put an upright 87.5 mm
- * outline inside a 79 mm box, overflowing it to the right and stopping short at
- * the bottom, under a caption reading 79 × 87.5.
+ * has no idea a box can be turned. A turned Insert case end would put an upright
+ * 87.5 mm outline inside a 79 mm box, overflowing it to the right and stopping
+ * short at the bottom, under a caption reading 79 × 87.5.
  */
 export type TurnPolicy = 'never' | 'to-fit';
 
@@ -315,7 +315,7 @@ function downTo2dp(mm: Mm): Mm {
  * Bin-packs rectangles onto as few Sheets as possible: first-fit-decreasing-height,
  * the standard shelf heuristic. Sorting by height first means the tallest
  * rectangle of each row opens the shelf and shorter ones fill the width beside
- * it — so a Label rides along on the J-Card's row instead of stranding a row of
+ * it — so a Label rides along on the Insert's row instead of stranding a row of
  * its own. A good heuristic, not an optimal packing.
  *
  * Order is preserved for the caller: `sortByHeight` can be turned off where a

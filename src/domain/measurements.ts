@@ -33,18 +33,18 @@ export interface Measurements {
   /**
    * Every Part's size in millimetres, shared by every Release in the Queue.
    *
-   * All of them, not only what the Label control reaches. That control reaches
-   * three of the ten fields — the Label's width, its height and whether the
-   * corner is notched. The other seven have never had a control and still do
-   * not: the Label's notch *size*, the J-Card's four and the Back Card's two.
-   * They are reachable only by hand-editing a project file, and clamped to
-   * 1–300 mm on the way back in.
+   * All of them, not only what the controls reach. Four of the nine fields have
+   * one: the Label's width, its height, whether the corner is notched, and the
+   * Insert's Page width. The other five have never had one and still do not — the
+   * Label's notch *size* and the Insert's Inner Flap, Spine, Front Panel and
+   * height. They are reachable only by hand-editing a project file, and clamped
+   * on the way back in.
    *
-   * They moved anyway, because they are measurements by every argument the
-   * Label is and leaving them inside the Designs would have kept the split
-   * half-made. They got no controls because ADR-0012 replaces both those Parts
-   * with the Insert in ticket 08, and six controls for numbers about to be
-   * restructured is waste.
+   * The five without controls are the ones a *case* decides rather than a
+   * collector: how tall a front cover is, and how wide its window and its edge
+   * are. The Page width is the one Insert measurement the case does not decide —
+   * ADR-0012 picked 65 mm because 65 is what fits four Pages on A4 — which is why
+   * it is the one that got a control in ticket 08.
    */
   readonly dimensions: PartDimensions;
 }

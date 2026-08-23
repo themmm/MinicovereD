@@ -5,17 +5,17 @@
  */
 
 export interface Track {
-  /** 1-based position on the Release, as printed on the Back Card. */
+  /** 1-based position on the Release, as printed on the tracklist Page. */
   readonly position: number;
   readonly title: string;
   /**
    * Playing time in milliseconds, when whatever produced this Release knew one.
    *
    * Optional because half the Releases this app prints are mixtapes typed in
-   * from a shelf, which have no times at all — so the Back Card sets a duration
-   * column when there is something to put in it and not otherwise. Milliseconds
-   * because that is what MusicBrainz reports; the rounding to a printable
-   * `m:ss` happens once, in `formatTrackLength`.
+   * from a shelf, which have no times at all — so the tracklist Page sets a
+   * duration column when there is something to put in it and not otherwise.
+   * Milliseconds because that is what MusicBrainz reports; the rounding to a
+   * printable `m:ss` happens once, in `formatTrackLength`.
    */
   readonly lengthMs?: number;
 }
