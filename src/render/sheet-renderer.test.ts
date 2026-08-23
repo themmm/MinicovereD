@@ -1677,6 +1677,41 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     }
   });
 
+  it('sets the title’s lines under one another rather than through one another', () => {
+    // The leading is the one number in the headline block that nothing else
+    // constrains: the artist hangs off the block's own bottom, so a leading too
+    // tight moves both and keeps every mark on the Part while printing the
+    // title through itself.
+    const lines = headlineFor('Selected Ambient Works Volume II');
+
+    expect(lines.length, 'it took more than one line').toBeGreaterThan(1);
+    for (const [index, line] of lines.slice(1).entries()) {
+      const above = lines[index];
+      expect(line.at.y, line.text).toBeGreaterThanOrEqual((above?.at.y ?? 0) + (above?.style.sizeMm ?? 0));
+    }
+  });
+
+  it('puts the facts at the foot of the Part, which is what makes the space between air', () => {
+    // Two anchors, top and bottom. A footer drawn anywhere else leaves the
+    // panel a block of type with the rest of the Part after it, which is the
+    // unfinished look the whole Template exists to avoid — and every other
+    // assertion here would still pass.
+    const sheet = sheetOf();
+    const panel = panelOf(sheet, 'front-panel');
+
+    const front = frontTexts(sheet).find((op) => /^\d+ tracks?\b/.test(op.text));
+    expect(front, 'the Front Panel says what is on the disc').toBeDefined();
+    expect(front?.at.y, 'and says it at the foot').toBeGreaterThan(
+      panel.y + panel.height * 0.75,
+    );
+    expect((front?.at.y ?? 0) + (front?.style.sizeMm ?? 0)).toBeLessThanOrEqual(panel.y + panel.height);
+
+    const label = textsOf(sheet, 'label').find((op) => /^\d+ tracks?\b/.test(op.text));
+    const { height } = DEFAULT_PART_DIMENSIONS.label;
+    expect(label?.at.y, 'and so does the Label').toBeGreaterThan(height * 0.75);
+    expect((label?.at.y ?? 0) + (label?.style.sizeMm ?? 0)).toBeLessThanOrEqual(height);
+  });
+
   it('says how many tracks there are, and how long they run when every one says', () => {
     const timed = aRelease({
       tracks: [
@@ -1798,6 +1833,14 @@ describe('SheetRenderer — Minimal, which sets type and nothing else', () => {
     expect(album.text, 'the album was cut to its room').toMatch(/…$/);
     expect(artist.text, 'so was the artist').toMatch(/…$/);
     expect(rightOf(album)).toBeLessThan(rightOf(artist));
+
+    // And the artist is cut at the margin rather than at the corner: it runs
+    // past the limit the album had, which one reserve for the whole block
+    // could not produce however the two lines happened to round.
+    expect(rightOf(artist), 'the artist gets the whole measure').toBeGreaterThan(
+      width - notchSize + LABEL_PAD_MM,
+    );
+    expect(rightOf(artist)).toBeLessThanOrEqual(width - LABEL_PAD_MM);
 
     // The footer is at the other end of the Label and gets the full measure,
     // which is what says the reserve above is about the notch and not a margin.
