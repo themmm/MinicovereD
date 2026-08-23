@@ -1,4 +1,4 @@
-import { TEMPLATES } from '../render/sheet-renderer.ts';
+import { DEFAULT_TEMPLATE_PARAMS, TEMPLATES } from '../render/sheet-renderer.ts';
 import type { DesignChoice, TemplateId, TemplateParams, TemplateToggle } from '../render/sheet-renderer.ts';
 import { clear, el } from './dom.ts';
 
@@ -71,8 +71,14 @@ export function describeDesign({ templateId, params }: DesignChoice): string {
   // is switched on in the fold below it, and renaming them here would make two
   // names for one checkbox.
   const on = togglesFor(templateId).filter((toggle) => params[toggle.key]);
-  const named = on.map((toggle) => toggle.label).join(', ');
-  return `${TEMPLATES[templateId].name} · ${named || 'no options on'}`;
+  // The colours cannot be listed — three hexes say nothing at a glance — but
+  // whether this Release has been taken off the plain ones can be, and a fold
+  // that hides three colour wells has to admit that (ADR-0010 item 6).
+  const recoloured = COLOURS.some(
+    (colour) => params[colour.key] !== DEFAULT_TEMPLATE_PARAMS[colour.key],
+  );
+  const notes = [...on.map((toggle) => toggle.label), ...(recoloured ? ['recoloured'] : [])];
+  return `${TEMPLATES[templateId].name} · ${notes.join(', ') || 'nothing on, default colours'}`;
 }
 
 export function createDesignControls(
@@ -133,7 +139,8 @@ export function createDesignControls(
    *
    * The panel itself is not rebuilt when the Template changes — the workspace
    * builds it per *selection*, and a Template change is not one — so this is
-   * what keeps the list honest. Only these three nodes are replaced, so the
+   * what keeps the list honest. Only the checkboxes inside `toggles` are
+   * replaced — one, two or three of them, depending on the Template — so the
    * focus stays in the picker the collector just used.
    *
    * A toggle the Template does not read keeps its value in `params` rather than

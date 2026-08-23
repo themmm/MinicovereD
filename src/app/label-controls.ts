@@ -1,4 +1,4 @@
-import { LABEL_PRESETS, LABEL_SIZE_RANGE, labelPreset } from '../domain/parts.ts';
+import { LABEL_PRESETS, LABEL_SIZE_RANGE, labelPreset, sameLabelCut } from '../domain/parts.ts';
 import type { LabelDimensions, LabelPreset, LabelPresetId } from '../domain/parts.ts';
 import { el } from './dom.ts';
 
@@ -29,14 +29,14 @@ const SIZES: readonly SizeField[] = [
 /** Shown once the Label has been nudged away from every preset. */
 const CUSTOM = 'custom';
 
-/** Which preset a set of measurements matches, if any. */
+/**
+ * Which preset a set of measurements matches, if any.
+ *
+ * Held to the same comparison an import uses to decide whether it changed the
+ * Label (`sameLabelCut`), so the picker and that sentence can never disagree.
+ */
 const presetMatching = (label: LabelDimensions): LabelPreset | undefined =>
-  LABEL_PRESETS.find(
-    (preset) =>
-      preset.dimensions.width === label.width &&
-      preset.dimensions.height === label.height &&
-      preset.dimensions.notch === label.notch,
-  );
+  LABEL_PRESETS.find((preset) => sameLabelCut(preset.dimensions, label));
 
 export interface LabelControls {
   readonly element: HTMLElement;

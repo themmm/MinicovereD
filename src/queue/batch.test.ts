@@ -77,9 +77,10 @@ const titles = (...names: readonly string[]): BatchRequest[] =>
 /**
  * `resolveBatchIntoQueue` on the design a first-ever Batch would carry.
  *
- * The design moved in front of the progress callback when it stopped being
- * hard-coded here, and only the test below is about it — the rest are about
- * what a lookup does, and say nothing about how the Entry is dressed.
+ * The design moved in front of the progress callback when the resolver stopped
+ * hard-coding one, and only the last describe block below is about it — the
+ * rest are about what a lookup does, and say nothing about how an Entry is
+ * dressed.
  */
 const resolveBatch = (
   adapter: MetadataAdapter,
@@ -284,8 +285,9 @@ describe('the design a Batch dresses its Entries in', () => {
   });
 
   it('does not carry a Release from one Entry into another', async () => {
-    // Spreading a shared design object is how a Release could be shared too, if
-    // the design ever grew one. Two Entries, two Releases.
+    // A tripwire rather than a proof. Every Entry is built by spreading the one
+    // design object, and `DesignChoice` has no `release` field today, so spread
+    // order cannot go wrong — this is here for the day it grows one.
     const http = recordedHttp(['One', 'Two']);
     const adapter = createMetadataAdapter({ http, clock: testClock() });
 

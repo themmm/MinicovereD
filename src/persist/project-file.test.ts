@@ -63,10 +63,14 @@ const design2: ReleaseDesign = {
  * A version-1 project document, as v1.0 wrote one.
  *
  * Built by hand rather than recorded, because the app can no longer produce
- * one: the measurements sit inside each design, `insetArtwork` is absent
- * because the parameter did not exist, and there is no `settings` block. Every
- * difference from a version-2 file is a thing the reader has to migrate, so
- * they are all stated here rather than derived from what this build writes.
+ * one. Its `params` is v1.0's whole `TemplateParams` — the five keys that
+ * existed then, `insetArtwork` absent because the parameter did not — and its
+ * Part sizes sit inside each design. There is no top-level `measurements`
+ * block, because that key arrived with version 2.
+ *
+ * The `dimensions` block is optional per design only so that the collapse rule
+ * can be tested against a Design that states nothing; a real v1 file wrote one
+ * on every design, so a real v1 file always resolves to the first.
  */
 const versionOneFile = (
   labels: ReadonlyArray<Record<string, unknown> | undefined> = [
@@ -78,7 +82,13 @@ const versionOneFile = (
   designs: labels.map((label, index) => ({
     release: { id: `r${index + 1}`, artist: 'Glen Campbell', album: 'Wichita Lineman', tracks: [] },
     templateId: 'classic',
-    params: { paperColor: '#ffffff', inkColor: '#141414', accentColor: '#1f2933', showLogo: true },
+    params: {
+      paperColor: '#ffffff',
+      inkColor: '#141414',
+      accentColor: '#1f2933',
+      showOverlayText: true,
+      showLogo: true,
+    },
     ...(label ? { dimensions: { ...DEFAULT_PART_DIMENSIONS, label } } : {}),
   })),
   sheet: { paperId: 'a4', marginMm: 5, parts: PART_KINDS },
@@ -116,8 +126,8 @@ describe('writing a project file', () => {
   it('writes the measurements once, beside the Sheet, and inside no design', () => {
     // Asserted against the JSON rather than against what comes back, because
     // the reader cannot put `dimensions` on a Design any more — so a writer
-    // still emitting one would round-trip clean and grow every file with a
-    // block nothing reads.
+    // still emitting one would round-trip clean, and every file would carry a
+    // per-design block that only a version-1 document is ever read for.
     const parsed = JSON.parse(write()) as {
       designs: Array<Record<string, unknown>>;
       measurements: { dimensions: { label: Record<string, unknown> } };
@@ -201,9 +211,10 @@ describe('reading a project file back', () => {
     const result = readProjectFile(JSON.stringify(written));
 
     if (!result.ok) throw new Error(result.error);
-    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(
-      DEFAULT_TEMPLATE_PARAMS.insetArtwork,
-    );
+    // The literal, not `DEFAULT_TEMPLATE_PARAMS.insetArtwork`: reading the
+    // expectation out of the thing under test would let a flipped default make
+    // this pass against the version-1 branch as well.
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(false);
   });
 
   it('keeps a bleeding Front Panel bleeding, which the fallback must not overrule', () => {
@@ -237,7 +248,8 @@ describe('reading a project file back', () => {
     });
     // One block for two Releases: from version 2 the measurements belong to the
     // project, so two Releases cannot come back wanting two different stickers.
-    expect(designs).toHaveLength(2);
+    // Both Releases have to be there for that to mean anything.
+    expect(designs.map((each) => each.release.id)).toEqual(['r1', 'r2']);
   });
 
   it('restores a Template’s own parameters', () => {
@@ -340,13 +352,15 @@ describe('reading a project file that is not one', () => {
 
   it('collapses a version-1 project whose Releases disagree onto the first of them', () => {
     // Which really happens: v1's Label control wrote to the selected Release
-    // and to nothing else, so a v1 project can hold three Labels at three
-    // sizes. There is no shape left to express that in — that being the point
-    // of the version — and the first Release is the one selected after an
-    // import, so it is the one whose measurements the collector can see.
+    // and to nothing else, so a v1 project can hold a Label per Release. There
+    // is no shape left to express that in — that being the point of the version
+    // — and the first Release is the one selected after an import, so it is the
+    // one whose Parts the collector is looking at when they judge whether the
+    // measurements survived.
     const result = readProjectFile(
       JSON.stringify(
         versionOneFile([
+          undefined,
           undefined,
           { width: 34.6, height: 52.4, notch: true, notchSize: 5 },
           { width: 38, height: 54, notch: false, notchSize: 6 },
@@ -355,16 +369,58 @@ describe('reading a project file that is not one', () => {
     );
 
     if (!result.ok) throw new Error(result.error);
-    // The first Release states nothing, so the first that states anything wins
-    // — an absent block is not a measurement of zero.
+    // Two Designs state nothing, so the rule cannot be read as "the second one":
+    // the first that states anything wins, and an absent block is not a
+    // measurement of zero.
+    expect(result.project.measurements.dimensions.label.width).toBe(34.6);
+  });
+
+  it('prefers the project’s own block to a stale one left inside a Design', () => {
+    // Nothing this app writes looks like this — version 2 stopped writing the
+    // per-design block — but a hand-merged file can, and which of the two the
+    // reader believes must not depend on which branch happens to run first.
+    const file = versionOneFile();
+    file['version'] = PROJECT_VERSION;
+    file['measurements'] = {
+      dimensions: { label: { width: 31, height: 49, notch: false, notchSize: 0 } },
+    };
+
+    const result = readProjectFile(JSON.stringify(file));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.label.width).toBe(31);
+  });
+
+  it('reads a project with no version at all as a version-1 one', () => {
+    // `asNumber(parsed['version'], 0)` makes an absent or stringified version
+    // zero, and zero is a version-1 document by every rule that reads one. It
+    // matters now that the version decides something: a file with no version
+    // must keep the v1.0 square-artwork tell rather than picking up the bleed.
+    const file = versionOneFile();
+    delete file['version'];
+
+    const result = readProjectFile(JSON.stringify(file));
+
+    if (!result.ok) throw new Error(result.error);
+    expect(designsOf(result.project)[0]?.params.insetArtwork).toBe(true);
     expect(result.project.measurements.dimensions.label.width).toBe(34.6);
   });
 
   it('falls back to the defaults for a version-1 project that never stated any', () => {
+    // This is also the one path that reaches `DEFAULT_MEASUREMENTS` from a test,
+    // so the numbers are written out rather than compared against the constant.
+    // `expect(...).toEqual(DEFAULT_MEASUREMENTS)` passes whatever that constant
+    // says, and it is the Label every new session starts on.
     const result = readProjectFile(JSON.stringify(versionOneFile([undefined, undefined])));
 
     if (!result.ok) throw new Error(result.error);
     expect(result.project.measurements).toEqual(DEFAULT_MEASUREMENTS);
+    expect(DEFAULT_MEASUREMENTS.dimensions.label).toEqual({
+      width: 35,
+      height: 52.5,
+      notch: true,
+      notchSize: 6,
+    });
   });
 
   it('says so when the file comes from a newer version', () => {

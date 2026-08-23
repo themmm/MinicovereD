@@ -177,10 +177,16 @@ export interface Template {
    * Which of the toggles this Template actually reads.
    *
    * Declared by the Template rather than worked out by the panel, because it is
-   * a fact about the drawing: `insetArtwork` under Full-bleed and Minimal, and
-   * `showOverlayText` under Classic and Minimal, changed nothing and were shown
-   * anyway for the whole of v1. A control that cannot do anything is worse than
-   * a missing one — it is read as the reason the Part looks the way it does.
+   * a fact about the drawing rather than about the panel. Four of the nine
+   * Template-and-toggle pairs are dead: `insetArtwork` under Full-bleed and
+   * Minimal, and `showOverlayText` under Classic and Minimal. All four were
+   * shown anyway until now. A control that cannot do anything is worse than a
+   * missing one — it is read as the reason the Part looks the way it does.
+   *
+   * Only one of the four was ever live: v1.0's Classic did gate its Front Panel
+   * caption on `showOverlayText`, and ticket 03 removed the gate when the
+   * artwork started bleeding, because switching the toggle off then left 14 mm
+   * of blank paper where the Release's name goes.
    *
    * Held to it by `sheet-renderer.test.ts`, which flips every toggle under every
    * Template and requires the ops to differ for exactly the ones named here. So

@@ -460,8 +460,8 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
 
   return {
     element,
-    show(sheets, entry, measurements) {
-      dimensions = measurements;
+    show(sheets, entry, next) {
+      dimensions = next;
       const releaseId = entry?.design.release.id ?? '';
       const found: { placement: PartPlacement; sheet: SheetLayout }[] = [];
       for (const sheet of sheets) {

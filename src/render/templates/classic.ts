@@ -191,9 +191,12 @@ export const CLASSIC_TEMPLATE: Template = {
   id: 'classic',
   name: 'Classic',
   description: 'Artwork to three edges, type on paper below, tracklist on colour.',
-  // The Front Panel is the only place either of these reaches: the square at
-  // `classic.ts` artworkRect, the logo in the column beside the title. Type
-  // here is never drawn over artwork, which is what `showOverlayText` governs.
+  // `insetArtwork` reaches the Front Panel and nowhere else — `artworkRect`
+  // above; the Label's square is sized around the cartridge's cut corner
+  // instead. `showLogo` reaches the Front Panel here *and* the Spine, through
+  // the shared `drawJCard` below, where it also shortens the line the Spine has
+  // room for. Nothing Classic sets is drawn over artwork, which is what
+  // `showOverlayText` governs, so this Template never reads that one.
   toggles: ['showLogo', 'insetArtwork'],
   /**
    * A book: a serif over the artwork, a humanist for the reading, and the

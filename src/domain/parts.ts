@@ -138,6 +138,37 @@ export function labelNotchDepth(label: LabelDimensions): Mm {
   return label.notch ? Math.min(label.notchSize, label.width / 2, label.height / 2) : 0;
 }
 
+/**
+ * Whether two Labels would be cut to the same piece of paper.
+ *
+ * `notchSize` counts only when the notch is cut, because that is the only time
+ * it reaches the paper — `labelNotchDepth` above is what decides that, and it
+ * is asked here rather than re-derived.
+ *
+ * One definition, because two things ask and they must not disagree: the preset
+ * picker, deciding whether the numbers still match a preset, and an import,
+ * deciding whether a project file changed the collector's Label enough to say
+ * so. Two answers would give a sentence announcing a change over a picker still
+ * naming the preset it is no longer on.
+ */
+export function sameLabelCut(a: LabelDimensions, b: LabelDimensions): boolean {
+  if (a.width !== b.width || a.height !== b.height || a.notch !== b.notch) return false;
+  return labelNotchDepth(a) === labelNotchDepth(b);
+}
+
+/** Whether two sets of Part sizes would cut the same pieces of paper. */
+export function samePartDimensions(a: PartDimensions, b: PartDimensions): boolean {
+  return (
+    a.jcard.innerFlapWidth === b.jcard.innerFlapWidth &&
+    a.jcard.spineWidth === b.jcard.spineWidth &&
+    a.jcard.frontPanelWidth === b.jcard.frontPanelWidth &&
+    a.jcard.height === b.jcard.height &&
+    a.backCard.width === b.backCard.width &&
+    a.backCard.height === b.backCard.height &&
+    sameLabelCut(a.label, b.label)
+  );
+}
+
 export function partShape(part: PartKind, dimensions: PartDimensions): PartShape {
   switch (part) {
     case 'jcard':

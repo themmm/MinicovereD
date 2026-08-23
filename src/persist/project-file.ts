@@ -1,4 +1,6 @@
 import { hasCredits } from '../domain/credits.ts';
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
+import type { Measurements } from '../domain/measurements.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM, PAPER_SIZES } from '../domain/paper.ts';
 import type { PaperSize } from '../domain/paper.ts';
 import {
@@ -8,8 +10,6 @@ import {
 } from '../domain/parts.ts';
 import type { LabelDimensions, PartDimensions } from '../domain/parts.ts';
 import type { Artwork, Credit, Credits, Release, Track } from '../domain/release.ts';
-import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
-import type { Measurements } from '../domain/measurements.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
 import type { QueueEntry } from '../queue/release-queue.ts';
 import { safeLogoColor } from '../render/minidisc-logo.ts';
@@ -306,9 +306,9 @@ function readTemplateId(value: unknown): TemplateId {
  *
  * The migration is a collapse, and it can lose something. v1's Label control
  * wrote to the selected Release and to nothing else, so a v1 project really can
- * hold nine Labels at nine sizes — which is the asymmetry version 2 exists to
- * remove, and there is no longer a shape to express it in. The first Design
- * that states any dimensions wins, because after an import the first Release is
+ * hold as many Labels as it has Releases — which is the asymmetry version 2
+ * exists to remove, and there is no longer a shape to express it in. The first
+ * Design that states any dimensions wins, because after an import the first Release is
  * the one selected, and so the one whose Parts the collector is looking at when
  * they judge whether the measurements survived.
  *

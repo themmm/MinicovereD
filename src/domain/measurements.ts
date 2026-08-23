@@ -13,9 +13,9 @@ import type { PartDimensions } from './parts.ts';
  *
  * The line being drawn is fit against taste. A Design says what one record
  * should look like — Template, colours, what appears on the artwork — and two
- * Releases in a Queue are allowed to disagree about every bit of it. Settings
- * say what shape the Parts are, and two Releases disagreeing about that means
- * one of them does not fit the cartridge in the collector's hand.
+ * Releases in a Queue are allowed to disagree about every bit of it. These say
+ * what shape the Parts are cut to, and two Releases disagreeing about that
+ * means one of them does not fit the cartridge in the collector's hand.
  *
  * v1 put both in `ReleaseDesign`, which is why nudging the Label applied to the
  * Release on screen and to nothing else — and why a Batch entry and a Release
@@ -33,13 +33,18 @@ export interface Measurements {
   /**
    * Every Part's size in millimetres, shared by every Release in the Queue.
    *
-   * All nine numbers, not only the four the Label control reaches. The J-Card's
-   * four and the Back Card's two have never had a control and still do not —
-   * they are reachable by hand-editing a project file, clamped to 1–300 mm on
-   * the way back in — but they are measurements by every argument the Label is,
-   * and leaving them inside the Designs would have kept the split half-made.
-   * ADR-0012 replaces both Parts with the Insert in ticket 08, so building six
-   * controls for numbers that are about to be restructured would be waste.
+   * All of them, not only what the Label control reaches. That control reaches
+   * three of the ten fields — the Label's width, its height and whether the
+   * corner is notched. The other seven have never had a control and still do
+   * not: the Label's notch *size*, the J-Card's four and the Back Card's two.
+   * They are reachable only by hand-editing a project file, and clamped to
+   * 1–300 mm on the way back in.
+   *
+   * They moved anyway, because they are measurements by every argument the
+   * Label is and leaving them inside the Designs would have kept the split
+   * half-made. They got no controls because ADR-0012 replaces both those Parts
+   * with the Insert in ticket 08, and six controls for numbers about to be
+   * restructured is waste.
    */
   readonly dimensions: PartDimensions;
 }

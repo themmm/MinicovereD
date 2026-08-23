@@ -1,10 +1,10 @@
+import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
+import type { Measurements } from '../domain/measurements.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
-import { PART_KINDS } from '../domain/parts.ts';
+import { PART_KINDS, samePartDimensions } from '../domain/parts.ts';
 import type { LabelDimensions } from '../domain/parts.ts';
 import { blankRelease } from '../domain/release.ts';
 import type { Credits, Release } from '../domain/release.ts';
-import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
-import type { Measurements } from '../domain/measurements.ts';
 import { errorMessage } from '../errors.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
@@ -106,13 +106,6 @@ export function createWorkspace(): Workspace {
       label.notch ? `${label.notchSize} mm notch` : 'square corner'
     }`;
 
-  /** Whether two Labels would be cut to the same rectangle, notch included. */
-  const sameLabel = (a: LabelDimensions, b: LabelDimensions): boolean =>
-    a.width === b.width &&
-    a.height === b.height &&
-    a.notch === b.notch &&
-    a.notchSize === b.notchSize;
-
   const measure = createCanvasTextMeasurer();
   const metadata = createMetadataAdapter({ http: createFetchHttpClient() });
   const store = createIndexedDbStore();
@@ -151,25 +144,33 @@ export function createWorkspace(): Workspace {
     }
     // Read before the file overwrites it: what changes has to be said, and
     // afterwards there is nothing left to compare against.
-    const previousLabel = measurements.dimensions.label;
+    const previous = measurements.dimensions;
     applyProject(imported);
 
     const opened =
       imported.entries.length === 0
         ? // A readable file can still hold no Releases. Saying "your work has
           // been replaced" when nothing was is the one thing not to do here.
-          'That project had no Releases in it, so your queue is untouched. Its Sheet settings were applied.'
+          'That project had no Releases in it, so your queue is untouched. Its paper and margin were applied.'
         : `Opened ${imported.entries.length} ${
             imported.entries.length === 1 ? 'Release' : 'Releases'
           }. Your previous work has been replaced.`;
     // A project file carries the measurements and they are applied (see
     // `applyProject`), which means opening somebody else's file can change the
-    // size of every Label this collector prints. Said out loud when it happens,
+    // size of every Part this collector cuts. Said out loud when it happens,
     // and silent when it does not, so the sentence is worth reading.
-    const labelChange = sameLabel(previousLabel, measurements.dimensions.label)
-      ? ''
-      : ` Its Label measurements came with it: ${describeLabel(measurements.dimensions.label)}.`;
-    projectControls.report(`${opened}${labelChange}`);
+    //
+    // The comparison is over all nine measurements, not only the Label: a file
+    // that moved the J-Card's height changed what gets cut just as much, and
+    // nothing else on screen would show it. Only the Label is quoted, because
+    // it is the one the collector set and so the one they can check.
+    const changed = !samePartDimensions(previous, measurements.dimensions);
+    const measurementChange = changed
+      ? ` Its measurements replaced yours — the Label is now ${describeLabel(
+          measurements.dimensions.label,
+        )}.`
+      : '';
+    projectControls.report(`${opened}${measurementChange}`);
   });
 
   const saveSoon = debounceSave(store, AUTOSAVE_DELAY_MS, (error) => {
@@ -601,8 +602,17 @@ export function createWorkspace(): Workspace {
    * collector set for their own cartridges. Applied anyway, for two reasons:
    * paper and printable margin have arrived this way and been applied since v1,
    * and splitting the rule would mean a file that reproduces half of its own
-   * design. What the import must not do is apply them *quietly* — see the
-   * sentence `importReport` builds.
+   * design. What the import must not do is apply them *quietly*, which is what
+   * the `measurementChange` clause in the import callback above is for. A
+   * restore out of this browser says nothing, because that is the collector's
+   * own work coming back rather than somebody else's arriving.
+   *
+   * The design travels too, and less obviously: `selectionChanged` refreshes,
+   * and `rememberDesign` then takes `carried` from the first Release of the
+   * project that just arrived. So an opened file also decides what the *next*
+   * Release will wear. That follows from "the last Release touched" and is the
+   * same rule a click in the Queue obeys, but it is worth knowing that a file
+   * can set it.
    */
   function applyProject(next: Project): void {
     if (next.entries.length > 0) {
@@ -618,7 +628,6 @@ export function createWorkspace(): Workspace {
     labelControls.show(measurements.dimensions.label);
     selectionChanged();
   }
-
 
   // A reload leaves at most one debounce window of work unwritten; asking for
   // it on the way out closes that.
