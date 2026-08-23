@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import type { Release } from '../domain/release.ts';
 import { createMetadataAdapter } from './metadata-adapter.ts';
 import type { SearchQuery } from './metadata-adapter.ts';
 import type { HttpClient, HttpResponse } from './http.ts';
@@ -62,7 +63,58 @@ const coverArt: Recording = {
   body: fixtureBytes('cover-art-front.jpg'),
 };
 
-const ALL: readonly Recording[] = [searchHit, searchMiss, releaseLookup, coverArt];
+/** ADR-0013's own release, which is also the one whose `notes` it measured. */
+const DISCOGS_ID = 249504;
+const discogsRelease: Recording = {
+  match: (url) => url === `https://api.discogs.com/releases/${DISCOGS_ID}`,
+  body: fixtureText('discogs-release-249504.json'),
+};
+
+const ALL: readonly Recording[] = [
+  searchHit,
+  searchMiss,
+  releaseLookup,
+  coverArt,
+  // Recorded and answering, so that "resolve never asks Discogs" is a fact
+  // about the adapter rather than about what the harness happens to allow.
+  discogsRelease,
+];
+
+/**
+ * The MusicBrainz release, with the `url-rels` block a release that has been
+ * linked to Discogs comes back with.
+ *
+ * Written here rather than recorded: `release-with-tracklist.json` was recorded
+ * before this adapter asked for `inc=url-rels`, and re-recording it means a live
+ * request. Only `url.resource` is written, because that is the only field
+ * `discogsIdOf` reads — a fuller block would be a claim about MusicBrainz's
+ * response that nothing here can check. The Wikipedia relation is in front of
+ * the Discogs one so that picking the right relation out of several is the
+ * default case rather than a special test.
+ */
+const linkedTo = (resource: string): Recording => ({
+  match: (url) => url.includes(`/ws/2/release/${DISCOVERY_MBID}`),
+  body: JSON.stringify({
+    ...(JSON.parse(fixtureText('release-with-tracklist.json')) as Record<string, unknown>),
+    relations: [
+      { url: { resource: 'https://en.wikipedia.org/wiki/Discovery_(Daft_Punk_album)' } },
+      { url: { resource } },
+    ],
+  }),
+});
+
+const DISCOGS_URL = `https://www.discogs.com/release/${DISCOGS_ID}`;
+
+/** A resolved Release MusicBrainz linked nothing for: no link, nothing to ask. */
+const unlinkedRelease: Release = {
+  id: DISCOVERY_MBID,
+  artist: 'Daft Punk',
+  album: 'Discovery',
+  tracks: [],
+};
+
+/** A Release as `fetchCredits` needs one: identified, and carrying the link. */
+const linkedRelease = (discogsId = DISCOGS_ID): Release => ({ ...unlinkedRelease, discogsId });
 
 /** No real waiting: the throttle's clock is under the test's control. */
 function testClock(): { now: () => number; sleep: (ms: number) => Promise<void>; slept: number[] } {
@@ -426,5 +478,372 @@ describe('MetadataAdapter — throttled queue', () => {
     expect(http.urls.length).toBe(4);
     expect(clock.slept.filter((ms) => ms > 0)).toHaveLength(http.urls.length - 1);
     expect(Math.min(...clock.slept.filter((ms) => ms > 0))).toBe(1000);
+  });
+});
+
+describe('MetadataAdapter — the Discogs link', () => {
+  it('asks MusicBrainz for the url relationships in the request it was already making', async () => {
+    const { adapter, http } = adapterOver();
+
+    await adapter.fetchRelease(DISCOVERY_MBID);
+
+    // One request, not two: the link is free because `inc` takes a list.
+    expect(http.urls).toHaveLength(1);
+    expect(decodeURIComponent(http.urls[0] ?? '')).toContain(
+      'inc=artist-credits+recordings+labels+url-rels',
+    );
+  });
+
+  it('carries the Discogs release MusicBrainz linked, and nothing else about it', async () => {
+    const { adapter } = adapterOver([linkedTo(DISCOGS_URL), coverArt]);
+
+    const release = await adapter.resolve(DISCOVERY_MBID);
+
+    expect(release.discogsId).toBe(DISCOGS_ID);
+    // The link, not the credits: nothing is asked of Discogs while resolving.
+    expect(release.credits).toBeUndefined();
+  });
+
+  it('leaves a Release MusicBrainz has not linked unlinked', async () => {
+    // The recorded response, which carries no relations at all — the common
+    // case, and an absence rather than a failure.
+    const { adapter } = adapterOver();
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('reads a Discogs URL that still carries its old slug', async () => {
+    const { adapter } = adapterOver([
+      linkedTo('https://www.discogs.com/Rick-Astley-Never-Gonna-Give-You-Up/release/249504'),
+    ]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBe(DISCOGS_ID);
+  });
+
+  it('refuses a link to a Discogs master, which is not this pressing', async () => {
+    // A master gathers every pressing of a record and has its own credits;
+    // fetching one would put another release's producer on this card.
+    const { adapter } = adapterOver([linkedTo('https://www.discogs.com/master/12345')]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('refuses an address that only has discogs.com in its path', async () => {
+    const { adapter } = adapterOver([
+      linkedTo('https://example.com/discogs.com/release/249504'),
+    ]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('refuses an id too large to be exactly itself', async () => {
+    // 2^53 and up round to a different integer, and an id that is not itself
+    // would fetch somebody else's release.
+    const { adapter } = adapterOver([
+      linkedTo('https://www.discogs.com/release/9007199254740993'),
+    ]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+
+  it('refuses a relation whose resource is not a URL at all', async () => {
+    const { adapter } = adapterOver([linkedTo('discogs.com/release/249504')]);
+
+    expect((await adapter.fetchRelease(DISCOVERY_MBID)).discogsId).toBeUndefined();
+  });
+});
+
+describe('MetadataAdapter — Discogs credits', () => {
+  it('normalises a Discogs release into credits and release facts (ADR-0013)', async () => {
+    const { adapter } = adapterOver();
+
+    expect(await adapter.fetchCredits(linkedRelease())).toEqual({
+      people: [
+        { role: 'Producer', name: 'Stock, Aitken & Waterman' },
+        { role: 'Engineer', name: 'Mike Duffy' },
+        { role: 'Design', name: 'Me Company' },
+      ],
+      label: 'RCA',
+      catalogNumber: 'PB 41447',
+      country: 'UK',
+      year: '1987',
+      genres: ['Electronic', 'Pop'],
+      styles: ['Synth-pop'],
+    });
+  });
+
+  it('never reads Discogs’ notes, whatever is in them (ADR-0013)', async () => {
+    const { adapter } = adapterOver();
+
+    const credits = await adapter.fetchCredits(linkedRelease());
+
+    // The fixture's `notes` is the text ADR-0013 measured: matrix runouts and
+    // label variants, which is not liner notes and must not reach a Release.
+    const everything = JSON.stringify(credits);
+    for (const phrase of ['Manufactured In England', 'Runouts', 'encircled', 'black label']) {
+      expect(everything, phrase).not.toContain(phrase);
+    }
+  });
+
+  it('leaves Release.notes to MusicBrainz, which is a different field of the same name', async () => {
+    const { adapter } = adapterOver([linkedTo(DISCOGS_URL), coverArt, discogsRelease]);
+
+    const release = await adapter.resolve(DISCOVERY_MBID);
+    const credits = await adapter.fetchCredits(release);
+
+    // MusicBrainz owns `notes`; Discogs owns the block. They never meet, which
+    // is why a label the collector typed cannot be overwritten by a lookup.
+    expect(release.notes).toContain('Virgin');
+    expect(release.notes).not.toContain('RCA');
+    expect(credits?.label).toBe('RCA');
+  });
+
+  it('reads the real shapes a Discogs response comes in', async () => {
+    const { adapter } = adapterOver([
+      { match: (url) => url.endsWith('/releases/1'), body: fixtureText('discogs-release-1.json') },
+    ]);
+
+    const credits = await adapter.fetchCredits(linkedRelease(1));
+
+    // A March with no day recorded is still 1999, and Discogs' bracketed
+    // qualifier on a role is carried rather than tidied away.
+    expect(credits?.year).toBe('1999');
+    expect(credits?.people).toEqual([
+      { role: 'Music By [All Tracks By]', name: 'Jesper Dahlbäck' },
+    ]);
+    expect(credits?.label).toBe('Svek');
+    expect(credits?.catalogNumber).toBe('SK032');
+  });
+
+  it('credits the name this release credits, when Discogs has one', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({
+          extraartists: [{ name: 'Michael Stock', anv: 'Mike Stock', role: 'Producer' }],
+        }),
+      },
+    ]);
+
+    // What goes on a card is what is printed on the sleeve.
+    expect((await adapter.fetchCredits(linkedRelease(1)))?.people).toEqual([
+      { role: 'Producer', name: 'Mike Stock' },
+    ]);
+  });
+
+  it('keeps one credit per role and name, however often Discogs lists it', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({
+          extraartists: [
+            { name: 'Mike Duffy', role: 'Engineer', tracks: 'A1' },
+            { name: 'Mike Duffy', role: 'Engineer', tracks: 'B1' },
+            { name: 'Mike Duffy', role: 'Mixed By' },
+            { name: '', role: 'Producer' },
+          ],
+        }),
+      },
+    ]);
+
+    // The same person in the same role twice is one credit — Discogs lists them
+    // once per side. In a second role they are a second credit. A credit with
+    // no name is not a credit.
+    expect((await adapter.fetchCredits(linkedRelease(1)))?.people).toEqual([
+      { role: 'Engineer', name: 'Mike Duffy' },
+      { role: 'Mixed By', name: 'Mike Duffy' },
+    ]);
+  });
+
+  it('never pairs one label’s name with another label’s number', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ labels: [{ name: 'RCA', catno: '' }, { name: 'BMG', catno: 'PB 1' }] }),
+      },
+    ]);
+
+    const credits = await adapter.fetchCredits(linkedRelease(1));
+
+    // Both come off the same entry, so this release has a label and no number
+    // rather than "RCA · PB 1", which is a real label beside a real number that
+    // is not its own.
+    expect(credits?.label).toBe('RCA');
+    expect(credits?.catalogNumber).toBeUndefined();
+  });
+
+  it('takes a catalogue number from an entry that names no label', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ labels: [{ catno: 'PB 41447' }, { name: 'RCA' }] }),
+      },
+    ]);
+
+    // The first entry that says anything is the one read, and a number with no
+    // label beside it is still a fact about the pressing.
+    expect(await adapter.fetchCredits(linkedRelease(1))).toEqual({
+      people: [],
+      catalogNumber: 'PB 41447',
+      genres: [],
+      styles: [],
+    });
+  });
+
+  it('reads no year out of a date that is not one', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ released: 'unknown', country: 'UK' }),
+      },
+    ]);
+
+    // Four digits or none: the first four characters of "unknown" would print
+    // "unkn" on a card.
+    expect((await adapter.fetchCredits(linkedRelease(1)))?.year).toBeUndefined();
+  });
+
+  it('reads `released` and not Discogs’ separate year', async () => {
+    const { adapter } = adapterOver([
+      {
+        match: (url) => url.endsWith('/releases/1'),
+        body: JSON.stringify({ released: '', year: 1987, country: 'UK' }),
+      },
+    ]);
+
+    // ADR-0013 and the ticket both name `released`; nothing falls back.
+    expect(await adapter.fetchCredits(linkedRelease(1))).toEqual({
+      people: [],
+      country: 'UK',
+      genres: [],
+      styles: [],
+    });
+  });
+
+  it('reports no credits for a Discogs entry with nothing in it', async () => {
+    const { adapter } = adapterOver([
+      { match: (url) => url.endsWith('/releases/1'), body: JSON.stringify({ id: 1, notes: 'x' }) },
+    ]);
+
+    // An empty block would make every later "have the credits arrived?" yes.
+    expect(await adapter.fetchCredits(linkedRelease(1))).toBeUndefined();
+  });
+
+  it('asks nothing at all when MusicBrainz linked nothing', async () => {
+    const { adapter, http } = adapterOver();
+
+    expect(await adapter.fetchCredits(unlinkedRelease)).toBeUndefined();
+    expect(http.urls).toEqual([]);
+  });
+
+  it('never asks Discogs while a Release is resolving', async () => {
+    const { adapter, http } = adapterOver([linkedTo(DISCOGS_URL), coverArt, discogsRelease]);
+
+    await adapter.resolve(DISCOVERY_MBID);
+
+    // Discogs is recorded and answering here, so this is the adapter's own
+    // restraint rather than the harness's: credits are asked for once a Release
+    // has resolved, and never as part of resolving it (ADR-0013).
+    expect(http.urls.some((url) => url.includes('api.discogs.com'))).toBe(false);
+  });
+
+  it('sends no `client=` parameter to Discogs, which is MusicBrainz’s', async () => {
+    const { adapter, http } = adapterOver();
+
+    await adapter.fetchCredits(linkedRelease());
+
+    expect(http.urls).toEqual([`https://api.discogs.com/releases/${DISCOGS_ID}`]);
+  });
+});
+
+describe('MetadataAdapter — a Discogs failure costs nothing', () => {
+  const failing = (recording: Partial<Recording>): Recording => ({
+    match: (url) => url.includes('api.discogs.com'),
+    body: 'no',
+    ...recording,
+  });
+
+  /** Every way Discogs can fail to answer, and the one answer they all get. */
+  const failures: ReadonlyArray<readonly [string, Recording]> = [
+    ['429, this minute’s twenty-five spent', failing({ status: 429 })],
+    ['503, Discogs asking for quiet', failing({ status: 503 })],
+    ['404, an id MusicBrainz kept after Discogs dropped it', failing({ status: 404 })],
+    ['a body that is not JSON', failing({ body: '<html>maintenance</html>' })],
+  ];
+
+  for (const [what, recording] of failures) {
+    it(`reports no credits, not a failure, on ${what}`, async () => {
+      const { adapter } = adapterOver([recording]);
+
+      await expect(adapter.fetchCredits(linkedRelease())).resolves.toBeUndefined();
+    });
+  }
+
+  it('reports no credits when Discogs cannot be reached at all', async () => {
+    // A timeout aborts the request, which arrives as a rejection rather than
+    // as a status. Nothing is waiting on this, so there is nothing to report.
+    const http: HttpClient = {
+      async get(url: string): Promise<HttpResponse> {
+        if (url.includes('api.discogs.com')) throw new TypeError('Failed to fetch');
+        throw new Error(`unexpected request: ${url}`);
+      },
+    };
+    const adapter = createMetadataAdapter({ http, clock: testClock() });
+
+    await expect(adapter.fetchCredits(linkedRelease())).resolves.toBeUndefined();
+  });
+
+  it('does not retry Discogs, unlike a MusicBrainz lookup', async () => {
+    const { adapter, http } = adapterOver([failing({ status: 429 })]);
+
+    await adapter.fetchCredits(linkedRelease());
+
+    // Discogs counts requests over a moving minute, so waiting two seconds and
+    // asking again spends a second request to be told the same thing.
+    expect(http.urls).toHaveLength(1);
+  });
+
+  it('leaves the Release intact when Discogs never answers', async () => {
+    const { adapter } = adapterOver([linkedTo(DISCOGS_URL), coverArt, failing({ status: 503 })]);
+
+    const release = await adapter.resolve(DISCOVERY_MBID);
+    const credits = await adapter.fetchCredits(release);
+
+    expect(credits).toBeUndefined();
+    expect(release.album).toBe('Discovery');
+    expect(release.tracks).toHaveLength(14);
+    expect(release.artwork?.widthPx).toBe(500);
+    expect(release.discogsId).toBe(DISCOGS_ID);
+  });
+});
+
+describe('MetadataAdapter — two services, two queues', () => {
+  it('keeps Discogs to twenty-five requests a minute on a queue of its own', async () => {
+    const { adapter, clock } = adapterOver();
+
+    await adapter.search({ artist: 'Daft Punk' });
+    await adapter.search({ artist: 'Daft Punk', album: 'Discovery' });
+    await adapter.fetchCredits(linkedRelease());
+    await adapter.fetchCredits(linkedRelease());
+
+    // Two intervals, not one: MusicBrainz's second between its two requests and
+    // Discogs' 2.4 s between its two. A single shared queue could only produce
+    // one number here, and would be wrong at either — too fast for Discogs at
+    // 1000, or 2.4× slower than it needs to be for MusicBrainz at 2400.
+    expect([...new Set(clock.slept.filter((ms) => ms > 0))].sort((a, b) => a - b)).toEqual([
+      1000, 2400,
+    ]);
+  });
+
+  it('does not make a MusicBrainz request wait behind a Discogs one', async () => {
+    const { adapter, clock } = adapterOver();
+
+    await adapter.search({ artist: 'Daft Punk' });
+    await adapter.fetchCredits(linkedRelease());
+    await adapter.search({ artist: 'Daft Punk', album: 'Discovery' });
+
+    // The credits request in the middle is not on this queue, so the second
+    // search waits the one second it would have waited without it.
+    expect(clock.slept.filter((ms) => ms > 0)).toEqual([1000]);
   });
 });

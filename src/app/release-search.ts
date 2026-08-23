@@ -1,4 +1,5 @@
 import type { Release } from '../domain/release.ts';
+import { splitOnSeparator } from '../domain/separator.ts';
 import { errorMessage } from '../errors.ts';
 import type { MetadataAdapter, ReleaseSummary, SearchResults } from '../metadata/metadata-adapter.ts';
 import { resolveBatchIntoQueue, searchQueryFor } from '../queue/batch.ts';
@@ -16,16 +17,6 @@ import { clear, el } from './dom.ts';
  * thing to learn.
  */
 
-/**
- * The separator, and the only one.
- *
- * Only a *spaced* dash or a tab separates, and only the first one on the line.
- * That is what keeps `Jean-Michel Jarre` whole and `F♯A♯∞ — Deluxe Edition` one
- * title. Em, en and figure dashes and the minus sign all count, because people
- * paste all of them.
- */
-const SEPARATOR = /^(.*?)(?:\s+[—–‒−-]\s+|\t+)(.*)$/;
-
 /** A MusicBrainz identifier, on its own or inside a URL pasted from the site. */
 const MBID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -36,10 +27,10 @@ const MBID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
  * caller has to treat it as one rather than guessing which field it belongs in.
  */
 function splitLine(line: string): { artist: string; album: string } | undefined {
-  const match = SEPARATOR.exec(line);
-  if (!match) return undefined;
-  const [, artist = '', album = ''] = match;
-  return { artist: artist.trim(), album: album.trim() };
+  const split = splitOnSeparator(line);
+  if (!split) return undefined;
+  const [artist, album] = split;
+  return { artist, album };
 }
 
 /**

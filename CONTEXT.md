@@ -10,6 +10,13 @@ A tool for designing and printing cover inlays and disc labels for MiniDiscs. Th
 The metadata unit that serves as the source for a Design: artist, album, tracklist, cover image, and supplementary info (e.g. year). Can be fetched automatically or created by hand (e.g. a mixtape).
 _Avoid_: Album, Titel, Projekt
 
+**Credits**:
+What a second database knows about a pressing beyond its tracklist: who did what, and the label,
+catalogue number, country, year, genre and style it came out under. **One block from one source**
+(ADR-0013) — never merged into the fields the collector types, so a Release's `year` and `notes` stay
+theirs. Structured, not prose: Discogs' own `notes` field is pressing annotation and is never read.
+_Avoid_: Liner notes, Notes, Personnel, Mitwirkende
+
 **Part**:
 One of the three printable artifacts belonging to a Release: J-Card, Back Card, or Label.
 _Avoid_: Seite, Element

@@ -31,6 +31,17 @@ export interface MbLabelInfo {
   readonly 'catalog-number'?: string;
 }
 
+/**
+ * A url relationship: how MusicBrainz says where else a release exists.
+ * Requested with `inc=url-rels`.
+ *
+ * Only the address is declared, because only the address is read — see
+ * `discogsIdOf`, which explains why not the relationship type beside it.
+ */
+export interface MbRelation {
+  readonly url?: { readonly resource?: string };
+}
+
 export interface MbRelease {
   readonly id?: string;
   readonly title?: string;
@@ -41,6 +52,7 @@ export interface MbRelease {
   readonly 'label-info'?: readonly MbLabelInfo[];
   readonly media?: readonly MbMedium[];
   readonly 'track-count'?: number;
+  readonly relations?: readonly MbRelation[];
 }
 
 export interface MbSearchResponse {

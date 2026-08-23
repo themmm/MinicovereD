@@ -1,7 +1,9 @@
+import { withArrivedCredits } from '../domain/credits.ts';
 import { A4, DEFAULT_PRINTABLE_MARGIN_MM } from '../domain/paper.ts';
 import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
 import type { LabelDimensions } from '../domain/parts.ts';
 import { blankRelease } from '../domain/release.ts';
+import type { Credits, Release } from '../domain/release.ts';
 import { errorMessage } from '../errors.ts';
 import { createFetchHttpClient } from '../metadata/http.ts';
 import { createMetadataAdapter } from '../metadata/metadata-adapter.ts';
@@ -32,6 +34,7 @@ import type { SessionWork } from './project-arrival.ts';
 import { createProjectControls } from './project-controls.ts';
 import { createQueuePanel } from './queue-panel.ts';
 import { createReleaseForm } from './release-form.ts';
+import type { ReleaseForm } from './release-form.ts';
 import { createReleaseSearch } from './release-search.ts';
 import { createSheetControls } from './sheet-controls.ts';
 import { createSheetPreview, PREVIEW_DPI } from './sheet-preview.ts';
@@ -222,6 +225,9 @@ export function createWorkspace(): Workspace {
   /** Set the moment the collector touches anything, so a late restore cannot undo it. */
   let edited = false;
 
+  /** The Release form on screen, for the one thing that arrives after it is built. */
+  let releaseForm: ReleaseForm | undefined;
+
   /**
    * What this session has already done, for whatever has to decide that it may
    * not be replaced. The Batch is the search panel's to know about, so it is
@@ -270,7 +276,7 @@ export function createWorkspace(): Workspace {
     metadataFold.setSummary(
       `${named || 'nothing filled in yet'} · ${release.tracks.length} ${
         release.tracks.length === 1 ? 'track' : 'tracks'
-      }`,
+      }${release.credits ? ' · credits' : ''}`,
     );
     designFold.setSummary(
       `Template ${templateId} · Label ${dimensions.label.width} × ${dimensions.label.height} mm`,
@@ -343,6 +349,52 @@ export function createWorkspace(): Workspace {
   }
 
   /**
+   * Credits for a Release that has just arrived from a lookup (ADR-0013).
+   *
+   * Asked for here rather than inside the lookup, and only for a Release a
+   * lookup just produced. Nothing waits for the answer: the Release is already
+   * in the queue and on screen, and Discogs has a queue of its own inside the
+   * adapter, so an answer that is late, refused or never given costs the
+   * collector nothing.
+   *
+   * "Only a lookup" is the whole rule, and it is why a restored project asks for
+   * nothing. Reopening yesterday's work is not a lookup, and a queue of thirty
+   * Releases would put thirty requests on the network the moment the page loaded
+   * — which nobody asked for, and which would be a poor way to spend somebody
+   * else's rate limit.
+   */
+  function requestCredits(release: Release): void {
+    if (release.credits || release.discogsId === undefined) return;
+    void metadata.fetchCredits(release).then((credits) => {
+      if (credits) applyCredits(release.id, credits);
+    });
+  }
+
+  /** Credits arriving for a Release that may no longer be selected, or queued at all. */
+  function applyCredits(releaseId: string, credits: Credits): void {
+    let applied = false;
+    queue = replaceInQueue(queue, releaseId, (entry) => {
+      const release = withArrivedCredits(entry.design.release, credits);
+      // Unchanged means the Release already had credits — the collector's own,
+      // or an earlier answer. Either outranks this one.
+      if (release === entry.design.release) return entry;
+      applied = true;
+      return { ...entry, design: { ...entry.design, release } };
+    });
+    if (!applied) return;
+
+    // The one field, not the whole form: rebuilding it would take the caret out
+    // of whatever the collector is typing into right now.
+    if (releaseId === selectedId) releaseForm?.showCredits(credits);
+    // `changed()` deliberately not called. It would mark the session as edited,
+    // and a second source answering is not the collector changing something.
+    // Nothing reaches here without a lookup having marked the session already,
+    // so this is about what that flag means rather than about a bug it has.
+    refresh();
+    saveSoon(project());
+  }
+
+  /**
    * Searching is not a view of the selected Release, so it is built once and
    * outlives every selection change. Rebuilding it would throw away the
    * results on screen, the batch still being typed, and — because a lookup
@@ -359,6 +411,7 @@ export function createWorkspace(): Workspace {
       queue = addToQueue(queue, readyEntry({ ...settings, release: found }));
       selectedId = found.id;
       selectionChanged();
+      requestCredits(found);
     },
     (entries) => {
       const added: QueueEntry[] = [];
@@ -371,6 +424,12 @@ export function createWorkspace(): Workspace {
       }
       if (added.length > 0) selectedId = added[0]?.design.release.id ?? selectedId;
       selectionChanged();
+      // One per Release this Batch resolved, which is not the same as one per
+      // Release it added: a line that was already in the Queue was still
+      // resolved, and the copy in the Queue may have come from a restored file
+      // with no credits at all. `applyCredits` refuses to overwrite, so asking
+      // for one that is already there costs a request and changes nothing.
+      for (const entry of entries) requestCredits(entry.design.release);
       // The search panel says how it went, in the panel the collector pressed —
       // and it needs what actually joined the queue, not what was looked up.
       return added;
@@ -422,6 +481,7 @@ export function createWorkspace(): Workspace {
 
     clear(metadataFold.body);
     clear(designFold.body);
+    releaseForm = undefined;
     if (!entry) {
       selectedId = '';
       return;
@@ -432,6 +492,7 @@ export function createWorkspace(): Workspace {
     const form = createReleaseForm(design.release, (edit) => {
       updateSelected((current) => ({ ...current, release: edit(current.release) }));
     });
+    releaseForm = form;
 
     const designControls = createDesignControls(
       { templateId: design.templateId, params: design.params },
