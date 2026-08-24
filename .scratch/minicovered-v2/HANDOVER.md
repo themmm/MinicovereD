@@ -18,7 +18,7 @@ project file does when it is opened, and every decision left open across 06–09
 | 08 the Insert | 2.0 | **merged** — PR #29 |
 | 09 migration to version 2, and the documents | 2.0 | this branch |
 
-**628 tests in 31 files** (ticket 08 finished at 615 in 30). `npx tsc --noEmit` clean, `npm run build` green. Single-file artifact
+**631 tests in 31 files** (ticket 08 finished at 615 in 30). `npx tsc --noEmit` clean, `npm run build` green. Single-file artifact
 **2,958,347 bytes** — **1,235,957 under the 4 MiB ceiling**, or 1,041,653 under a decimal 4 MB. 21
 woff2 files in the hosted build. No fonts were added after ticket 02.
 
@@ -236,10 +236,12 @@ Still open from earlier tickets and still true:
   dash already in the file. Use `python3` with `encoding='utf-8'`, or an editor tool, and
   `assert s.count(old) == 1` before every replace.
 - Verify in a browser, not only in unit tests. The CDP recipe is in project memory. Ticket 09's own
-  numbers: **24 browser checks** against the shipped single-file artifact, **18 browser mutations and
-  36 unit mutations, all caught**, over three unit rounds and three browser rounds. The one bug none
-  of the numbers found was found by looking at the screenshot; the last round of unit mutations found
-  that **every clamp in the project reader was pinned from above and none from below**, which is now
-  one test.
+  numbers: **25 browser checks** against the shipped single-file artifact, and mutation rounds of 16,
+  14, 6 and 7 on the unit suite and 13, 3 and 2 in the browser, all caught. Two of those rounds paid
+  for themselves: one found that **every clamp in the project reader was pinned from above and none
+  from below**, and one found that **deleting `'back-card'` from `LEGACY_PARTS` left the suite green**.
+  Both are now one test each. The one bug no number found was found by looking at the screenshot —
+  and the one false *rule* no mutation found was found by the review, because a fixture cannot
+  disprove a claim it was built to agree with.
 - Do not touch MusicBrainz or Discogs live. Both rate-limit by IP; Discogs' anonymous budget is 25
   requests a minute.
