@@ -224,8 +224,11 @@ Still open from earlier tickets and still true:
   not designed the way the tracklist Page is.
 - **`LABEL_PAD = 2.5` duplicates Classic's local `pad`.**
 - **A short title leaves ~30 mm of blank paper** on Minimal's Front Panel.
-- **A Release restored from a file never fetches credits.** `Release.discogsId` is persisted and read
-  by nothing: only a lookup asks for credits.
+- **A Release restored from a file never fetches credits** — deliberately. `Release.discogsId` is read
+  by `requestCredits` (`workspace.ts:495`); what a restore does not do is call it, because reopening
+  yesterday's work is not a lookup and thirty restored Releases would spend thirty requests of
+  somebody else's rate limit at startup. ("`discogsId` read by nothing" was wrong: it is read, and the
+  rule is about which path calls it.) What is missing is a way to ask on purpose.
 - **`Release.notes` still holds MusicBrainz's `label · catalog-number`** beside Discogs' own in
   `Release.credits`.
 - **A 25-Release Batch writes the whole project 25 more times.**
