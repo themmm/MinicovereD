@@ -84,6 +84,8 @@ project files migrate to version 2.
   no credits and no prose, and which both existing Templates make look like a failed download.
 - **Five or six bundled OFL faces**, Latin subsets only, distinct voices. Noto stays the universal
   fallback including CJK. `--font-print` becomes per-Template.
+  - **As built: five**, plus Noto Sans and Noto Sans JP, which is six faces a Template can name. Latin
+    and Latin-ext only, roman only, one `wght` axis each — 280,420 bytes across the five.
 
 ### Fit versus taste
 
@@ -115,15 +117,19 @@ The three seams stand. Nothing here needs a fourth.
   artwork Page. Templates assert that each draws its own tracklist Page.
 - **SheetPacker** — rotation as rectangles: a turned item reports turned dimensions, nothing overlaps,
   nothing crosses the margin, two Inserts and five Labels land on one A4, and a raised margin reports
-  the Insert as unplaceable rather than dropping it.
+  the Insert as unplaceable rather than dropping it. That last one is a claim about the *packer*, and
+  it still holds; it is no longer a claim about the app, because the Page count is capped by the paper
+  before anything is packed — see the note under Sheets above.
 - **MetadataAdapter** — Discogs behind the same seam, recorded fixtures, never live. A Discogs failure
   degrades a credits Page and never a lookup.
 - **Migration** — a whole v1 project file opens as a queue of Inserts with its toggles collapsed, its
   J-Card measurements read as the Insert's first four and its per-Release Label read as the project's;
   and a version-2 file is refused by a version-1 reader. **Not "to a 2-Page Insert"**: no `pageCount`
-  is read from a version-1 file, so the count is derived from the content, and since 1.1 files also
-  carry version 1 and can carry Discogs credits, one of those opens at four Pages with its credits on
-  a Page of their own. A 1.0 file opens at two because a 1.0 Release has nothing else to say.
+  is read from a version-1 file, so the count is derived from the content — and the content has two
+  independent ways to ask for four Pages. Credits are one, which only a 1.1 file can carry; a
+  tracklist too long for one Page on a Template with a back cover is the other, and a 1.0 file
+  reaches four Pages that way with no credits anywhere near it. The version decides exactly one
+  thing: whether an omitted `insetArtwork` means the v1.0 inset square.
 - The attribution suite grows with every bundled face.
 
 ## Out of Scope

@@ -20,7 +20,7 @@ Please do not "fix" one into the other.
 
 ## Highlights
 
-- **Two Parts, one Sheet**: the **Insert** — one strip carrying Inner Flap, Spine, Front Panel and then two or four Pages, folded into a booklet that sits in the front of the case — and the cartridge **Label**, laid out together on A4/Letter with cutting and fold guides, a dash pattern per kind of fold ([ADR-0012](docs/adr/0012-the-insert.md)).
+- **Two Parts, one Sheet**: the **Insert** — one strip carrying an Inner Flap, a Spine and then two or four Pages, the first of which is the Front Panel the case window shows, folded into a booklet that sits in the front of the case — and the cartridge **Label**, laid out together on A4/Letter with cutting and fold guides, a dash pattern per kind of fold ([ADR-0012](docs/adr/0012-the-insert.md)).
 - **A booklet, not a card**: the tracklist gets a Page of its own, credits get another, and the odd Page out reprints the artwork as a back cover. How many Pages comes from what the record has to say, and the collector can override it for one Release.
 - **Three Templates**: Classic (artwork to three edges, type on paper below), Full-bleed (artwork edge to edge, type as an overlay) and Minimal (type only, for mixtapes). Each names its own display, text and Spine faces out of six — five bundled OFL voices plus Noto Sans, which is also what every stack falls back to, with Noto Sans JP behind it for CJK.
 - **Metadata on tap**: search MusicBrainz, auto-fill everything, override anything; credits and release facts from Discogs, no API key needed; full manual mode for mixtapes; batch queue for whole collections.
@@ -48,8 +48,8 @@ SheetPacker (rectangle sets) and MetadataAdapter (recorded HTTP fixtures, never 
 with the pure modules either side of them carrying their own, and three suites that guard claims no
 seam can: the attribution manifest that keeps ADR-0003 honest, the print quarantine that keeps the
 app's chrome off the paper (ADR-0008 rule 9), and the built artifacts. The artifact checks and the
-attribution suite's workbox ones **skip without a build**, so run `npm run build` before trusting a
-green suite on the single-file build's 4 MiB ceiling.
+two attribution checks that read `dist/` **skip without a build**, so run `npm run build` before
+trusting a green suite on the single-file build's 4 MiB ceiling.
 
 ## Status
 
@@ -64,8 +64,9 @@ Release's design, and `SheetPacker` learned to turn a Part rather than the Sheet
 Project files are **format version 2**, and a version-1 file still opens rather than being refused:
 its `jcard` and `back-card` toggles collapse to one Insert, its J-Card measurements become the
 Insert's first four, and the Label it kept per Release becomes the project's. How many Pages the
-Insert folds into is derived from the content, so a file from 1.0 opens at two Pages and one from 1.1
-carrying credits opens at four. Nothing has to be exported first.
+Insert folds into is derived from the content rather than read from the file, so a Release with
+credits or with a tracklist too long for one Page opens as a four-Page booklet whichever version
+wrote it. Nothing has to be exported first.
 
 - Spec: [.scratch/minicovered-v2/spec.md](.scratch/minicovered-v2/spec.md)
 - Tickets: [.scratch/minicovered-v2/issues/](.scratch/minicovered-v2/issues/)
@@ -76,6 +77,11 @@ arrangement ADR-0005 chose and [ADR-0012](docs/adr/0012-the-insert.md) reversed.
 
 - Spec: [.scratch/minicovered-v1/spec.md](.scratch/minicovered-v1/spec.md)
 - Tickets: [.scratch/minicovered-v1/issues/](.scratch/minicovered-v1/issues/)
+
+One thing has not been done: **`package.json` still says `1.0.0`.** Both 1.1 and 2.0 completed without
+a version bump, which is why the identifier above is still `minicovered-1.0.0` — it is built from that
+field. Bumping it changes what MusicBrainz sees, so it is a release decision rather than a ticket one,
+and it is the last one outstanding.
 
 ## License
 

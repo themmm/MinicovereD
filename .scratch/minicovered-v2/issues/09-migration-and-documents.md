@@ -45,23 +45,37 @@ their own. ADR-0012's migration paragraph made the same mistake and was correcte
 spec's Testing Decisions was the last place still carrying it and is corrected here.
 
 **A version-1 file's `backCard` block is deliberately not read.** The Back Card's 69 mm width has no
-counterpart on the strip, whose Pages are 65 mm by the case rather than 69 by the old rectangle.
+counterpart on the strip, whose Pages are 65 mm by the case rather than 69 by the old rectangle. Not
+because the reader declines it, either: `readDimensions` hands `readInsert` the `jcard` block alone,
+so that number is never in reach.
+
+**And the correction above was itself over-corrected, which the review caught.** "A 1.0 file opens at
+two Pages" is false. `wantsLarge` is `hasCredits || (needsTwoLists && hasBackCover)` — two independent
+routes to four Pages, and only the first involves credits. A 1.0 Release with cover art and 41 or more
+tracks on Classic opens at **four**, roles `cover / tracklist / tracklist / artwork`, and that is not
+an exotic file: it is the compilation v1's Back Card handled by shrinking type. The sentence had
+reached four documents and a test comment. The fixture could not catch it because its only overflowing
+list belonged to Minimal, which has no back cover; it now carries `mb-3`, the same list on Classic with
+artwork, so the two routes differ by exactly one field.
 
 **One bug, found by looking at the rendered page rather than at the numbers.**
 `.spec__note` caps itself at 90 px with `overflow: hidden` so a warning can give up
 its room when the band condenses, and 90 px is four and a half lines. ADR-0012's
 shortfall runs to **six** on Letter, so every Letter collector with credits read
 "…a printable margin of 7.25 mm or less; Letter's long edge" and then nothing — the
-one sentence that says which Page went and why. No unit test could reach it: the
-sentence is complete in the DOM, and ticket 08's browser round read `textContent`.
-Fixed as an override on the two states where `--cond` is 0, rather than as a larger
-number, because how tall a warning is depends on its sentence and on how many fired
-at once.
+one sentence that says which Page went and why. The sentence is complete in the DOM,
+so nothing that reads `textContent` can see it and no `node` test can lay out a
+paragraph; only the rendered page shows it. Fixed as an override on the two states
+where `--cond` is 0, rather than as a larger number, because how tall a warning is
+depends on its sentence and on how many fired at once. `src/app/part-band.test.ts`
+now pins both selectors as text, so deleting the override fails a test rather than
+waiting for the next browser round.
 
 **The documents that turned out to be wrong were not only the three this ticket lists.**
 `package.json`'s `description`, `index.html`'s meta description and the PWA manifest in
-`vite.config.ts` all still sold "J-Cards, Back Cards and cartridge Labels", and four comments in `src`
-still counted three Parts — `workspace.ts`, `app.css`, `part-band.ts` and `design-controls.ts`, the
-last of which claimed a Template can read three toggles when the most any reads is two. The about
-dialog's own specimen line advertised the app as `87.5 × 79 mm`, which is the retired J-Card's flat
-size; it reads 73.5 × 79 now, which is the assembled Insert and the box the Parts band captions.
+`vite.config.ts` all still sold "J-Cards, Back Cards and cartridge Labels". **Three** comments in
+`src` still counted three Parts — `workspace.ts`, `app.css` and `part-band.ts`, the last as three
+columns — and a fourth, `design-controls.ts`, counted three *toggles* where the most any Template
+reads is two. The about dialog's own specimen line advertised the app as `87.5 × 79 mm`, which is the
+retired J-Card's flat size; it reads 73.5 × 79 now, which is the assembled Insert and the box the
+Parts band captions.

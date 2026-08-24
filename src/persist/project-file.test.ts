@@ -514,6 +514,29 @@ describe('reading a project file with values that would break a render', () => {
     return JSON.stringify(base);
   };
 
+  it('prefers a version-2 Insert block to a legacy J-Card one beside it', () => {
+    // Nothing this app writes carries both — version 2 stopped writing `jcard` —
+    // but a hand-merged file can, and which one the reader believes must not
+    // depend on which branch happens to run first. `readMeasurements` has the
+    // same test one level up; `readInsert` had none, and swapping its two
+    // arguments left the whole suite green.
+    const text = project((base) => {
+      const measurements = base['measurements'] as Record<string, Record<string, unknown>>;
+      measurements['dimensions']!['jcard'] = {
+        innerFlapWidth: 99,
+        spineWidth: 99,
+        frontPanelWidth: 99,
+        height: 99,
+      };
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.insert.innerFlapWidth).toBe(
+      DEFAULT_PART_DIMENSIONS.insert.innerFlapWidth,
+    );
+  });
+
   it('reads a version-1 J-Card block as the Insert’s first four measurements', () => {
     // Four of the Insert's five are the J-Card's own numbers under a new name —
     // the same lengths measured off the same case (ADR-0012 keeps all three
@@ -719,6 +742,21 @@ describe('reading a project file with values that would break a render', () => {
     // and hand the collector Labels they switched off.
     const text = project((base) => {
       (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert']);
+  });
+
+  it('does not turn a Back-Cards-only job into everything either', () => {
+    // The other half, and the half nothing held: deleting `'back-card'` from
+    // `LEGACY_PARTS` left the whole suite green, because every other test here
+    // names `jcard` as well and the two map to the same Part. The collector this
+    // is about printed tracklists only — v1's Back Card was its own rectangle —
+    // and they must not reopen to Labels they had switched off.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['back-card'];
     });
     const result = readProjectFile(text);
 

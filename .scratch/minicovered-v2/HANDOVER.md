@@ -99,11 +99,15 @@ that has always been there.
   one selected after an import, so it is the one whose Parts the collector is looking at when they
   judge whether their measurements survived.
 - **It does not necessarily open as a queue of 2-Page Inserts**, and the difference is a feature. No
-  `pageCount` is read from a version-1 file, so the count is derived from the content. A 1.0 file
-  opens at two Pages because a 1.0 Release has nothing else to say — but 1.1 files also carry version
-  1 and *can* carry Discogs credits, and one of those opens at **four**, with its credits on a Page
-  of their own. ADR-0012's migration paragraph claimed otherwise and was corrected in ticket 08; the
-  v2 spec's Testing Decisions was the last place still carrying it and is corrected here.
+  `pageCount` is read from a version-1 file, so the count is derived from the content — and the
+  content has **two** independent ways to ask for four Pages. Credits are one, and only a 1.1 file can
+  carry them. A tracklist too long for one Page on a Template that has a back cover is the other, and
+  a **1.0** file reaches four Pages that way with no credits anywhere near it: 41 tracks is the
+  threshold at a 79 mm Page. The version decides exactly one thing — whether an omitted
+  `insetArtwork` means the v1.0 inset square. ADR-0012's migration paragraph claimed the file opened
+  at two and was corrected in ticket 08; ticket 09 then wrote "a 1.0 file opens at two" into four more
+  documents and a test before the review caught it, which is what a fixture whose only long tracklist
+  belongs to Minimal will do to you.
 - Inside version 1, a Design that omits `insetArtwork` was written by 1.0 and gets the inset square
   it was drawn with. From version 2 that tell is retired: a version-2 file that omits the key was not
   written by this app, so reading a 1.0 convention into it would be guessing about a document that
@@ -225,8 +229,9 @@ Still open from earlier tickets and still true:
 - **Comments say WHY, in plain specific prose, and every factual claim in one has to be true.** The
   pattern that has caught false ones repeatedly: a comment that explains a behaviour by a mechanism,
   or that counts, or that cites a number — check the mechanism, run the count, do the arithmetic, and
-  check *which* code path the mechanism actually takes. Ticket 09 found five more, four of them still
-  counting three Parts.
+  check *which* code path the mechanism actually takes. Ticket 09 found five more — three counting
+  three Parts, one counting three toggles where the most any Template reads is two, and one
+  user-visible line advertising the app as the retired J-Card's 87.5 mm.
 - **Never edit a source file with `perl -pi`.** It reads UTF-8 as latin-1 and double-encodes every em
   dash already in the file. Use `python3` with `encoding='utf-8'`, or an editor tool, and
   `assert s.count(old) == 1` before every replace.

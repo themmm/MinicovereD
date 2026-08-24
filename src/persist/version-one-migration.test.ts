@@ -50,6 +50,23 @@ const measurer: TextMeasurer = {
 const ARTWORK = { dataUrl: 'data:image/png;base64,AAAA', widthPx: 600, heightPx: 600 } as const;
 
 /**
+ * A tracklist too long for one Page: 44 tracks against the 40 that fit at full
+ * size on a 79 mm Page. Shared by the two Releases below that need one, so the
+ * only thing that differs between them is the Template — which is what decides
+ * whether the overflow buys a fourth Page or not.
+ */
+const LONG_LIST = [
+  { position: 1, title: 'Ceremony' },
+  { position: 2, title: '東京は夜の七時' },
+  { position: 3, title: 'Łódź' },
+  { position: 4, title: 'Age of Consent' },
+  ...Array.from({ length: 40 }, (_unused, index) => ({
+    position: index + 5,
+    title: `Side B, ${index + 1}`,
+  })),
+];
+
+/**
  * The Part sizes as this collector nudged them, in v1's own shape.
  *
  * `jcard` carries four of the Insert's five measurements — the same lengths off
@@ -81,21 +98,21 @@ const V1_1_PARAMS = {
 } as const;
 
 /**
- * A version-1 project as **v1.1** saved one: four Designs, a `dimensions` block
+ * A version-1 project as **v1.1** saved one: five Designs, a `dimensions` block
  * on every one of them, and a Sheet still naming the J-Card and the Back Card.
  *
- * Written by 1.1 rather than by 1.0 for one reason that matters to the Page
- * count: Discogs credits arrived in 1.1 (ADR-0013) and 1.1 files still carry
- * version 1, so this is the document that opens with a credits Page. A 1.0 file
- * cannot — see the test below it, which is the same project with the two things
- * 1.0 did not have taken out.
+ * Written by 1.1 rather than by 1.0 for one reason: Discogs credits arrived in
+ * 1.1 (ADR-0013) and 1.1 files still carry version 1, so this is the document
+ * that opens with a credits Page. That is the *only* thing the version costs — a
+ * 1.0 file can still reach four Pages by the other route, which is what `mb-3`
+ * is here to hold.
  *
  * The Releases are what a real queue holds: a looked-up pressing, a looked-up
- * pressing with credits, a mixtape typed in from a shelf, and one the lookup
- * never found. Only the first states nudged measurements, because v1's Label
- * control wrote to the *selected* Release and to nothing else — which is the
- * asymmetry version 2 exists to remove, and the reason the collapse has to pick
- * one.
+ * pressing with credits, a mixtape typed in from a shelf, a compilation with a
+ * list too long for one Page, and one the lookup never found. Only the first
+ * states nudged measurements, because v1's Label control wrote to the *selected*
+ * Release and to nothing else — which is the asymmetry version 2 exists to
+ * remove, and the reason the collapse has to pick one.
  */
 const versionOneOneProject = (): Record<string, unknown> => ({
   format: PROJECT_FORMAT,
@@ -155,23 +172,33 @@ const versionOneOneProject = (): Record<string, unknown> => ({
         id: 'hand-1',
         artist: 'Various',
         album: 'Tape for the 08:14',
-        // Long enough that the list does not fit one Page, which is the state
-        // the commonest v1 document is actually in: a mixtape has no credits and
-        // no artwork, so there is nothing to put on a third Page, and it must not
-        // gain one on the way to version 2. Forty-one is where a list stops
-        // fitting; the arithmetic itself is `insert-plan.test.ts`'s.
-        tracks: [
-          { position: 1, title: 'Ceremony' },
-          { position: 2, title: '東京は夜の七時' },
-          { position: 3, title: 'Łódź' },
-          { position: 4, title: 'Age of Consent' },
-          ...Array.from({ length: 40 }, (_unused, index) => ({
-            position: index + 5,
-            title: `Side B, ${index + 1}`,
-          })),
-        ],
+        // A mixtape has no credits and no artwork, so there is nothing to put on
+        // a third Page and it must not gain one on the way to version 2 — even
+        // though its list overflows. `mb-3` below is the same list on a Template
+        // that does have a back cover, which is the other answer.
+        tracks: LONG_LIST,
       },
       templateId: 'minimal',
+      params: V1_1_PARAMS,
+      dimensions: V1_DEFAULTS,
+    },
+    {
+      release: {
+        id: 'mb-3',
+        artist: 'Various',
+        album: 'Nuggets',
+        year: '1972',
+        // The same overflowing list as `hand-1`, on a Template that *has* a back
+        // cover. This is the second route to four Pages and the one that has
+        // nothing to do with credits — so a version-1.0 document, which cannot
+        // carry credits at all, reaches four Pages here on its tracklist alone.
+        // Without this Design the fixture's only long list belonged to Minimal,
+        // and "a 1.0 file opens at two Pages" read as a rule when it was a
+        // property of the fixture.
+        tracks: LONG_LIST,
+        artwork: ARTWORK,
+      },
+      templateId: 'classic',
       params: V1_1_PARAMS,
       dimensions: V1_DEFAULTS,
     },
@@ -189,7 +216,8 @@ const versionOneOneProject = (): Record<string, unknown> => ({
 /**
  * The same project as **v1.0** would have written it: no `insetArtwork`, because
  * the parameter did not exist, and no credits or Discogs link, because ADR-0013
- * had not happened.
+ * had not happened. Everything else about it — including how many Pages four of
+ * its five Inserts fold into — is unchanged, which is the point.
  */
 const versionOneZeroProject = (): Record<string, unknown> => {
   const file = versionOneOneProject();
@@ -260,11 +288,13 @@ describe('opening a whole version-1 project', () => {
       'mb-1',
       'mb-2',
       'hand-1',
+      'mb-3',
       'typed-1',
     ]);
     // The flag is the collector's to-do list, and every other entry was work
     // they had finished with.
     expect(project.entries.map((entry) => entry.status)).toEqual([
+      'ready',
       'ready',
       'ready',
       'ready',
@@ -295,6 +325,7 @@ describe('opening a whole version-1 project', () => {
       'fullbleed',
       'minimal',
       'classic',
+      'classic',
     ]);
     // Stated one way in a 1.1 file, so it is read the way it was stated rather
     // than picking up v1.0's square convention.
@@ -311,16 +342,18 @@ describe('opening a whole version-1 project', () => {
     expect(project.entries.every((entry) => entry.design.pageCount === undefined)).toBe(true);
   });
 
-  it('collapses the four `dimensions` blocks onto the one set the project prints at', () => {
+  it('collapses the five `dimensions` blocks onto the one set the project prints at', () => {
     const project = open(versionOneOneProject());
 
     expect(project.measurements.dimensions.insert).toEqual({
       innerFlapWidth: 13.8,
       spineWidth: 5.4,
       frontPanelWidth: 67.6,
-      // No v1 source, there being no Pages, so it takes the default — and the
-      // Back Card's 68.5 in the same block was there to be picked up and was
-      // not, which is the whole of why this number is 65.
+      // No v1 source, there being no Pages, so it takes the default. And not
+      // because 68.5 was declined: `readDimensions` hands `readInsert` the
+      // `jcard` block alone, so the Back Card's width is not in reach of the
+      // Insert's reader at all. Asserting 65 is what says the migration did not
+      // go looking for it.
       pageWidth: 65,
       height: 78.6,
     });
@@ -343,7 +376,7 @@ describe('opening a whole version-1 project', () => {
   it('prints every Release as exactly one Insert and one Label', () => {
     const sheets = print(open(versionOneOneProject()));
 
-    for (const releaseId of ['mb-1', 'mb-2', 'hand-1', 'typed-1']) {
+    for (const releaseId of ['mb-1', 'mb-2', 'hand-1', 'mb-3', 'typed-1']) {
       expect(
         placementsOf(sheets, releaseId).map(({ part }) => part).sort(),
         `the Parts of ${releaseId}`,
@@ -351,22 +384,32 @@ describe('opening a whole version-1 project', () => {
     }
   });
 
-  it('folds the Release with credits to four Pages and the rest to two', () => {
-    // The sentence ADR-0012's migration paragraph originally got wrong. A v1
-    // file does not open as a 2-Page Insert as a rule: no Page count is read
-    // from one, so the content decides, and a 1.1 file *can* carry credits.
+  it('folds each Insert to what its own content asks for, by both routes to four', () => {
+    // The sentence ADR-0012's migration paragraph originally got wrong. A v1 file
+    // does not open as a 2-Page Insert as a rule: no `pageCount` is read from
+    // one, so the content decides — and the content has **two** independent ways
+    // to ask for four Pages, only one of which involves credits.
     const sheets = print(open(versionOneOneProject()));
 
+    // Credits, which are enough on their own however short the list.
     expect(rolesOf(insertOf(sheets, 'mb-2'))).toEqual([
       'cover',
       'tracklist',
       'credits',
       'artwork',
     ]);
-    // `hand-1` in that list is the one that could have gone either way, and is
-    // why its tracklist is 44 long: it overflows one Page and still folds to
-    // two, because Minimal draws no artwork and so has no back cover to fill
-    // the fourth. A migrated mixtape gains no Page it has nothing to put on.
+    // A list too long for one Page, on a Template that has a back cover to fill
+    // out the four. No credits anywhere near it.
+    expect(rolesOf(insertOf(sheets, 'mb-3'))).toEqual([
+      'cover',
+      'tracklist',
+      'tracklist',
+      'artwork',
+    ]);
+    // `hand-1` is `mb-3`'s list on Minimal, which draws no artwork and so has no
+    // back cover to fill the fourth Page — so it stays at two. A migrated
+    // mixtape gains no Page it has nothing to put on, and the pair is why the
+    // Template is the only difference between those two Designs.
     for (const releaseId of ['mb-1', 'hand-1', 'typed-1']) {
       expect(rolesOf(insertOf(sheets, releaseId)), releaseId).toEqual(['cover', 'tracklist']);
     }
@@ -383,16 +426,17 @@ describe('opening a whole version-1 project', () => {
 
   it('tells a Letter collector which Pages their paper could not take', () => {
     // The other half of the test above, without which it is only the absence of
-    // something. The same project saved for Letter loses the credits Page and
-    // the back cover at every margin including zero — 282.5 mm of strip against
-    // a 279.4 mm long edge (ADR-0014) — and a migrated document has to be told
-    // that in the same words a version-2 one would be.
+    // something. Both four-Page Releases come back to two on Letter at every
+    // margin including zero — this project's four-Page strip is 281.8 mm against
+    // a 279.4 mm long edge (ADR-0014's arithmetic, at this collector's own
+    // measurements rather than at the 282.5 the defaults give) — and a migrated
+    // document has to be told that in the same words a version-2 one would be.
     const file = versionOneOneProject();
     (file['sheet'] as Record<string, unknown>)['paperId'] = 'letter';
 
     const short = shortfalls(print(open(file)));
 
-    expect(short).toHaveLength(1);
+    expect(short.map((warning) => warning.releaseId)).toEqual(['mb-2', 'mb-3']);
     expect(short[0]).toMatchObject({
       releaseId: 'mb-2',
       releaseTitle: 'Heaven or Las Vegas',
@@ -404,6 +448,16 @@ describe('opening a whole version-1 project', () => {
       // between "You asked for" and "This Release needs" on screen.
       requestedByCollector: false,
       dropped: ['credits', 'artwork'],
+    });
+    // One thing lost rather than two, which is the case `describeDropped`'s verb
+    // agreement exists for: this one reads "the back cover **is** not printed".
+    // A migrated document reaches both branches of that sentence.
+    expect(short[1]).toMatchObject({
+      releaseId: 'mb-3',
+      releaseTitle: 'Nuggets',
+      requestedPages: 4,
+      pages: 2,
+      dropped: ['artwork'],
     });
   });
 
@@ -429,20 +483,31 @@ describe('opening a whole version-1 project', () => {
     expect((twoPages.panels ?? []).every((panel) => panel.rect.height === 78.6)).toBe(true);
   });
 
-  it('opens the same project as version 1.0 wrote it, at two Pages throughout', () => {
-    // The contrast that makes the paragraph above true rather than lucky. Take
-    // out the two things 1.0 did not have and the credits Page goes with them —
-    // so a 1.0 file really does open as a queue of 2-Page Inserts, and it is the
-    // content that decides rather than the version.
+  it('opens the same project as version 1.0 wrote it, and only the credits Page goes', () => {
+    // The contrast, and it is narrower than it looks. Taking out the two things
+    // 1.0 did not have costs `mb-2` its credits Page and nothing else: `mb-3`
+    // still folds to four, because its list overflows and Classic has a back
+    // cover, and neither of those facts has anything to do with the version.
+    //
+    // So "a version-1 file opens at two Pages" is false of 1.0 as well as of
+    // 1.1, and the rule is the one this file keeps asserting: **the content
+    // decides.** The version decides one thing only, below.
     const project = open(versionOneZeroProject());
     const sheets = print(project);
 
-    for (const releaseId of ['mb-1', 'mb-2', 'hand-1', 'typed-1']) {
+    expect(rolesOf(insertOf(sheets, 'mb-2'))).toEqual(['cover', 'tracklist']);
+    expect(rolesOf(insertOf(sheets, 'mb-3'))).toEqual([
+      'cover',
+      'tracklist',
+      'tracklist',
+      'artwork',
+    ]);
+    for (const releaseId of ['mb-1', 'hand-1', 'typed-1']) {
       expect(rolesOf(insertOf(sheets, releaseId)), releaseId).toEqual(['cover', 'tracklist']);
     }
-    // And the one thing the version does still decide: every Front Panel written
-    // before 1.1 was drawn as an inset square, and inside version 1 the absence
-    // of the key is the tell.
+    // The one thing the version does decide: every Front Panel written before
+    // 1.1 was drawn as an inset square, and inside version 1 the absence of the
+    // key is the tell.
     expect(project.entries.every((entry) => entry.design.params.insetArtwork)).toBe(true);
   });
 });
