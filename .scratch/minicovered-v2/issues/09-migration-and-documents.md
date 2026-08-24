@@ -47,6 +47,17 @@ spec's Testing Decisions was the last place still carrying it and is corrected h
 **A version-1 file's `backCard` block is deliberately not read.** The Back Card's 69 mm width has no
 counterpart on the strip, whose Pages are 65 mm by the case rather than 69 by the old rectangle.
 
+**One bug, found by looking at the rendered page rather than at the numbers.**
+`.spec__note` caps itself at 90 px with `overflow: hidden` so a warning can give up
+its room when the band condenses, and 90 px is four and a half lines. ADR-0012's
+shortfall runs to **six** on Letter, so every Letter collector with credits read
+"…a printable margin of 7.25 mm or less; Letter's long edge" and then nothing — the
+one sentence that says which Page went and why. No unit test could reach it: the
+sentence is complete in the DOM, and ticket 08's browser round read `textContent`.
+Fixed as an override on the two states where `--cond` is 0, rather than as a larger
+number, because how tall a warning is depends on its sentence and on how many fired
+at once.
+
 **The documents that turned out to be wrong were not only the three this ticket lists.**
 `package.json`'s `description`, `index.html`'s meta description and the PWA manifest in
 `vite.config.ts` all still sold "J-Cards, Back Cards and cartridge Labels", and four comments in `src`
