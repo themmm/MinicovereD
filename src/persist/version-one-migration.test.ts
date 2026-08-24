@@ -151,11 +151,20 @@ const versionOneOneProject = (): Record<string, unknown> => ({
         id: 'hand-1',
         artist: 'Various',
         album: 'Tape for the 08:14',
+        // Long enough that the list does not fit one Page, which is the state
+        // the commonest v1 document is actually in: a mixtape has no credits and
+        // no artwork, so there is nothing to put on a third Page, and it must not
+        // gain one on the way to version 2. Forty-one is where a list stops
+        // fitting; the arithmetic itself is `insert-plan.test.ts`'s.
         tracks: [
           { position: 1, title: 'Ceremony' },
           { position: 2, title: '東京は夜の七時' },
           { position: 3, title: 'Łódź' },
           { position: 4, title: 'Age of Consent' },
+          ...Array.from({ length: 40 }, (_unused, index) => ({
+            position: index + 5,
+            title: `Side B, ${index + 1}`,
+          })),
         ],
       },
       templateId: 'minimal',
@@ -350,6 +359,10 @@ describe('opening a whole version-1 project', () => {
       'credits',
       'artwork',
     ]);
+    // `hand-1` in that list is the one that could have gone either way, and is
+    // why its tracklist is 44 long: it overflows one Page and still folds to
+    // two, because Minimal draws no artwork and so has no back cover to fill
+    // the fourth. A migrated mixtape gains no Page it has nothing to put on.
     for (const releaseId of ['mb-1', 'hand-1', 'typed-1']) {
       expect(rolesOf(insertOf(sheets, releaseId)), releaseId).toEqual(['cover', 'tracklist']);
     }
