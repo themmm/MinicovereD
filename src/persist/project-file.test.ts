@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, LABEL_SIZE_RANGE, PART_KINDS } from '../domain/parts.ts';
 import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
 import type { Measurements } from '../domain/measurements.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
@@ -629,6 +629,39 @@ describe('reading a project file with values that would break a render', () => {
 
     if (!result.ok) throw new Error(result.error);
     expect(result.project.sheet.marginMm).toBeLessThan(A4.width / 2);
+  });
+
+  it('holds every length to its floor as well as to its ceiling', () => {
+    // Found by mutation, and the reason it is one test rather than four: every
+    // clamp in this file was pinned from above and none from below, so
+    // widening any lower bound to a negative number changed nothing any test
+    // could see. A negative printable margin puts Parts off the paper, a
+    // negative Part is a rectangle drawn backwards, and track 0 is a track the
+    // list numbers from nothing — none of which a project this app wrote can
+    // contain, which is exactly why the reader is the thing that has to refuse
+    // them.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['marginMm'] = -12;
+      const measurements = base['measurements'] as Record<string, Record<string, Record<string, unknown>>>;
+      measurements['dimensions']!['insert']!['innerFlapWidth'] = -14;
+      measurements['dimensions']!['insert']!['height'] = -79;
+      measurements['dimensions']!['label']!['width'] = -35;
+      const designs = base['designs'] as Array<Record<string, unknown>>;
+      (designs[0] as { release: { tracks: Array<Record<string, unknown>> } }).release.tracks[0]![
+        'position'
+      ] = -3;
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    const { insert, label } = result.project.measurements.dimensions;
+    expect(result.project.sheet.marginMm).toBe(0);
+    // MIN_PART_MM, which is a fold's worth of paper and the smallest thing this
+    // app will call a Part.
+    expect(insert.innerFlapWidth).toBe(1);
+    expect(insert.height).toBe(1);
+    expect(label.width).toBe(LABEL_SIZE_RANGE.min);
+    expect(designsOf(result.project)[0]?.release.tracks[0]?.position).toBe(1);
   });
 
   it('drops a Part toggle it does not recognise instead of packing it', () => {
