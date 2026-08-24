@@ -102,10 +102,11 @@ like a book. **Insert** is accurate at two Pages or eight, and its promotion mea
 ## Consequences
 
 `PartKind` goes from three members to two. **J-Card** and **Back Card** stay in CONTEXT.md marked as
-retired v1 Parts rather than being deleted, because six ADRs and the v1 spec name them and a reader who
-meets "J-Card" in ADR-0005 needs the glossary to say what became of it. **Front Panel**, **Spine** and
-**Inner Flap** survive untouched as sections of the Insert, and **Page** joins them — Page 1 *is* the
-Front Panel.
+retired v1 Parts rather than being deleted, because five ADRs and the v1 spec name them and a reader
+who meets "J-Card" in ADR-0005 needs the glossary to say what became of it. (Six, this said until
+ticket 09 ran the count: 0005, 0007, 0010, 0011 and 0012 name one or the other, and no sixth does.)
+**Front Panel**, **Spine** and **Inner Flap** survive untouched as sections of the Insert, and
+**Page** joins them — Page 1 *is* the Front Panel.
 
 Three consequences ticket 08 found that this ADR did not foresee, all of them about the strip being
 282.5 mm long rather than 87.5:

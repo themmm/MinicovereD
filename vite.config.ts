@@ -63,7 +63,7 @@ export default defineConfig(({ mode }) => {
               name: 'MinicovereD — MiniDisc cover generator',
               short_name: 'MinicovereD',
               description:
-                'Design and print MiniDisc J-Cards, Back Cards and cartridge Labels as print-accurate PDFs.',
+                'Design and print MiniDisc case Inserts and cartridge Labels as print-accurate PDFs.',
               lang: 'en',
               start_url: base,
               scope: base,

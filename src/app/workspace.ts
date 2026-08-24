@@ -44,7 +44,7 @@ import { createSheetPreview, PREVIEW_DPI } from './sheet-preview.ts';
 
 /**
  * The workspace, laid out as ADR-0010 decides: search, the Release being
- * designed, its three Parts at one shared scale, and everything else folded
+ * designed, its two Parts at one shared scale, and everything else folded
  * away with a summary on its header.
  *
  * The two-column arrangement this replaces put the controls beside a permanent

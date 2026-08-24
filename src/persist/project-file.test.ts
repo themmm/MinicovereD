@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { A4, LETTER } from '../domain/paper.ts';
-import { DEFAULT_PART_DIMENSIONS, PART_KINDS } from '../domain/parts.ts';
+import { DEFAULT_PART_DIMENSIONS, LABEL_SIZE_RANGE, PART_KINDS } from '../domain/parts.ts';
 import { DEFAULT_MEASUREMENTS } from '../domain/measurements.ts';
 import type { Measurements } from '../domain/measurements.ts';
 import { readyEntry, unfinishedEntry } from '../queue/release-queue.ts';
@@ -514,6 +514,29 @@ describe('reading a project file with values that would break a render', () => {
     return JSON.stringify(base);
   };
 
+  it('prefers a version-2 Insert block to a legacy J-Card one beside it', () => {
+    // Nothing this app writes carries both — version 2 stopped writing `jcard` —
+    // but a hand-merged file can, and which one the reader believes must not
+    // depend on which branch happens to run first. `readMeasurements` has the
+    // same test one level up; `readInsert` had none, and swapping its two
+    // arguments left the whole suite green.
+    const text = project((base) => {
+      const measurements = base['measurements'] as Record<string, Record<string, unknown>>;
+      measurements['dimensions']!['jcard'] = {
+        innerFlapWidth: 99,
+        spineWidth: 99,
+        frontPanelWidth: 99,
+        height: 99,
+      };
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.measurements.dimensions.insert.innerFlapWidth).toBe(
+      DEFAULT_PART_DIMENSIONS.insert.innerFlapWidth,
+    );
+  });
+
   it('reads a version-1 J-Card block as the Insert’s first four measurements', () => {
     // Four of the Insert's five are the J-Card's own numbers under a new name —
     // the same lengths measured off the same case (ADR-0012 keeps all three
@@ -631,6 +654,39 @@ describe('reading a project file with values that would break a render', () => {
     expect(result.project.sheet.marginMm).toBeLessThan(A4.width / 2);
   });
 
+  it('holds every length to its floor as well as to its ceiling', () => {
+    // Found by mutation, and the reason it is one test rather than four: every
+    // clamp in this file was pinned from above and none from below, so
+    // widening any lower bound to a negative number changed nothing any test
+    // could see. A negative printable margin puts Parts off the paper, a
+    // negative Part is a rectangle drawn backwards, and track 0 is a track the
+    // list numbers from nothing — none of which a project this app wrote can
+    // contain, which is exactly why the reader is the thing that has to refuse
+    // them.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['marginMm'] = -12;
+      const measurements = base['measurements'] as Record<string, Record<string, Record<string, unknown>>>;
+      measurements['dimensions']!['insert']!['innerFlapWidth'] = -14;
+      measurements['dimensions']!['insert']!['height'] = -79;
+      measurements['dimensions']!['label']!['width'] = -35;
+      const designs = base['designs'] as Array<Record<string, unknown>>;
+      (designs[0] as { release: { tracks: Array<Record<string, unknown>> } }).release.tracks[0]![
+        'position'
+      ] = -3;
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    const { insert, label } = result.project.measurements.dimensions;
+    expect(result.project.sheet.marginMm).toBe(0);
+    // MIN_PART_MM, which is a fold's worth of paper and the smallest thing this
+    // app will call a Part.
+    expect(insert.innerFlapWidth).toBe(1);
+    expect(insert.height).toBe(1);
+    expect(label.width).toBe(LABEL_SIZE_RANGE.min);
+    expect(designsOf(result.project)[0]?.release.tracks[0]?.position).toBe(1);
+  });
+
   it('drops a Part toggle it does not recognise instead of packing it', () => {
     const text = project((base) => {
       (base['sheet'] as Record<string, unknown>)['parts'] = ['insert', 'sleeve', 'label'];
@@ -686,6 +742,21 @@ describe('reading a project file with values that would break a render', () => {
     // and hand the collector Labels they switched off.
     const text = project((base) => {
       (base['sheet'] as Record<string, unknown>)['parts'] = ['jcard'];
+    });
+    const result = readProjectFile(text);
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.project.sheet.parts).toEqual(['insert']);
+  });
+
+  it('does not turn a Back-Cards-only job into everything either', () => {
+    // The other half, and the half nothing held: deleting `'back-card'` from
+    // `LEGACY_PARTS` left the whole suite green, because every other test here
+    // names `jcard` as well and the two map to the same Part. The collector this
+    // is about printed tracklists only — v1's Back Card was its own rectangle —
+    // and they must not reopen to Labels they had switched off.
+    const text = project((base) => {
+      (base['sheet'] as Record<string, unknown>)['parts'] = ['back-card'];
     });
     const result = readProjectFile(text);
 

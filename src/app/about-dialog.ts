@@ -41,7 +41,10 @@ const FONT_SPECIMEN: ReadonlyArray<{
   weight?: 'bold';
   stack: 'chrome' | PrintFace;
 }> = [
-  { label: 'This app', sample: 'MinicovereD · 87.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
+  // 73.5 × 79 is the assembled Insert, which is the box the Parts band captions.
+  // A specimen line is still a sentence about this app, so it must not go on
+  // quoting the 87.5 mm J-Card that ADR-0012 retired.
+  { label: 'This app', sample: 'MinicovereD · 73.5 × 79 mm · A4 · 300 DPI', stack: 'chrome' },
   { label: 'Sans', sample: 'Wichita Lineman — Glen Campbell', stack: 'sans' },
   { label: 'Serif', sample: 'Rêveries · Canción · Ángel · Sinnöver', stack: 'serif' },
   { label: 'Slab', sample: 'Selected Ambient Works 85–92', stack: 'slab' },
