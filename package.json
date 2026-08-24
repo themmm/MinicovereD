@@ -1,6 +1,6 @@
 {
   "name": "minicovered",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Design and print MiniDisc case Inserts and cartridge Labels as print-accurate PDFs.",
   "license": "MIT",
