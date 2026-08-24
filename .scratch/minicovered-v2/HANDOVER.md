@@ -193,10 +193,12 @@ New in ticket 09:
   `${id.slice(0, 4)}…${id.slice(-4)}`, which repeats itself for any id under eight characters. Only
   reachable from a hand-edited project file — a real id is a 36-character MBID or is `hand-` prefixed
   — so it is cosmetic, on untrusted input, and was left.
-- **The `.spec__note` cap still snaps once.** The fix in ticket 09 stops a warning being clipped at
-  rest, but a note taller than 90 px jumps to 90 px at the start of the 380 ms collapse. A
-  `grid-template-rows: 1fr → 0fr` collapse would remove the magic number entirely, at the cost of an
-  inner wrapper element and a rework of the condense animation.
+- **The `.spec__note` cap snaps at both ends of the collapse.** The fix in ticket 09 stops a warning
+  being clipped at rest, and the cost is two snaps for a note taller than 90 px: condensing drops it
+  to 90 before the 380 ms collapse begins, and un-condensing opens it to full height at once, `none`
+  being no length to interpolate from. A `grid-template-rows: 1fr → 0fr` collapse would animate both
+  ways with no number in it — the number is the part that goes stale — at the cost of an inner wrapper
+  element and a fresh look at the condense animation.
 
 Still open from earlier tickets and still true:
 
