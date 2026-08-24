@@ -47,6 +47,11 @@ project files migrate to version 2.
 - Page count derives from content with a manual override: two Pages normally, four when the tracklist
   overflows or credits exist. The odd Page out repeats the artwork as a back cover. A mixtape is
   always two Pages.
+  - **As built, the overflow half of that is conditional** (ticket 08): a tracklist too long for one
+    Page produces four only when there is a back cover to fill the fourth. Credits are enough on
+    their own. That is the even-Page rule doing its work rather than a special case — a Page nothing
+    would go on is not folded — and it is also *why* a mixtape is always two Pages, so the last
+    sentence above is a consequence rather than a rule of its own.
 
 ### Metadata (ADR-0013)
 
@@ -61,6 +66,11 @@ project files migrate to version 2.
 - `SheetPacker` places items rotated 90°. **No Sheet orientation anywhere.**
 - Turned, two Inserts and a column of five Labels fit one A4 portrait Sheet.
 - A printable margin above 7.25 mm makes a four-Page Insert unplaceable, and the app must say so.
+  - **As built it is never unplaceable, and the saying-so is what shipped.** The Page count is chosen
+    against the paper before anything is packed, so a margin above 7.25 mm — or **Letter at any
+    margin, including zero**, which this arithmetic never checked — produces a two-Page Insert and an
+    `InsertPagesShort` report naming the Pages that went and why. A two-Page strip is 152.5 × 79 and
+    fits every paper here at every margin the control reaches.
 
 ### Templates and type
 
@@ -80,6 +90,11 @@ project files migrate to version 2.
 Measurements describe the collector's hardware and are set once; design describes one record.
 
 - **App settings**: Label size, notch, Page width, Page count default.
+  - **The Page count default was not built, on purpose** (ticket 08). Every field in `Measurements`
+    is a length in millimetres, which is what the name is for, and a count is not one. The derived
+    count already is the default and a better one, being about the record in front of the collector
+    rather than about their preferences; the *override* lives on the Design, where it cannot carry
+    forward onto a record whose content is different.
 - **Per Design, carried forward from the last Release touched**: Template, colours, toggles.
 - This removes the v1 asymmetry where a single lookup inherited the on-screen design while a Batch and
   a by-hand Release both got defaults.
@@ -103,8 +118,12 @@ The three seams stand. Nothing here needs a fourth.
   the Insert as unplaceable rather than dropping it.
 - **MetadataAdapter** — Discogs behind the same seam, recorded fixtures, never live. A Discogs failure
   degrades a credits Page and never a lookup.
-- **Migration** — a v1 project file round-trips to a 2-Page Insert with its toggles collapsed, and a
-  version-2 file is refused by a version-1 reader.
+- **Migration** — a whole v1 project file opens as a queue of Inserts with its toggles collapsed, its
+  J-Card measurements read as the Insert's first four and its per-Release Label read as the project's;
+  and a version-2 file is refused by a version-1 reader. **Not "to a 2-Page Insert"**: no `pageCount`
+  is read from a version-1 file, so the count is derived from the content, and since 1.1 files also
+  carry version 1 and can carry Discogs credits, one of those opens at four Pages with its credits on
+  a Page of their own. A 1.0 file opens at two because a 1.0 Release has nothing else to say.
 - The attribution suite grows with every bundled face.
 
 ## Out of Scope

@@ -212,7 +212,7 @@ export function createDesignControls(
    * The panel itself is not rebuilt when the Template changes — the workspace
    * builds it per *selection*, and a Template change is not one — so this is
    * what keeps the list honest. Only the checkboxes inside `toggles` are
-   * replaced — one, two or three of them, depending on the Template — so the
+   * replaced — one or two of them, depending on the Template — so the
    * focus stays in the picker the collector just used.
    *
    * A toggle the Template does not read keeps its value in `params` rather than

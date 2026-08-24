@@ -673,8 +673,8 @@ a:focus-visible {
   position: sticky;
   top: 0;
   z-index: 20;
-  /* The resting scale of all three Parts. The peers run 8-12 px/mm on a single
-     Part; three at once rest at ~6 and are clicked to isolate. */
+  /* The resting scale of both Parts. The peers run 8-12 px/mm on a single
+     Part; two at once rest at ~6 and are clicked to isolate (ADR-0010 item 1). */
   --mm: clamp(3.1px, 0.5vw, 6.05px);
   padding: calc(14px - 5px * var(--cond)) 0 calc(18px - 8px * var(--cond));
   background: var(--page);

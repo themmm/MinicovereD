@@ -548,8 +548,8 @@ export function createPartBand({ actions = [] }: PartBandOptions = {}): PartBand
       // caption above it rather than to the warnings beside it.
       if (note) specimen.notes.appendChild(el('li', { class: 'micro note note--plain', text: note }));
 
-      // display: contents, so the three rows line up across the three columns
-      // however tall any one caption or note turns out to be.
+      // display: contents, so the three rows line up across both columns
+      // however tall either caption or note turns out to be.
       specimens.appendChild(
         el('div', { class: `spec spec--${part}` }, specimen.art, specimen.caption, specimen.notes),
       );

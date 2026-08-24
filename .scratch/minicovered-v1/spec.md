@@ -85,4 +85,8 @@ Discogs or other metadata providers and user-supplied API keys (v2); user font u
 - Dimension sources: Wikipedia (cartridge 68 × 72 × 5 mm); atriptych/Minidisc-Label-Template SVG measured directly (J-Card panels 68 / 5.5 / 14 × 79 mm, back panel ≈69 × 79 mm); Sony blank-label template ≈35.75 × 52.75 mm and measured originals ≈34.5 × 52.5 mm; jkap generator canvas 38 × 54 mm. Sources disagree slightly; adjustable sizes plus the calibration sheet absorb the variance.
 - No existing free tool covers all three Parts at once (jkap: label only; RunePML: cover + spine only, CC BY-NC-ND; atriptych: static templates). That gap is the product.
 - The attribution dialog doubles as the license-compliance surface required by ADR-0003.
-- v2 backlog: Discogs + API keys, font upload, Minimal template, case stickers.
+- v2 backlog, and what became of each: **Discogs** shipped (ADR-0013) and **API keys did not** — a
+  read needs none. **Font upload** declined: licensing, and a project file that could not reproduce its
+  own design. **Minimal template** shipped. **Case stickers struck, not deferred** — the Label is the
+  cartridge sticker and that is the whole of it, and this line described something that was never
+  wanted.

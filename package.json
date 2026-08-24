@@ -2,7 +2,7 @@
   "name": "minicovered",
   "version": "1.0.0",
   "private": true,
-  "description": "Design and print MiniDisc J-Cards, Back Cards and cartridge Labels as print-accurate PDFs.",
+  "description": "Design and print MiniDisc case Inserts and cartridge Labels as print-accurate PDFs.",
   "license": "MIT",
   "type": "module",
   "scripts": {
