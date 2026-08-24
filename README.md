@@ -13,7 +13,7 @@ reads out of it. The capitals are load-bearing — in lowercase the device disap
 the repository name, the PWA `name` and `short_name`, the Wordmark, this heading and the about dialog.
 
 **`minicovered`** is the technical form: clone directories and shell paths, the npm package name, the
-`client=minicovered-1.0.0` identifier sent to MusicBrainz, the `minicovered:` prefix on internal
+`client=minicovered-2.0.0` identifier sent to MusicBrainz, the `minicovered:` prefix on internal
 errors, exported filenames, search queries, and any URL typed from memory.
 
 Please do not "fix" one into the other.
@@ -51,6 +51,24 @@ app's chrome off the paper (ADR-0008 rule 9), and the built artifacts. The artif
 two attribution checks that read `dist/` **skip without a build**, so run `npm run build` before
 trusting a green suite on the single-file build's 4 MiB ceiling.
 
+### Releasing
+
+Both 1.1 and 2.0 shipped before anyone bumped the version, which is why the step is written down here
+rather than remembered:
+
+1. `npm run build`, then `npm test`. The artifact checks and the two attribution checks that read
+   `dist/` skip without a build, so a green suite means less before one.
+2. `npm version <x.y.z> --no-git-tag-version`. Nothing else needs editing for the number to take
+   effect — `src/version.ts` imports that field and the MetadataAdapter builds `client=` and the
+   User-Agent from it — but bumping it changes what MusicBrainz is told the client is
+   ([ADR-0006](docs/adr/0006-client-identification-without-user-agent.md)), which is why this is a
+   release decision and not bookkeeping.
+3. Update the prose copies of the number — the build reaches none of them, and there is more than
+   one. `grep -rn <the-old-version> README.md docs/adr/` lists them: in this file, the identifier
+   under [The name, in two forms](#the-name-in-two-forms) and the paragraph that closes
+   [Status](#status). ADR-0006 states it too, under a dated heading — append a new dated section
+   there rather than editing a section that is already dated.
+
 ## Status
 
 Implementation runs ticket by ticket, and **v2 is complete** — both of its releases. 1.1 was additive
@@ -78,10 +96,12 @@ arrangement ADR-0005 chose and [ADR-0012](docs/adr/0012-the-insert.md) reversed.
 - Spec: [.scratch/minicovered-v1/spec.md](.scratch/minicovered-v1/spec.md)
 - Tickets: [.scratch/minicovered-v1/issues/](.scratch/minicovered-v1/issues/)
 
-One thing has not been done: **`package.json` still says `1.0.0`.** Both 1.1 and 2.0 completed without
-a version bump, which is why the identifier above is still `minicovered-1.0.0` — it is built from that
-field. Bumping it changes what MusicBrainz sees, so it is a release decision rather than a ticket one,
-and it is the last one outstanding.
+The last release step has been taken: **`package.json` says `2.0.0`.** Both 1.1 and 2.0 completed
+without a version bump, so it was made afterwards, on its own — a decision about what a third party
+sees rather than a ticket. That field is the single source `src/version.ts` reads, and
+`src/metadata/metadata-adapter.ts` builds both identifiers from it, so no source file states the number:
+MusicBrainz now sees `client=minicovered-2.0.0` and, where a host permits the header,
+`minicovered/2.0.0`.
 
 ## License
 

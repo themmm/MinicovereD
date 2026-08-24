@@ -16,7 +16,7 @@ project file does when it is opened, and every decision left open across 06–09
 | 06 measurements are settings, design is per Release | 2.0 | **merged** — PR #27 |
 | 07 SheetPacker turns a Part | 2.0 | **merged** — PR #28 |
 | 08 the Insert | 2.0 | **merged** — PR #29 |
-| 09 migration to version 2, and the documents | 2.0 | this branch |
+| 09 migration to version 2, and the documents | 2.0 | **merged** — PR #30 |
 
 **631 tests in 31 files** (ticket 08 finished at 615 in 30). `npx tsc --noEmit` clean, `npm run build` green. Single-file artifact
 **2,958,347 bytes** — **1,235,957 under the 4 MiB ceiling**, or 1,041,653 under a decimal 4 MB. 21
@@ -153,11 +153,14 @@ same project as 1.0 wrote it, and the same project saved for Letter.
 - **The end-to-end migration test lives in its own file** rather than in `project-file.test.ts`. The
   readers are tested field by field there; this is the whole document, it needs a big fixture, and it
   reaches the renderer. Not a fourth seam — the precedent is `insert-plan.test.ts`.
-- **`package.json` is still `1.0.0`.** 1.1 and 2.0 both completed without a version bump, and the
-  version is what reaches MusicBrainz as `client=minicovered-1.0.0` and in the User-Agent (ADR-0006),
-  and what README line 16 documents as the technical form. Left alone in ticket 09 because bumping it
-  changes what a third-party service sees and the ticket did not ask. **This is the one release step
-  that has not been taken.**
+- ~~**`package.json` is still `1.0.0`.**~~ **Done.** It is `2.0.0`, bumped after ticket 09 as a
+  release step of its own rather than inside a ticket, because it changes what a third-party service
+  is told. MusicBrainz now sees `client=minicovered-2.0.0`, and the header the adapter still sets
+  for any host that permits one begins `minicovered/2.0.0` — in a browser it is stripped before it
+  goes, which is the whole subject of ADR-0006. Nothing in `src/` was edited to make that happen:
+  `src/version.ts` imports the field and the MetadataAdapter builds both strings from `APP_VERSION`.
+  Only prose needed a hand: README's identifier and its closing paragraph were both
+  corrected, and ADR-0006 got a dated section rather than a correction to its body.
 - **The v1 spec's backlog line was rewritten rather than deleted**, to say what became of each item.
   The v2 spec was corrected in four places with "As built" notes rather than rewritten, so the
   original decision stays legible beside what shipped.
@@ -187,12 +190,22 @@ same project as 1.0 wrote it, and the same project saved for Letter.
 
 New in ticket 09:
 
-- **Bump `package.json` to 2.0.0** and follow it through: `APP_VERSION` feeds
-  `client=minicovered-<version>` and the User-Agent, and README line 16 quotes the string.
-- **ADR-0006 still says `client=mdcovergen-0.1.0`.** Pre-rename and pre-1.0, and a statement of
-  present fact that is false. Left alone because the ADRs deliberately keep their original voice (0005
-  says "mdcovergen" too), but somebody should decide whether that convention covers a literal that
-  the code has since changed.
+- ~~**Bump `package.json` to 2.0.0** and follow it through.~~ **Done**, and it needed no follow-up in
+  source at all — every copy of the string outside `package.json` and the lockfile is prose, in README
+  and in ADR-0006's dated section, and README's release checklist now sends the next releaser to grep
+  for them rather than quoting a count that would itself go stale. Verified in the shipped artifact rather than assumed. The bundle binds
+  `APP_VERSION` to `2.0.0` and still builds the identifier by interpolation, the one remaining
+  `1.0.0` in it belongs to `@pdf-lib/standard-fonts`, and a Chromium run against
+  `dist/singlefile/index.html` with MusicBrainz stubbed caught the real request going out as
+  `…&limit=25&client=minicovered-2.0.0`, with no console error. README now carries a **Releasing** checklist so a third release cannot
+  miss the step the first two did.
+- ~~**ADR-0006 still says `client=mdcovergen-0.1.0`.**~~ **Decided: both.** The body keeps its
+  original voice and the literal with it, because the sentence records what the decision sent when it
+  was made. A dated section was appended instead — *The identifier as it actually reads, 2026-08-24* —
+  which states the current string and names the mechanism that keeps it current. The precedent for a
+  dated heading inside an ADR is 0013's *The terms, as read on 2026-08-23*. The convention is
+  therefore: **an ADR's body is never corrected for a fact that changed after it; a dated section is
+  appended.** ADR-0005's and ADR-0007's "mdcovergen" stay untouched under it.
 - **A short Release id renders as `MusicBrainz mb-1…mb-1`.** `workspace.ts:431` is
   `${id.slice(0, 4)}…${id.slice(-4)}`, which repeats itself for any id under eight characters. Only
   reachable from a hand-edited project file — a real id is a 36-character MBID or is `hand-` prefixed
