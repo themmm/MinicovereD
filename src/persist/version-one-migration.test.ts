@@ -37,6 +37,10 @@ import type { Project } from './project-file.ts';
  * Page count, the strip's length, which Part landed on paper — depends on text
  * metrics at all, so a second measurer that drifts from that one cannot make
  * this file disagree with the seam.
+ *
+ * Checked rather than assumed: every assertion below still passes with this
+ * returning a flat zero and with it returning ten times what it does, so the
+ * only thing it has to be is present.
  */
 const measurer: TextMeasurer = {
   widthMm: (text, style) => text.length * 0.5 * style.sizeMm,
