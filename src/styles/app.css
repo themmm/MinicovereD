@@ -897,6 +897,28 @@ a:focus-visible {
 }
 
 /*
+ * The cap above is for the collapse and must not bite at rest.
+ *
+ * 90 px is four and a half lines, and ADR-0012's shortfall runs to six on
+ * Letter — "…a printable margin of 7.25 mm or less; Letter's long edge" and
+ * then nothing. A warning is the one thing on this band a collector has to be
+ * able to read to the end, and it was being cut mid-clause every time.
+ *
+ * An override rather than a larger number, because how tall a warning is
+ * depends on its sentence and on how many fired at once, so any number here
+ * would be a guess that goes stale the next time one is reworded. `--cond` is 0
+ * in exactly these two states — see `.band[data-condensed]` and
+ * `.band[data-focus]` above, where focus wins by coming last — so the calc takes
+ * over from 90 px the moment a collapse actually starts. A note taller than that
+ * therefore snaps once, at the start of a 380 ms scroll animation, instead of
+ * being unreadable always.
+ */
+.band:not([data-condensed]) .spec__note,
+.band[data-focus] .spec__note {
+  max-height: none;
+}
+
+/*
  * A note under a Part. Rule 2 again: ink on a tinted field with an accent bar,
  * never accent-coloured text — so the three kinds differ by field and bar, and
  * nothing is carried by colour alone. The words say which is which.
