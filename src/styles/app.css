@@ -906,12 +906,18 @@ a:focus-visible {
  *
  * An override rather than a larger number, because how tall a warning is
  * depends on its sentence and on how many fired at once, so any number here
- * would be a guess that goes stale the next time one is reworded. `--cond` is 0
- * in exactly these two states — see `.band[data-condensed]` and
- * `.band[data-focus]` above, where focus wins by coming last — so the calc takes
- * over from 90 px the moment a collapse actually starts. A note taller than that
- * therefore snaps once, at the start of a 380 ms scroll animation, instead of
- * being unreadable always.
+ * would be a guess that goes stale the next time one is reworded. `--cond`
+ * settles at 0 in exactly these two states — see `.band[data-condensed]` and
+ * `.band[data-focus]` above, where focus wins by coming last — so the calc above
+ * takes back over the moment a collapse actually starts.
+ *
+ * The cost is a snap at each end of that 380 ms animation, and only for a note
+ * taller than 90 px: condensing drops it to 90 before the collapse begins, and
+ * un-condensing opens it to full height at once rather than growing into it,
+ * `none` being no length to interpolate from. A note that pops open is worth a
+ * sentence that can be read to the end. Collapsing a grid row from `1fr` to
+ * `0fr` would animate both ways with no number at all, and wants its own wrapper
+ * element and its own look at the condense animation.
  */
 .band:not([data-condensed]) .spec__note,
 .band[data-focus] .spec__note {
